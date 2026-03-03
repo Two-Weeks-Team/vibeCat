@@ -1,0 +1,40 @@
+name: Bug Report
+description: Report a bug or unexpected behavior
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: How can we reproduce this?
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What should have happened?
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Client (Swift)
+        - Backend - Gateway (Go)
+        - Backend - Orchestrator (Go)
+        - Infrastructure
+    validations:
+      required: true
