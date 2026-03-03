@@ -1,0 +1,39 @@
+# Swift Build
+.build/
+*.xcodeproj
+xcuserdata/
+DerivedData/
+
+# Go Build
+backend/realtime-gateway/realtime-gateway
+backend/adk-orchestrator/adk-orchestrator
+vendor/
+
+# macOS
+.DS_Store
+*.swp
+*~
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# IDE
+.idea/
+.vscode/
+*.code-workspace
+
+# Docker
+docker-compose.override.yml
+
+# GCP / Infra
+service-account-key*.json
+
+# Local-only documents (NEVER commit)
+docs/ideas/
+
+# Taskmaster
+.taskmasterconfig
+tasks/
+scripts/task-complexity-report.json

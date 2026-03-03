@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  swift:
+    name: Build + Test (Swift 6 / macOS)
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          clean: true
+      - name: Select Xcode 16+
+        run: |
+          XCODE_PATH=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$XCODE_PATH" ]; then XCODE_PATH="/Applications/Xcode.app"; fi
+          echo "DEVELOPER_DIR=$XCODE_PATH/Contents/Developer" >> "$GITHUB_ENV"
+          swift --version
+      - name: Build VibeCat
+        run: swift build
+        working-directory: VibeCat
+      - name: Test VibeCat
+        run: swift test
+        working-directory: VibeCat
+
+  backend:
+    name: Build + Test (Go backend)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Build Gateway
+        run: go build ./...
+        working-directory: backend/realtime-gateway
+      - name: Test Gateway
+        run: go test ./...
+        working-directory: backend/realtime-gateway
+      - name: Build Orchestrator
+        run: go build ./...
+        working-directory: backend/adk-orchestrator
+      - name: Test Orchestrator
+        run: go test ./...
+        working-directory: backend/adk-orchestrator

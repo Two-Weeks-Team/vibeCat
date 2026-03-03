@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>LSUIElement</key>
+    <true/>
+    <key>CFBundleIdentifier</key>
+    <string>com.vibecat.VibeCat</string>
+    <key>CFBundleName</key>
+    <string>VibeCat</string>
+    <key>CFBundleVersion</key>
+    <string>1.0.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>15.0</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>VibeCat needs screen recording access to see what you're working on and provide helpful AI commentary.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>VibeCat needs microphone access for voice chat with your companion.</string>
+</dict>
+</plist>
