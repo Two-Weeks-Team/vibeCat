@@ -16,6 +16,7 @@ final class ScreenAnalyzer {
     private var userId: String = "local-user"
 
     var onSpeechEvent: ((CompanionSpeechEvent) -> Void)?
+    var onBackgroundSpeech: ((String) -> Void)?
 
     init(
         captureService: ScreenCaptureService,
@@ -61,6 +62,10 @@ final class ScreenAnalyzer {
             if isRunning { scheduleNextCapture() }
             return
         }
+        guard gatewayClient.isConnected else {
+            if isRunning { scheduleNextCapture() }
+            return
+        }
         isAnalyzing = true
         defer {
             isAnalyzing = false
@@ -80,6 +85,7 @@ final class ScreenAnalyzer {
     }
 
     func forceAnalysis() async {
+        guard gatewayClient.isConnected else { return }
         let result = await captureService.forceCapture()
         if case .captured(let image) = result {
             await sendToGateway(image: image, highSignificance: true)
@@ -87,6 +93,7 @@ final class ScreenAnalyzer {
     }
 
     private func sendToGateway(image: CGImage, highSignificance: Bool) async {
+        guard gatewayClient.isConnected else { return }
         let processedImage = ImageProcessor.resizeIfNeeded(image)
         guard let base64 = ImageProcessor.toBase64JPEG(processedImage) else { return }
 
@@ -111,6 +118,9 @@ final class ScreenAnalyzer {
         spriteAnimator.setState(emotion)
         catVoice.speak(event.text)
         onSpeechEvent?(event)
+        if !NSApp.isActive {
+            onBackgroundSpeech?(event.text)
+        }
 
         Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { [weak self] _ in
             Task { @MainActor [weak self] in
