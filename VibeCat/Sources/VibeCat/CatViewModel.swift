@@ -47,11 +47,15 @@ final class CatViewModel {
         }
     }
 
+    private let catOffsetX: CGFloat = 150
+    private let catOffsetY: CGFloat = 30
+
     private func updateFromMouse() {
         let mouseGlobal = NSEvent.mouseLocation
         updateScreenBounds(for: mouseGlobal)
         let mouseLocal = globalToLocal(mouseGlobal)
-        targetPosition = clampToBounds(mouseLocal)
+        let catTarget = CGPoint(x: mouseLocal.x + catOffsetX, y: mouseLocal.y + catOffsetY)
+        targetPosition = clampToBounds(catTarget)
         facingLeft = mouseLocal.x < position.x
     }
 

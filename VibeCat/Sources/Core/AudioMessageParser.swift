@@ -7,6 +7,7 @@ public enum ServerMessage: Sendable {
     case interrupted
     case companionSpeech(text: String, emotion: String, urgency: String)
     case setupComplete(sessionId: String)
+    case sessionResumptionUpdate(handle: String)
     case error(code: String, message: String)
     case unknown
 }
@@ -35,6 +36,9 @@ public enum AudioMessageParser {
         case "setupComplete":
             let sessionId = json["sessionId"] as? String ?? ""
             return .setupComplete(sessionId: sessionId)
+        case "sessionResumptionUpdate":
+            let handle = json["sessionHandle"] as? String ?? ""
+            return .sessionResumptionUpdate(handle: handle)
         case "error":
             let code = json["code"] as? String ?? "UNKNOWN"
             let message = json["message"] as? String ?? ""

@@ -20,6 +20,7 @@ final class GatewayClient {
     var onLatencyUpdate: ((Int) -> Void)?
 
     var lastErrorDescription: String?
+    private(set) var sessionHandle: String?
     var isConnected: Bool {
         if case .connected = state { return true }
         return false
@@ -27,7 +28,7 @@ final class GatewayClient {
 
     private var webSocketTask: URLSessionWebSocketTask?
     private var urlSession: URLSession?
-    private var pingTimer: Timer?
+    private var heartbeatTimer: Timer?
     private var state: ConnectionState = .disconnected {
         didSet { onStateChange?(state) }
     }
@@ -83,7 +84,7 @@ final class GatewayClient {
         isManuallyDisconnected = true
         reconnectWorkItem?.cancel()
         reconnectWorkItem = nil
-        stopPingTimer()
+        stopHeartbeatTimer()
         closeConnection()
         lastErrorDescription = nil
         state = .disconnected
@@ -98,7 +99,7 @@ final class GatewayClient {
         circuitBreakerOpen = false
         reconnectWorkItem?.cancel()
         reconnectWorkItem = nil
-        stopPingTimer()
+        stopHeartbeatTimer()
         closeConnection()
         lastErrorDescription = nil
         state = .disconnected
@@ -118,6 +119,24 @@ final class GatewayClient {
     func sendAudio(_ pcmData: Data) {
         guard case .connected = state else { return }
         webSocketTask?.send(.data(pcmData)) { _ in }
+    }
+
+    func sendText(_ text: String) {
+        guard case .connected = state else { return }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let payload: [String: Any] = [
+            "clientContent": [
+                "turnComplete": true,
+                "turns": [
+                    [
+                        "role": "user",
+                        "parts": [["text": trimmed]]
+                    ]
+                ]
+            ]
+        ]
+        sendJSON(payload)
     }
 
     func sendScreenCapture(imageBase64: String, context: String, userId: String) {
@@ -169,7 +188,7 @@ final class GatewayClient {
 
         sendSetupPayload()
         startReceiveLoop()
-        startPingTimer()
+        startHeartbeatTimer()
     }
 
     private func sendSetupPayload() {
@@ -188,7 +207,11 @@ final class GatewayClient {
             "type": "setup",
             "config": config
         ]
-        sendJSON(payload)
+        var mutablePayload = payload
+        if let sessionHandle, !sessionHandle.isEmpty {
+            mutablePayload["sessionHandle"] = sessionHandle
+        }
+        sendJSON(mutablePayload)
     }
 
     private func sendJSON(_ payload: [String: Any]) {
@@ -216,6 +239,7 @@ final class GatewayClient {
     }
 
     private func handleWebSocketMessage(_ message: URLSessionWebSocketTask.Message) {
+        updateHeartbeatReceipt()
         switch message {
         case .data(let data):
             let parsed = AudioMessageParser.parse(data)
@@ -229,6 +253,10 @@ final class GatewayClient {
                 lastPongAt = Date()
                 lastErrorDescription = nil
                 state = .connected(sessionId: sid)
+            case .sessionResumptionUpdate(let handle):
+                let trimmed = handle.trimmingCharacters(in: .whitespacesAndNewlines)
+                sessionHandle = trimmed.isEmpty ? nil : trimmed
+                onMessage?(parsed)
             default:
                 onMessage?(parsed)
             }
@@ -243,6 +271,10 @@ final class GatewayClient {
                 lastPongAt = Date()
                 lastErrorDescription = nil
                 state = .connected(sessionId: sid)
+            case .sessionResumptionUpdate(let handle):
+                let trimmed = handle.trimmingCharacters(in: .whitespacesAndNewlines)
+                sessionHandle = trimmed.isEmpty ? nil : trimmed
+                onMessage?(parsed)
             default:
                 onMessage?(parsed)
             }
@@ -251,21 +283,21 @@ final class GatewayClient {
         }
     }
 
-    private func startPingTimer() {
-        stopPingTimer()
-        pingTimer = Timer.scheduledTimer(withTimeInterval: pingInterval, repeats: true) { [weak self] _ in
+    private func startHeartbeatTimer() {
+        stopHeartbeatTimer()
+        heartbeatTimer = Timer.scheduledTimer(withTimeInterval: pingInterval, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.runPingHealthCheck()
+                self?.runHeartbeatHealthCheck()
             }
         }
     }
 
-    private func stopPingTimer() {
-        pingTimer?.invalidate()
-        pingTimer = nil
+    private func stopHeartbeatTimer() {
+        heartbeatTimer?.invalidate()
+        heartbeatTimer = nil
     }
 
-    private func runPingHealthCheck() {
+    private func runHeartbeatHealthCheck() {
         guard case .connected = state else { return }
 
         if let lastPongAt, Date().timeIntervalSince(lastPongAt) > zombieTimeout {
@@ -275,29 +307,20 @@ final class GatewayClient {
         }
 
         lastPingSentAt = Date()
-        webSocketTask?.sendPing { [weak self] error in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                if let error {
-                    self.lastErrorDescription = self.friendlyErrorDescription(for: error)
-                    self.handleConnectionDropped(error: error)
-                } else {
-                    let now = Date()
-                    self.lastPongAt = now
-                    if let sentAt = self.lastPingSentAt {
-                        let latency = Int((now.timeIntervalSince(sentAt) * 1000).rounded())
-                        self.onLatencyUpdate?(max(0, latency))
-                    }
-                }
-            }
-        }
+        let heartbeat: [String: Any] = [
+            "clientContent": [
+                "turnComplete": false,
+                "turns": []
+            ]
+        ]
+        sendJSON(heartbeat)
     }
 
     private func handleConnectionDropped(error: Error) {
         if isManuallyDisconnected { return }
         if case .disconnected = state { return }
 
-        stopPingTimer()
+        stopHeartbeatTimer()
         closeConnection()
         onDisconnected?()
         lastErrorDescription = friendlyErrorDescription(for: error)
@@ -398,6 +421,16 @@ final class GatewayClient {
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
         webSocketTask = nil
         urlSession = nil
+    }
+
+    private func updateHeartbeatReceipt() {
+        let now = Date()
+        lastPongAt = now
+        if let sentAt = lastPingSentAt {
+            let latency = Int((now.timeIntervalSince(sentAt) * 1000).rounded())
+            onLatencyUpdate?(max(0, latency))
+            lastPingSentAt = nil
+        }
     }
 
     enum GatewayError: Error, LocalizedError {
