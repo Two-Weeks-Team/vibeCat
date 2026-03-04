@@ -4,34 +4,33 @@ import VibeCatCore
 @MainActor
 final class CatPanel: NSPanel {
     private let imageView = NSImageView()
+    private let emotionIndicator = NSTextField(labelWithString: "")
     private let bubbleView = ChatBubbleView()
     private let catViewModel: CatViewModel
     private let spriteAnimator: SpriteAnimator
-    private var catSize: CGFloat = 100
-    private let horizontalPadding: CGFloat = 10
-    private let bottomPadding: CGFloat = 10
-    private let topPadding: CGFloat = 50
+    private var spriteSize: CGFloat = 100
 
     init(catViewModel: CatViewModel, spriteAnimator: SpriteAnimator) {
         self.catViewModel = catViewModel
         self.spriteAnimator = spriteAnimator
 
-        let size = Self.panelSize(for: 100)
-        let screen = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let origin = NSPoint(x: screen.maxX - size.width - 20, y: screen.minY + 20)
+        let mouseGlobal = NSEvent.mouseLocation
+        let screenFrame = NSScreen.screens.first(where: { NSMouseInRect(mouseGlobal, $0.frame, false) })?.frame
+            ?? NSScreen.main?.frame
+            ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
 
         super.init(
-            contentRect: NSRect(origin: origin, size: size),
+            contentRect: screenFrame,
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
 
-        level = .floating
+        level = .statusBar
         backgroundColor = .clear
         isOpaque = false
         hasShadow = false
-        collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         ignoresMouseEvents = true
         isReleasedWhenClosed = false
 
@@ -43,11 +42,17 @@ final class CatPanel: NSPanel {
     private func setupViews() {
         guard let contentView else { return }
 
-        imageView.frame = imageFrame(for: catSize, in: contentView.bounds)
+        imageView.frame = NSRect(x: 0, y: 0, width: spriteSize, height: spriteSize)
         imageView.imageScaling = .scaleProportionallyUpOrDown
         contentView.addSubview(imageView)
 
-        bubbleView.frame = NSRect(x: -180, y: topPadding + catSize - 8, width: 180, height: 50)
+        emotionIndicator.font = NSFont.systemFont(ofSize: 18)
+        emotionIndicator.textColor = .white
+        emotionIndicator.isHidden = true
+        emotionIndicator.frame = NSRect(x: 0, y: 0, width: 28, height: 24)
+        contentView.addSubview(emotionIndicator)
+
+        bubbleView.frame = NSRect(x: 0, y: 0, width: 180, height: 50)
         contentView.addSubview(bubbleView)
     }
 
@@ -58,11 +63,13 @@ final class CatPanel: NSPanel {
     }
 
     private func wireViewModel() {
-        catViewModel.onPositionUpdate = { [weak self] point in
+        catViewModel.onScreenFrameUpdate = { [weak self] screenFrame in
+            self?.setFrame(screenFrame, display: true)
+        }
+
+        catViewModel.onPositionUpdate = { [weak self] localPoint in
             guard let self else { return }
-            let currentFrame = self.frame
-            let newOrigin = NSPoint(x: point.x - currentFrame.width / 2, y: point.y - currentFrame.height / 2)
-            self.setFrameOrigin(newOrigin)
+            self.updateSpritePosition(localPoint)
         }
     }
 
@@ -71,43 +78,46 @@ final class CatPanel: NSPanel {
         bubbleView.show(text: text)
     }
 
-    func setCatSize(_ presetSize: String?) {
+    func setEmotionIndicator(_ text: String?) {
+        let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        emotionIndicator.stringValue = trimmed
+        emotionIndicator.isHidden = trimmed.isEmpty
+        layoutOverlayElements()
+    }
+
+    func applySpriteSize(presetSize: String?) {
         switch presetSize?.lowercased() {
         case "medium":
-            catSize = 120
+            spriteSize = 120
         case "large":
-            catSize = 150
+            spriteSize = 150
         default:
-            catSize = 100
+            spriteSize = 100
         }
 
-        let oldFrame = frame
-        let newSize = Self.panelSize(for: catSize)
-        let centeredOrigin = NSPoint(
-            x: oldFrame.midX - newSize.width / 2,
-            y: oldFrame.midY - newSize.height / 2
-        )
-        setFrame(NSRect(origin: centeredOrigin, size: newSize), display: true)
-
-        guard let contentView else { return }
-        imageView.frame = imageFrame(for: catSize, in: contentView.bounds)
+        imageView.frame.size = NSSize(width: spriteSize, height: spriteSize)
+        layoutOverlayElements()
     }
 
     func show() {
-        orderFront(nil)
+        orderFrontRegardless()
     }
 
-    private static func panelSize(for catSize: CGFloat) -> NSSize {
-        NSSize(width: catSize + 20, height: catSize + 60)
+    func catPositionInScreenCoordinates() -> CGPoint {
+        CGPoint(x: frame.minX + imageView.frame.midX, y: frame.minY + imageView.frame.midY)
     }
 
-    private func imageFrame(for catSize: CGFloat, in contentBounds: NSRect) -> NSRect {
-        NSRect(
-            x: (contentBounds.width - catSize) / 2,
-            y: bottomPadding,
-            width: catSize,
-            height: catSize
+    private func updateSpritePosition(_ localPoint: CGPoint) {
+        imageView.frame.origin = NSPoint(
+            x: localPoint.x - imageView.frame.width / 2,
+            y: localPoint.y - imageView.frame.height / 2
         )
+        layoutOverlayElements()
+    }
+
+    private func layoutOverlayElements() {
+        let catFrame = imageView.frame
+        emotionIndicator.frame.origin = NSPoint(x: catFrame.maxX + 4, y: catFrame.maxY - 20)
     }
 
     private func updateBubbleFrame(for text: String) {

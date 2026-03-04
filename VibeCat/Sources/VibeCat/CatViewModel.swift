@@ -10,9 +10,10 @@ final class CatViewModel {
     private var moveTimer: Timer?
     private var returnHomeTimer: Timer?
     private var screenBounds: CGRect = .zero
-    weak var panel: NSPanel?
 
     var onPositionUpdate: ((CGPoint) -> Void)?
+    var onScreenFrameUpdate: ((CGRect) -> Void)?
+    var activeScreenFrame: CGRect { screenBounds }
 
     init() {
         updateScreenBounds(for: NSEvent.mouseLocation)
@@ -23,7 +24,7 @@ final class CatViewModel {
     }
 
     func pointToward(_ screenPoint: CGPoint) {
-        let clamped = clampToBounds(screenPoint)
+        let clamped = clampToBounds(globalToLocal(screenPoint))
         targetPosition = clamped
         returnHomeTimer?.invalidate()
         returnHomeTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { [weak self] _ in
@@ -49,8 +50,9 @@ final class CatViewModel {
     private func updateFromMouse() {
         let mouseGlobal = NSEvent.mouseLocation
         updateScreenBounds(for: mouseGlobal)
-        targetPosition = clampToBounds(mouseGlobal)
-        facingLeft = mouseGlobal.x < position.x
+        let mouseLocal = globalToLocal(mouseGlobal)
+        targetPosition = clampToBounds(mouseLocal)
+        facingLeft = mouseLocal.x < position.x
     }
 
     private func updatePosition() {
@@ -80,8 +82,8 @@ final class CatViewModel {
     private func clampToBounds(_ point: CGPoint) -> CGPoint {
         let margin: CGFloat = 60
         return CGPoint(
-            x: max(margin, min(screenBounds.maxX - margin, point.x)),
-            y: max(margin, min(screenBounds.maxY - margin, point.y))
+            x: max(margin, min(screenBounds.width - margin, point.x)),
+            y: max(margin, min(screenBounds.height - margin, point.y))
         )
     }
 
@@ -93,17 +95,20 @@ final class CatViewModel {
 
         guard newBounds != screenBounds else { return }
         screenBounds = newBounds
-        homePosition = CGPoint(x: screenBounds.maxX - 120, y: screenBounds.maxY - 120)
+        homePosition = CGPoint(x: screenBounds.width - 120, y: screenBounds.height - 120)
 
-        guard let panel else { return }
-        let panelFrame = panel.frame
-        let clampedOrigin = NSPoint(
-            x: max(screenBounds.minX, min(screenBounds.maxX - panelFrame.width, panelFrame.origin.x)),
-            y: max(screenBounds.minY, min(screenBounds.maxY - panelFrame.height, panelFrame.origin.y))
-        )
-        panel.setFrameOrigin(clampedOrigin)
-        position = CGPoint(x: clampedOrigin.x + panelFrame.width / 2, y: clampedOrigin.y + panelFrame.height / 2)
+        if position == .zero {
+            position = homePosition
+            targetPosition = homePosition
+        }
+
+        position = clampToBounds(position)
         targetPosition = clampToBounds(position)
+        onScreenFrameUpdate?(screenBounds)
         onPositionUpdate?(position)
+    }
+
+    private func globalToLocal(_ point: CGPoint) -> CGPoint {
+        CGPoint(x: point.x - screenBounds.minX, y: point.y - screenBounds.minY)
     }
 }
