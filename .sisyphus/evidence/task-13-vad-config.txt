@@ -1,0 +1,19 @@
+Tasks 12, 13, 14 - Audio proxy, VAD config, Transcription forwarding
+Date: 2026년  3월  3일 화요일 23시 26분 27초 KST
+Build: cd backend/realtime-gateway && go build ./... → BUILD OK
+
+Task 12 - Audio stream proxy (already in handler.go from Task 11):
+- client PCM 16kHz → session.SendAudio() → Gemini
+- Gemini audio response → binary WebSocket frame → client
+- Interruption: sc.Interrupted → {type:interrupted} to client
+- Turn completion: sc.TurnComplete → {type:turnComplete} to client
+
+Task 13 - VAD configuration (session.go):
+- StartOfSpeechSensitivity: START_SENSITIVITY_LOW
+- EndOfSpeechSensitivity: END_SENSITIVITY_LOW
+- PrefixPaddingMs: 20ms
+- SilenceDurationMs: 100ms
+
+Task 14 - Transcription forwarding (handler.go):
+- sc.OutputTranscription.Text → {type:transcription, text:..., finished:bool}
+- finished=true when sc.TurnComplete
