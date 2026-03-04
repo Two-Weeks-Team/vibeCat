@@ -1,0 +1,52 @@
+steps:
+  - name: 'golang:1.24'
+    args: ['go', 'test', './...']
+    dir: 'backend/adk-orchestrator'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'asia-northeast3-docker.pkg.dev/vibecat-489105/vibecat-images/adk-orchestrator:$COMMIT_SHA'
+      - '-t'
+      - 'asia-northeast3-docker.pkg.dev/vibecat-489105/vibecat-images/adk-orchestrator:latest'
+      - '.'
+    dir: 'backend/adk-orchestrator'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'asia-northeast3-docker.pkg.dev/vibecat-489105/vibecat-images/adk-orchestrator:$COMMIT_SHA'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'asia-northeast3-docker.pkg.dev/vibecat-489105/vibecat-images/adk-orchestrator:latest'
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'adk-orchestrator'
+      - '--image'
+      - 'asia-northeast3-docker.pkg.dev/vibecat-489105/vibecat-images/adk-orchestrator:$COMMIT_SHA'
+      - '--region'
+      - 'asia-northeast3'
+      - '--port'
+      - '8080'
+      - '--memory'
+      - '1Gi'
+      - '--min-instances'
+      - '0'
+      - '--max-instances'
+      - '10'
+      - '--concurrency'
+      - '100'
+
+images:
+  - 'asia-northeast3-docker.pkg.dev/vibecat-489105/vibecat-images/adk-orchestrator:$COMMIT_SHA'
+  - 'asia-northeast3-docker.pkg.dev/vibecat-489105/vibecat-images/adk-orchestrator:latest'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

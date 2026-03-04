@@ -1,0 +1,52 @@
+steps:
+  - name: 'golang:1.24'
+    args: ['go', 'test', './...']
+    dir: 'backend/realtime-gateway'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'asia-northeast3-docker.pkg.dev/vibecat-489105/vibecat-images/realtime-gateway:$COMMIT_SHA'
+      - '-t'
+      - 'asia-northeast3-docker.pkg.dev/vibecat-489105/vibecat-images/realtime-gateway:latest'
+      - '.'
+    dir: 'backend/realtime-gateway'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'asia-northeast3-docker.pkg.dev/vibecat-489105/vibecat-images/realtime-gateway:$COMMIT_SHA'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'asia-northeast3-docker.pkg.dev/vibecat-489105/vibecat-images/realtime-gateway:latest'
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'realtime-gateway'
+      - '--image'
+      - 'asia-northeast3-docker.pkg.dev/vibecat-489105/vibecat-images/realtime-gateway:$COMMIT_SHA'
+      - '--region'
+      - 'asia-northeast3'
+      - '--port'
+      - '8080'
+      - '--memory'
+      - '512Mi'
+      - '--min-instances'
+      - '0'
+      - '--max-instances'
+      - '10'
+      - '--concurrency'
+      - '80'
+
+images:
+  - 'asia-northeast3-docker.pkg.dev/vibecat-489105/vibecat-images/realtime-gateway:$COMMIT_SHA'
+  - 'asia-northeast3-docker.pkg.dev/vibecat-489105/vibecat-images/realtime-gateway:latest'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
