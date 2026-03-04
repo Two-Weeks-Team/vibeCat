@@ -1,0 +1,61 @@
+TASK 2: ADK Go SDK Agent Graph Spike
+Date: 2026-03-03
+Result: PASS
+
+Module Path: google.golang.org/adk
+Build: PASS
+Run: PASS
+
+API Patterns Found:
+- Define agent:
+```go
+step1, err := agent.New(agent.Config{
+    Name:        "vision_agent",
+    Description: "Static spike agent",
+    Run: func(ctx agent.InvocationContext) iter.Seq2[*session.Event, error] {
+        return func(yield func(*session.Event, error) bool) {
+            content := &genai.Content{Parts: []*genai.Part{{Text: `{"agent":"vision_agent"}`}}}
+            yield(&session.Event{LLMResponse: model.LLMResponse{Content: content}}, nil)
+        }
+    },
+})
+```
+- Wire graph:
+```go
+graph, err := sequentialagent.New(sequentialagent.Config{
+    AgentConfig: agent.Config{
+        Name:      "two_agent_graph",
+        SubAgents: []agent.Agent{step1, step2},
+    },
+})
+```
+- Execute graph:
+```go
+r, _ := runner.New(runner.Config{AppName: "adk_graph_spike", Agent: graph, SessionService: sessions})
+sess, _ := sessions.Create(ctx, &session.CreateRequest{AppName: "adk_graph_spike", UserID: "spike-user"})
+for event, err := range r.Run(ctx, "spike-user", sess.Session.ID(), genai.NewContentFromText("Analyze", genai.RoleUser), agent.RunConfig{StreamingMode: agent.StreamingModeNone}) {
+    _ = event
+    _ = err
+}
+```
+- Structured output:
+```go
+type stepOutput struct {
+    Agent   string `json:"agent"`
+    Stage   int    `json:"stage"`
+    Summary string `json:"summary"`
+}
+payload, _ := json.Marshal(stepOutput{Agent: "vision_agent", Stage: 1, Summary: "screen context extracted"})
+content := &genai.Content{Parts: []*genai.Part{{Text: string(payload)}}}
+yield(&session.Event{LLMResponse: model.LLMResponse{Content: content}}, nil)
+```
+
+Multi-Agent Support: CONFIRMED
+
+Notes:
+- Verified upstream samples use `google.golang.org/adk` in `go.mod` (e.g., adk-samples/go/agents/sail-researcher/go.mod).
+- `go list -m -versions google.golang.org/adk` shows `v0.5.0` exists.
+- ADK graph form in Go uses workflow agents (e.g., `sequentialagent`) with `SubAgents` in `agent.Config`.
+- Run output from spike:
+  - EVENT [vision_agent]: {"agent":"vision_agent","stage":1,"summary":"screen context extracted"}
+  - EVENT [memory_agent]: {"agent":"memory_agent","stage":2,"summary":"cross-session memory attached"}
