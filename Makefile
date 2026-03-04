@@ -4,7 +4,7 @@
 SWIFT_DIR     = VibeCat
 BIN_PATH      = $(shell cd $(SWIFT_DIR) && swift build --show-bin-path 2>/dev/null || echo "$(SWIFT_DIR)/.build/arm64-apple-macosx/debug")
 BINARY        = $(BIN_PATH)/VibeCat
-SIGN_IDENTITY ?= Apple Development: sangguen@2weeks.co (5ZMDJBXU63)
+SIGN_IDENTITY ?= Apple Development: sejun@2weeks.co (LPR2TQN8J5)
 ENTITLEMENTS  = $(SWIFT_DIR)/VibeCat.entitlements
 LOG_DIR       = $(SWIFT_DIR)/.build
 
