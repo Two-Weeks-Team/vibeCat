@@ -64,8 +64,8 @@ gcloud run deploy realtime-gateway \
   --min-instances 0 \
   --max-instances 3 \
   --allow-unauthenticated \
-  --set-secrets "GEMINI_API_KEY=vibecat-gemini-api-key:latest,AUTH_SECRET=vibecat-gateway-auth-secret:latest" \
-  --set-env-vars "ORCHESTRATOR_URL=${ORCHESTRATOR_URL}" \
+  --set-secrets "GEMINI_API_KEY=vibecat-gemini-api-key:latest,GATEWAY_AUTH_SECRET=vibecat-gateway-auth-secret:latest" \
+  --set-env-vars "ADK_ORCHESTRATOR_URL=${ORCHESTRATOR_URL}" \
   --quiet
 
 GATEWAY_URL=$(gcloud run services describe realtime-gateway \
