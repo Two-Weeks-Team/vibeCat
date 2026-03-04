@@ -1,0 +1,157 @@
+name: CD — Deploy to Cloud Run
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: 'Service to deploy'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+          - both
+          - gateway
+          - orchestrator
+
+env:
+  PROJECT_ID: vibecat-489105
+  REGION: asia-northeast3
+  REGISTRY: asia-northeast3-docker.pkg.dev/vibecat-489105/vibecat-images
+
+jobs:
+  deploy-orchestrator:
+    name: Deploy ADK Orchestrator
+    if: ${{ inputs.service == 'both' || inputs.service == 'orchestrator' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/163070481841/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-actions@vibecat-489105.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
+
+      - name: Build & Push
+        run: |
+          docker build -t ${REGISTRY}/adk-orchestrator:${{ github.sha }} backend/adk-orchestrator/
+          docker push ${REGISTRY}/adk-orchestrator:${{ github.sha }}
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy adk-orchestrator \
+            --image ${REGISTRY}/adk-orchestrator:${{ github.sha }} \
+            --region ${REGION} \
+            --project ${PROJECT_ID} \
+            --port 8080 \
+            --memory 1Gi \
+            --cpu 1 \
+            --min-instances 0 \
+            --max-instances 3 \
+            --no-allow-unauthenticated \
+            --set-secrets "GEMINI_API_KEY=vibecat-gemini-api-key:latest" \
+            --quiet
+
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+
+  deploy-gateway:
+    name: Deploy Realtime Gateway
+    if: ${{ inputs.service == 'both' || inputs.service == 'gateway' }}
+    needs: [deploy-orchestrator]
+    # If only deploying gateway, skip the needs check
+    if: ${{ always() && (inputs.service == 'both' || inputs.service == 'gateway') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/163070481841/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-actions@vibecat-489105.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
+
+      - name: Get Orchestrator URL
+        id: orch
+        run: |
+          URL=$(gcloud run services describe adk-orchestrator --region ${REGION} --project ${PROJECT_ID} --format "value(status.url)")
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Build & Push
+        run: |
+          docker build -t ${REGISTRY}/realtime-gateway:${{ github.sha }} backend/realtime-gateway/
+          docker push ${REGISTRY}/realtime-gateway:${{ github.sha }}
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy realtime-gateway \
+            --image ${REGISTRY}/realtime-gateway:${{ github.sha }} \
+            --region ${REGION} \
+            --project ${PROJECT_ID} \
+            --port 8080 \
+            --memory 512Mi \
+            --cpu 1 \
+            --min-instances 0 \
+            --max-instances 3 \
+            --allow-unauthenticated \
+            --set-secrets "GEMINI_API_KEY=vibecat-gemini-api-key:latest,GATEWAY_AUTH_SECRET=vibecat-gateway-auth-secret:latest" \
+            --set-env-vars "ADK_ORCHESTRATOR_URL=${{ steps.orch.outputs.url }}" \
+            --quiet
+
+      - name: Get Gateway URL
+        id: gw
+        run: |
+          URL=$(gcloud run services describe realtime-gateway --region ${REGION} --project ${PROJECT_ID} --format "value(status.url)")
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+          echo "### Deployment Complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Gateway**: ${URL}" >> "$GITHUB_STEP_SUMMARY"
+
+  smoke-test:
+    name: Smoke Test (E2E)
+    needs: [deploy-gateway]
+    if: ${{ always() && needs.deploy-gateway.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/163070481841/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-actions@vibecat-489105.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Get Gateway URL
+        id: gw
+        run: |
+          URL=$(gcloud run services describe realtime-gateway --region asia-northeast3 --project vibecat-489105 --format "value(status.url)")
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Run E2E tests
+        env:
+          GATEWAY_URL: ${{ steps.gw.outputs.url }}
+        run: go test -v -count=1 ./...
+        working-directory: tests/e2e
