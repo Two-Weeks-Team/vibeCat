@@ -1,0 +1,14 @@
+Task 9 - WebSocket server build verification
+Date: 2026년  3월  3일 화요일 23시 20분 20초 KST
+Command: cd backend/realtime-gateway && go build ./...
+Result: BUILD OK
+
+Health endpoint test:
+curl -s http://localhost:8080/healthz
+Response: {"connections":0,"service":"realtime-gateway","status":"ok"}
+
+Files created:
+- backend/realtime-gateway/internal/ws/handler.go (WebSocket upgrade handler)
+- backend/realtime-gateway/internal/ws/registry.go (thread-safe connection registry)
+- backend/realtime-gateway/main.go (updated: /ws/live route + connections in /healthz)
+- backend/realtime-gateway/go.mod (added gorilla/websocket v1.5.3)
