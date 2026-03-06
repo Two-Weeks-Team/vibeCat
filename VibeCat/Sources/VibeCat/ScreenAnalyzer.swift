@@ -15,6 +15,7 @@ final class ScreenAnalyzer {
     private var isRunning = false
     private(set) var isAnalyzing = false
     private var userId: String = "local-user"
+    private var sessionStartTime: Date = Date()
 
     var onSpeechEvent: ((CompanionSpeechEvent) -> Void)?
     var onBackgroundSpeech: ((String) -> Void)?
@@ -35,9 +36,14 @@ final class ScreenAnalyzer {
         self.spriteAnimator = spriteAnimator
     }
 
+    var activityMinutes: Int {
+        Int(Date().timeIntervalSince(sessionStartTime) / 60)
+    }
+
     func start() {
         guard !isRunning else { return }
         isRunning = true
+        sessionStartTime = Date()
         scheduleNextCapture()
     }
 
@@ -115,9 +121,9 @@ final class ScreenAnalyzer {
         NSLog("[CAPTURE] sendToGateway: base64Length=%lu, character=%@, context=%@, highSignificance=%d", base64.count, character, context, highSignificance)
 
         if highSignificance {
-            gatewayClient.sendForceCapture(imageBase64: base64, context: context, userId: userId, character: character, soul: soul)
+            gatewayClient.sendForceCapture(imageBase64: base64, context: context, userId: userId, character: character, soul: soul, activityMinutes: activityMinutes)
         } else {
-            gatewayClient.sendScreenCapture(imageBase64: base64, context: context, userId: userId, character: character, soul: soul)
+            gatewayClient.sendScreenCapture(imageBase64: base64, context: context, userId: userId, character: character, soul: soul, activityMinutes: activityMinutes)
         }
 
         spriteAnimator.setState(.thinking)

@@ -17,13 +17,16 @@ import (
 )
 
 const (
-	silenceThreshold = 180 * time.Second
-	engageGenModel   = "gemini-3.1-flash-lite-preview"
+	silenceThreshold     = 180 * time.Second
+	restReminderInterval = 50 * time.Minute
+	restReminderCooldown = 30 * time.Minute
+	engageGenModel       = "gemini-3.1-flash-lite-preview"
 )
 
 type Agent struct {
-	genaiClient  *genai.Client
-	lastActivity time.Time
+	genaiClient      *genai.Client
+	lastActivity     time.Time
+	lastRestReminder time.Time
 }
 
 func New(genaiClient *genai.Client) *Agent {
@@ -69,6 +72,22 @@ func (a *Agent) Run(ctx agent.InvocationContext) iter.Seq2[*session.Event, error
 			}
 		}
 
+		activityMin := readActivityMinutes(ctx)
+		sinceLastReminder := time.Since(a.lastRestReminder)
+		if activityMin >= int(restReminderInterval.Minutes()) && sinceLastReminder > restReminderCooldown {
+			if result.Decision == nil {
+				result.Decision = &models.MediatorDecision{}
+			}
+			if !result.Decision.ShouldSpeak {
+				lang := readLanguageFromState(ctx)
+				result.Decision.ShouldSpeak = true
+				result.Decision.Reason = "rest_reminder"
+				result.SpeechText = a.generateRestMessage(ctx, lang, activityMin)
+				a.lastRestReminder = time.Now()
+				slog.Info("[ENGAGEMENT] rest reminder TRIGGERED", "activity_minutes", activityMin)
+			}
+		}
+
 		data, err := json.Marshal(result)
 		if err != nil {
 			yield(nil, fmt.Errorf("engagement marshal: %w", err))
@@ -83,6 +102,27 @@ func (a *Agent) Run(ctx agent.InvocationContext) iter.Seq2[*session.Event, error
 			},
 		}, nil)
 	}
+}
+
+func readActivityMinutes(ctx agent.InvocationContext) int {
+	sess := ctx.Session()
+	if sess == nil || sess.State() == nil {
+		return 0
+	}
+	val, err := sess.State().Get("activity_minutes")
+	if err != nil {
+		return 0
+	}
+	switch v := val.(type) {
+	case float64:
+		return int(v)
+	case int:
+		return v
+	case json.Number:
+		n, _ := v.Int64()
+		return int(n)
+	}
+	return 0
 }
 
 func readLanguageFromState(ctx agent.InvocationContext) string {
@@ -115,6 +155,41 @@ func (a *Agent) generateSilenceMessage(ctx agent.InvocationContext, language str
 		return "Things have been quiet. Need a hand with anything?"
 	}
 	return "좀 조용하네요. 혹시 도움이 필요한 부분이 있나요?"
+}
+
+func (a *Agent) generateRestMessage(ctx agent.InvocationContext, language string, minutes int) string {
+	if a.genaiClient != nil {
+		lang := normalizeLanguage(language)
+		prompt := fmt.Sprintf(`You are VibeCat, a caring coding companion.
+The developer has been working for %d minutes straight without a break.
+Generate ONE short rest reminder (under 80 characters).
+
+Rules:
+- Be warm and caring, not nagging
+- Mention a specific suggestion: stretch, water, walk, look away from screen
+- Respond in %s
+- Return ONLY the message text`, minutes, lang)
+
+		resp, err := a.genaiClient.Models.GenerateContent(ctx, engageGenModel, []*genai.Content{
+			{Parts: []*genai.Part{{Text: prompt}}, Role: genai.RoleUser},
+		}, &genai.GenerateContentConfig{
+			MaxOutputTokens: 80,
+		})
+		if err == nil && len(resp.Candidates) > 0 && resp.Candidates[0].Content != nil {
+			text := ""
+			for _, part := range resp.Candidates[0].Content.Parts {
+				text += part.Text
+			}
+			text = strings.TrimSpace(text)
+			if text != "" {
+				return text
+			}
+		}
+	}
+	if language == "English" {
+		return fmt.Sprintf("You've been coding for %d minutes. Time to stretch and grab some water!", minutes)
+	}
+	return fmt.Sprintf("%d분째 코딩 중이에요. 잠깐 스트레칭하고 물 한 잔 어때요?", minutes)
 }
 
 func (a *Agent) generateDynamic(ctx agent.InvocationContext, language string) string {

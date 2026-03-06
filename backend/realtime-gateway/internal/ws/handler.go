@@ -353,13 +353,14 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client, ttsCli
 						continue
 					}
 					var captureMsg struct {
-						Type      string `json:"type"`
-						Image     string `json:"image"`
-						Context   string `json:"context"`
-						SessionID string `json:"sessionId"`
-						UserID    string `json:"userId"`
-						Character string `json:"character"`
-						Soul      string `json:"soul"`
+						Type            string `json:"type"`
+						Image           string `json:"image"`
+						Context         string `json:"context"`
+						SessionID       string `json:"sessionId"`
+						UserID          string `json:"userId"`
+						Character       string `json:"character"`
+						Soul            string `json:"soul"`
+						ActivityMinutes int    `json:"activityMinutes"`
 					}
 					if parseErr := json.Unmarshal(data, &captureMsg); parseErr != nil {
 						slog.Warn("parse capture message failed", "conn_id", c.ID, "error", parseErr)
@@ -384,12 +385,13 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client, ttsCli
 						)
 						startTime := time.Now()
 						result, analyzeErr := adkClient.Analyze(analyzeCtx, adk.AnalysisRequest{
-							Image:     captureMsg.Image,
-							Context:   captureMsg.Context,
-							SessionID: captureMsg.SessionID,
-							UserID:    captureMsg.UserID,
-							Character: captureMsg.Character,
-							Soul:      captureMsg.Soul,
+							Image:           captureMsg.Image,
+							Context:         captureMsg.Context,
+							SessionID:       captureMsg.SessionID,
+							UserID:          captureMsg.UserID,
+							Character:       captureMsg.Character,
+							Soul:            captureMsg.Soul,
+							ActivityMinutes: captureMsg.ActivityMinutes,
 						})
 						elapsed := time.Since(startTime)
 						if analyzeErr != nil {

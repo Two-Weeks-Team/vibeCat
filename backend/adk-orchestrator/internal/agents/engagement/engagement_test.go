@@ -3,6 +3,8 @@ package engagement
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"iter"
 	"testing"
 	"time"
 
@@ -82,6 +84,113 @@ func TestRunEngagementAfterSilence(t *testing.T) {
 	}
 	if got.SpeechText == "" {
 		t.Fatal("expected proactive speech text")
+	}
+}
+
+type fakeSession struct {
+	session.Session
+	st *fakeState
+}
+type fakeState struct {
+	data map[string]any
+}
+
+func (s *fakeState) Get(key string) (any, error) {
+	v, ok := s.data[key]
+	if !ok {
+		return nil, fmt.Errorf("not found")
+	}
+	return v, nil
+}
+func (s *fakeState) Set(key string, val any) error {
+	s.data[key] = val
+	return nil
+}
+func (s *fakeState) Has(key string) bool {
+	_, ok := s.data[key]
+	return ok
+}
+func (s *fakeState) Delete(key string) error {
+	delete(s.data, key)
+	return nil
+}
+func (s *fakeState) All() iter.Seq2[string, any] {
+	return func(yield func(string, any) bool) {
+		for k, v := range s.data {
+			if !yield(k, v) {
+				return
+			}
+		}
+	}
+}
+
+func (fs *fakeSession) State() session.State      { return fs.st }
+func (fs *fakeSession) ID() string                { return "test-session" }
+func (fs *fakeSession) AppName() string           { return "test" }
+func (fs *fakeSession) UserID() string            { return "test-user" }
+func (fs *fakeSession) Events() session.Events    { return nil }
+func (fs *fakeSession) LastUpdateTime() time.Time { return time.Now() }
+
+type fakeCtxWithSession struct {
+	*fakeInvocationContext
+	sess *fakeSession
+}
+
+func (f *fakeCtxWithSession) Session() session.Session { return f.sess }
+
+func TestRunRestReminder(t *testing.T) {
+	a := New(nil)
+	a.lastActivity = time.Now()
+
+	input := models.AnalysisResult{}
+	data, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("marshal input: %v", err)
+	}
+
+	fakeCtx := newFakeInvocationContext(string(data))
+	ctxWithSess := &fakeCtxWithSession{
+		fakeInvocationContext: fakeCtx,
+		sess: &fakeSession{st: &fakeState{data: map[string]any{
+			"activity_minutes": float64(55),
+		}}},
+	}
+
+	got := decodeSingleResult(t, a.Run(ctxWithSess))
+
+	if got.Decision == nil || !got.Decision.ShouldSpeak {
+		t.Fatal("expected rest reminder to trigger speech")
+	}
+	if got.Decision.Reason != "rest_reminder" {
+		t.Fatalf("Reason = %q, want rest_reminder", got.Decision.Reason)
+	}
+	if got.SpeechText == "" {
+		t.Fatal("expected rest reminder speech text")
+	}
+}
+
+func TestRunNoRestReminderBeforeThreshold(t *testing.T) {
+	a := New(nil)
+	a.lastActivity = time.Now()
+
+	input := models.AnalysisResult{}
+	data, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("marshal input: %v", err)
+	}
+
+	fakeCtx := newFakeInvocationContext(string(data))
+	ctxWithSess := &fakeCtxWithSession{
+		fakeInvocationContext: fakeCtx,
+		sess: &fakeSession{st: &fakeState{data: map[string]any{
+			"activity_minutes": float64(30),
+		}}},
+	}
+
+	got := decodeSingleResult(t, a.Run(ctxWithSess))
+
+	if got.Decision != nil && got.Decision.ShouldSpeak {
+		t.Fatalf("expected no speech at 30 minutes, got reason=%q", got.Decision.Reason)
 	}
 }
 

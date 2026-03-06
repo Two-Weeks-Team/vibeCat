@@ -163,16 +163,17 @@ final class GatewayClient {
         sendJSON(payload)
     }
 
-    func sendScreenCapture(imageBase64: String, context: String, userId: String, character: String, soul: String?) {
+    func sendScreenCapture(imageBase64: String, context: String, userId: String, character: String, soul: String?, activityMinutes: Int = 0) {
         guard case .connected(let sid) = state else { return }
-        NSLog("[GW-OUT] sendScreenCapture: image=%lu bytes, context=%@, character=%@", imageBase64.count, context, character)
+        NSLog("[GW-OUT] sendScreenCapture: image=%lu bytes, context=%@, character=%@, activityMinutes=%d", imageBase64.count, context, character, activityMinutes)
         var payload: [String: Any] = [
             "type": "screenCapture",
             "image": imageBase64,
             "context": context,
             "sessionId": sid,
             "userId": userId,
-            "character": character
+            "character": character,
+            "activityMinutes": activityMinutes
         ]
         if let soul, !soul.isEmpty {
             payload["soul"] = soul
@@ -180,16 +181,17 @@ final class GatewayClient {
         sendJSON(payload)
     }
 
-    func sendForceCapture(imageBase64: String, context: String, userId: String, character: String, soul: String?) {
+    func sendForceCapture(imageBase64: String, context: String, userId: String, character: String, soul: String?, activityMinutes: Int = 0) {
         guard case .connected(let sid) = state else { return }
-        NSLog("[GW-OUT] sendForceCapture: image=%lu bytes, context=%@, character=%@", imageBase64.count, context, character)
+        NSLog("[GW-OUT] sendForceCapture: image=%lu bytes, context=%@, character=%@, activityMinutes=%d", imageBase64.count, context, character, activityMinutes)
         var payload: [String: Any] = [
             "type": "forceCapture",
             "image": imageBase64,
             "context": context,
             "sessionId": sid,
             "userId": userId,
-            "character": character
+            "character": character,
+            "activityMinutes": activityMinutes
         ]
         if let soul, !soul.isEmpty {
             payload["soul"] = soul

@@ -16,14 +16,15 @@ import (
 const defaultTimeout = 30 * time.Second
 
 type AnalysisRequest struct {
-	Image     string `json:"image"`
-	Context   string `json:"context"`
-	Language  string `json:"language,omitempty"`
-	AppName   string `json:"appName,omitempty"`
-	SessionID string `json:"sessionId,omitempty"`
-	UserID    string `json:"userId,omitempty"`
-	Character string `json:"character,omitempty"`
-	Soul      string `json:"soul,omitempty"`
+	Image           string `json:"image"`
+	Context         string `json:"context"`
+	Language        string `json:"language,omitempty"`
+	AppName         string `json:"appName,omitempty"`
+	SessionID       string `json:"sessionId,omitempty"`
+	UserID          string `json:"userId,omitempty"`
+	Character       string `json:"character,omitempty"`
+	Soul            string `json:"soul,omitempty"`
+	ActivityMinutes int    `json:"activityMinutes,omitempty"`
 }
 
 type VisionAnalysis struct {
