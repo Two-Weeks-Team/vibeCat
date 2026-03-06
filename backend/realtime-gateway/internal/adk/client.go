@@ -18,9 +18,12 @@ const defaultTimeout = 30 * time.Second
 type AnalysisRequest struct {
 	Image     string `json:"image"`
 	Context   string `json:"context"`
+	Language  string `json:"language,omitempty"`
 	AppName   string `json:"appName,omitempty"`
 	SessionID string `json:"sessionId,omitempty"`
 	UserID    string `json:"userId,omitempty"`
+	Character string `json:"character,omitempty"`
+	Soul      string `json:"soul,omitempty"`
 }
 
 type VisionAnalysis struct {
@@ -67,6 +70,11 @@ type AnalysisResult struct {
 	SpeechText  string            `json:"speechText,omitempty"`
 }
 
+type SearchRequest struct {
+	Query    string `json:"query"`
+	Language string `json:"language,omitempty"`
+}
+
 type Client struct {
 	baseURL     string
 	httpClient  *http.Client
@@ -98,36 +106,102 @@ func (c *Client) Analyze(ctx context.Context, req AnalysisRequest) (*AnalysisRes
 		return nil, fmt.Errorf("adk client: marshal request: %w", err)
 	}
 
+	slog.Info("[ADK-CLIENT] >>> POST /analyze",
+		"url", c.baseURL+"/analyze",
+		"body_bytes", len(body),
+		"character", req.Character,
+		"context", req.Context,
+		"image_bytes", len(req.Image),
+	)
+
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/analyze", bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("adk client: create request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	// Attach Cloud Run ID token if available
 	if c.tokenSource != nil {
 		token, tokenErr := c.tokenSource.Token()
 		if tokenErr == nil {
 			httpReq.Header.Set("Authorization", "Bearer "+token.AccessToken)
 		} else {
-			slog.Warn("adk client: failed to get ID token", "error", tokenErr)
+			slog.Warn("[ADK-CLIENT] failed to get ID token", "error", tokenErr)
 		}
 	}
 
+	startTime := time.Now()
 	resp, err := c.httpClient.Do(httpReq)
+	elapsed := time.Since(startTime)
 	if err != nil {
+		slog.Warn("[ADK-CLIENT] <<< request FAILED", "elapsed", elapsed.String(), "error", err)
 		return nil, fmt.Errorf("adk client: request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		slog.Warn("[ADK-CLIENT] <<< unexpected status", "status", resp.StatusCode, "elapsed", elapsed.String())
 		return nil, fmt.Errorf("adk client: unexpected status %d", resp.StatusCode)
 	}
 
 	var result AnalysisResult
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		slog.Warn("[ADK-CLIENT] <<< decode FAILED", "elapsed", elapsed.String(), "error", err)
 		return nil, fmt.Errorf("adk client: decode response: %w", err)
 	}
 
+	slog.Info("[ADK-CLIENT] <<< response OK",
+		"elapsed", elapsed.String(),
+		"has_vision", result.Vision != nil,
+		"has_decision", result.Decision != nil,
+		"has_mood", result.Mood != nil,
+		"has_celebration", result.Celebration != nil,
+		"speech_text_len", len(result.SpeechText),
+	)
+
+	return &result, nil
+}
+
+func (c *Client) Search(ctx context.Context, req SearchRequest) (*SearchResult, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("adk client: marshal search request: %w", err)
+	}
+
+	slog.Info("[ADK-CLIENT] >>> POST /search", "query", req.Query, "language", req.Language)
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/search", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("adk client: create search request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	if c.tokenSource != nil {
+		token, tokenErr := c.tokenSource.Token()
+		if tokenErr == nil {
+			httpReq.Header.Set("Authorization", "Bearer "+token.AccessToken)
+		}
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("adk client: search request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNoContent {
+		slog.Info("[ADK-CLIENT] <<< search: classifier rejected (not a search query)")
+		return nil, nil
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("adk client: search unexpected status %d", resp.StatusCode)
+	}
+
+	var result SearchResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("adk client: decode search response: %w", err)
+	}
+
+	slog.Info("[ADK-CLIENT] <<< search OK", "query", result.Query, "summary_len", len(result.Summary))
 	return &result, nil
 }

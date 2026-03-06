@@ -7,10 +7,15 @@ import (
 	"net/http"
 	"os"
 
+	cloudlogging "cloud.google.com/go/logging"
+	texporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace"
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"google.golang.org/genai"
 	"vibecat/realtime-gateway/internal/adk"
 	"vibecat/realtime-gateway/internal/auth"
 	"vibecat/realtime-gateway/internal/live"
+	"vibecat/realtime-gateway/internal/tts"
 	"vibecat/realtime-gateway/internal/ws"
 )
 
@@ -22,6 +27,31 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
+	// Cloud Trace
+	projectID := os.Getenv("GCP_PROJECT_ID")
+	if projectID == "" {
+		projectID = "vibecat-489105"
+	}
+	traceExporter, traceErr := texporter.New(texporter.WithProjectID(projectID))
+	if traceErr != nil {
+		slog.Warn("cloud trace init failed — tracing disabled", "error", traceErr)
+	} else {
+		tp := sdktrace.NewTracerProvider(sdktrace.WithBatcher(traceExporter))
+		otel.SetTracerProvider(tp)
+		defer tp.Shutdown(context.Background())
+		slog.Info("cloud trace initialized", "project", projectID)
+	}
+
+	// Cloud Logging
+	cloudLogger, logErr := cloudlogging.NewClient(context.Background(), projectID)
+	if logErr != nil {
+		slog.Warn("cloud logging init failed — using stdout only", "error", logErr)
+	} else {
+		defer cloudLogger.Close()
+		slog.Info("cloud logging initialized", "project", projectID)
+	}
+	_ = cloudLogger
+
 	authSecret := os.Getenv("GATEWAY_AUTH_SECRET")
 	if authSecret == "" {
 		authSecret = "dev-secret-change-in-production"
@@ -30,17 +60,23 @@ func main() {
 	jwtMgr := auth.NewManager(authSecret)
 
 	var liveMgr *live.Manager
+	var ttsClient *tts.Client
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey != "" {
 		genaiClient, clientErr := genai.NewClient(context.Background(), &genai.ClientConfig{
 			APIKey:  apiKey,
 			Backend: genai.BackendGeminiAPI,
+			HTTPOptions: genai.HTTPOptions{
+				APIVersion: "v1alpha",
+			},
 		})
 		if clientErr != nil {
 			slog.Error("failed to create genai client", "error", clientErr)
 		} else {
 			liveMgr = live.NewManager(genaiClient)
 			slog.Info("gemini live manager initialized")
+			ttsClient = tts.NewClient(genaiClient)
+			slog.Info("tts client initialized")
 		}
 	} else {
 		slog.Warn("GEMINI_API_KEY not set, live sessions disabled (stub mode)")
@@ -56,13 +92,13 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", healthHandler)
+	mux.HandleFunc("/health", healthHandler)
 	mux.HandleFunc("/readyz", readyHandler)
 	mux.HandleFunc("/api/v1/auth/register", auth.RegisterHandler(jwtMgr))
 	mux.HandleFunc("/api/v1/auth/refresh", auth.RefreshHandler(jwtMgr))
-	mux.Handle("/ws/live", auth.Middleware(jwtMgr, ws.Handler(registry, liveMgr, adkClient)))
+	mux.Handle("/ws/live", auth.Middleware(jwtMgr, ws.Handler(registry, liveMgr, adkClient, ttsClient)))
 
-	addr := ":8080"
+	addr := ":" + portOrDefault("8080")
 	slog.Info("starting server", "service", serviceName, "addr", addr)
 
 	if err := http.ListenAndServe(addr, mux); err != nil {
@@ -83,6 +119,13 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+}
+
+func portOrDefault(fallback string) string {
+	if p := os.Getenv("PORT"); p != "" {
+		return p
+	}
+	return fallback
 }
 
 func readyHandler(w http.ResponseWriter, r *http.Request) {

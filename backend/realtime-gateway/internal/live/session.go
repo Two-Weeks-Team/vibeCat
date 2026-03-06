@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"google.golang.org/genai"
 )
 
-const defaultModel = "gemini-2.0-flash-live-001"
+const defaultModel = "gemini-2.5-flash-native-audio-latest"
 
 // Config holds the per-connection Gemini Live session configuration,
 // parsed from the client's "setup" message.
@@ -17,12 +18,13 @@ type Config struct {
 	Voice           string `json:"voice"`
 	Language        string `json:"language"`
 	LiveModel       string `json:"liveModel"`
-	GoogleSearch    bool   `json:"googleSearch"`
+	GoogleSearch    bool   `json:"searchEnabled"`
 	ProactiveAudio  bool   `json:"proactiveAudio"`
 	AffectiveDialog bool   `json:"affectiveDialog"`
 	Character       string `json:"character"`
 	Chattiness      string `json:"chattiness"`
-	SystemPrompt    string `json:"-"`
+	Soul            string `json:"soul"`
+	DeviceID        string `json:"deviceId"`
 }
 
 // Session wraps a Gemini Live API session.
@@ -31,6 +33,7 @@ type Session struct {
 	gemini           *genai.Session
 	cancel           context.CancelFunc
 	ResumptionHandle string
+	Cfg              Config
 }
 
 // Manager creates and manages Gemini Live sessions.
@@ -72,6 +75,7 @@ func (m *Manager) Connect(ctx context.Context, cfg Config, resumptionHandle stri
 	return &Session{
 		gemini: geminiSession,
 		cancel: cancel,
+		Cfg:    cfg,
 	}, nil
 }
 
@@ -82,6 +86,12 @@ func (s *Session) SendAudio(pcmData []byte) error {
 			MIMEType: "audio/pcm;rate=16000",
 			Data:     pcmData,
 		},
+	})
+}
+
+func (s *Session) SendText(text string) error {
+	return s.gemini.SendRealtimeInput(genai.LiveRealtimeInput{
+		Text: text,
 	})
 }
 
@@ -96,9 +106,30 @@ func (s *Session) Close() {
 	_ = s.gemini.Close()
 }
 
-// buildLiveConfig constructs a LiveConnectConfig from client setup config.
+const commonLivePrompt = `=== VIBECAT COMPANION PROTOCOL ===
+
+You are a desktop companion AI for solo developers. You live on their screen as an animated character. You watch their screen, hear their voice, remember context across sessions, and speak only when it matters.
+
+CORE BEHAVIOR:
+- PROACTIVE: Initiate observations when you detect errors, success, or opportunity. Do not wait to be asked.
+- SUGGEST, NEVER ASK: Never ask the developer questions. Always make observations, suggestions, or statements. Say "That regex might need escaping" not "Would you like help with that regex?"
+- SPEECH-FIRST: Your output is spoken aloud. Write for the ear, not the eye. No bullet points, no markdown. Short, natural sentences. Use contractions.
+- SCREEN-AWARE: Reference what you see on the developer's screen concretely. Be specific about file names, function names, error messages.
+- CONCISE: Keep responses to 1-2 short sentences unless explaining a complex code issue.
+- SILENT WHEN IRRELEVANT: If nothing notable is happening, stay silent. Do not speak just to fill silence.
+
+RULES:
+- If you see an error or bug: point it out specifically and suggest a fix.
+- If you see code: offer a concrete improvement or catch a potential issue.
+- NEVER repeat what you just said. NEVER comment on time passing.
+- NEVER say generic things like "looks interesting" or "keep going" — be SPECIFIC about what you see.
+
+Start each response with an emotion tag: [happy], [surprised], [thinking], [concerned], or [idle].`
+
 func buildLiveConfig(cfg Config) *genai.LiveConnectConfig {
-	lc := &genai.LiveConnectConfig{}
+	lc := &genai.LiveConnectConfig{
+		ResponseModalities: []genai.Modality{genai.ModalityAudio},
+	}
 
 	if cfg.Voice != "" {
 		lc.SpeechConfig = &genai.SpeechConfig{
@@ -123,9 +154,10 @@ func buildLiveConfig(cfg Config) *genai.LiveConnectConfig {
 	}
 
 	lc.OutputAudioTranscription = &genai.AudioTranscriptionConfig{}
+	lc.InputAudioTranscription = &genai.AudioTranscriptionConfig{}
 
-	prefixPadding := int32(20)
-	silenceDuration := int32(100)
+	prefixPadding := int32(300)
+	silenceDuration := int32(500)
 	lc.RealtimeInputConfig = &genai.RealtimeInputConfig{
 		AutomaticActivityDetection: &genai.AutomaticActivityDetection{
 			StartOfSpeechSensitivity: genai.StartSensitivityLow,
@@ -133,17 +165,51 @@ func buildLiveConfig(cfg Config) *genai.LiveConnectConfig {
 			PrefixPaddingMs:          &prefixPadding,
 			SilenceDurationMs:        &silenceDuration,
 		},
+		ActivityHandling: genai.ActivityHandlingStartOfActivityInterrupts,
+		TurnCoverage:     genai.TurnCoverageTurnIncludesOnlyActivity,
 	}
 
-	if cfg.SystemPrompt != "" {
-		lc.SystemInstruction = &genai.Content{
-			Parts: []*genai.Part{
-				{Text: cfg.SystemPrompt},
-			},
-		}
+	triggerTokens := int64(4096)
+	targetTokens := int64(2048)
+	lc.ContextWindowCompression = &genai.ContextWindowCompressionConfig{
+		TriggerTokens: &triggerTokens,
+		SlidingWindow: &genai.SlidingWindow{
+			TargetTokens: &targetTokens,
+		},
+	}
+
+	// Google Search is intentionally NOT added to Live API tools.
+	// Adding it causes Gemini to consider searching on EVERY voice response,
+	// adding 5-10s latency even for simple conversation. Search is handled
+	// by the ADK Search Buddy agent on the screen-analysis pipeline instead,
+	// which only triggers selectively (errors, stuck, explicit questions).
+
+	instruction := commonLivePrompt
+	if cfg.Soul != "" {
+		instruction = commonLivePrompt + "\n\n=== CHARACTER PERSONA ===\n" + cfg.Soul
+	}
+	instruction += "\n\nRespond in " + normalizeLanguage(cfg.Language) + "."
+	lc.SystemInstruction = &genai.Content{
+		Parts: []*genai.Part{{Text: instruction}},
 	}
 
 	return lc
+}
+
+func normalizeLanguage(language string) string {
+	trimmed := strings.TrimSpace(language)
+	if trimmed == "" {
+		return "Korean"
+	}
+	lower := strings.ToLower(trimmed)
+	switch lower {
+	case "ko", "kr", "korean", "korean language", "한국어":
+		return "Korean"
+	case "en", "eng", "english", "english language":
+		return "English"
+	default:
+		return trimmed
+	}
 }
 
 // SetupMessage is the client "setup" JSON frame.

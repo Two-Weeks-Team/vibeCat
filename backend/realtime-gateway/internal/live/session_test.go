@@ -1,6 +1,7 @@
 package live
 
 import (
+	"strings"
 	"testing"
 
 	"google.golang.org/genai"
@@ -101,24 +102,31 @@ func TestBuildLiveConfig(t *testing.T) {
 				if ad.EndOfSpeechSensitivity != genai.EndSensitivityLow {
 					t.Fatalf("EndOfSpeechSensitivity = %v, want %v", ad.EndOfSpeechSensitivity, genai.EndSensitivityLow)
 				}
-				if ad.PrefixPaddingMs == nil || *ad.PrefixPaddingMs != 20 {
-					t.Fatalf("PrefixPaddingMs = %v, want 20", ad.PrefixPaddingMs)
+				if ad.PrefixPaddingMs == nil || *ad.PrefixPaddingMs != 300 {
+					t.Fatalf("PrefixPaddingMs = %v, want 300", ad.PrefixPaddingMs)
 				}
-				if ad.SilenceDurationMs == nil || *ad.SilenceDurationMs != 100 {
-					t.Fatalf("SilenceDurationMs = %v, want 100", ad.SilenceDurationMs)
+				if ad.SilenceDurationMs == nil || *ad.SilenceDurationMs != 500 {
+					t.Fatalf("SilenceDurationMs = %v, want 500", ad.SilenceDurationMs)
 				}
 			},
 		},
 		{
 			name: "with system prompt",
-			cfg:  Config{SystemPrompt: "you are helpful"},
+			cfg:  Config{Soul: "you are helpful", Language: "en"},
 			check: func(t *testing.T, lc *genai.LiveConnectConfig) {
 				t.Helper()
 				if lc.SystemInstruction == nil || len(lc.SystemInstruction.Parts) != 1 {
 					t.Fatal("expected system instruction with one part")
 				}
-				if got := lc.SystemInstruction.Parts[0].Text; got != "you are helpful" {
-					t.Fatalf("system prompt = %q, want %q", got, "you are helpful")
+				got := lc.SystemInstruction.Parts[0].Text
+				if !strings.Contains(got, commonLivePrompt) {
+					t.Fatal("system prompt should include common live prompt")
+				}
+				if !strings.Contains(got, "=== CHARACTER PERSONA ===\nyou are helpful") {
+					t.Fatal("system prompt should include soul content section")
+				}
+				if !strings.Contains(got, "Respond in English.") {
+					t.Fatal("system prompt should include normalized language directive")
 				}
 			},
 		},
@@ -139,6 +147,26 @@ func TestBuildLiveConfig(t *testing.T) {
 				t.Helper()
 				if lc.Proactivity == nil || lc.Proactivity.ProactiveAudio == nil || !*lc.Proactivity.ProactiveAudio {
 					t.Fatal("expected proactive audio enabled")
+				}
+			},
+		},
+		{
+			name: "google search flag ignored for live api",
+			cfg:  Config{GoogleSearch: true},
+			check: func(t *testing.T, lc *genai.LiveConnectConfig) {
+				t.Helper()
+				if len(lc.Tools) != 0 {
+					t.Fatalf("Google Search must not be added to Live API (causes latency), got %d tools", len(lc.Tools))
+				}
+			},
+		},
+		{
+			name: "no tools by default",
+			cfg:  Config{},
+			check: func(t *testing.T, lc *genai.LiveConnectConfig) {
+				t.Helper()
+				if len(lc.Tools) != 0 {
+					t.Fatalf("expected no tools, got %d", len(lc.Tools))
 				}
 			},
 		},
