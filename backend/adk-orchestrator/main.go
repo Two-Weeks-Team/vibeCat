@@ -6,10 +6,14 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"time"
 
 	cloudlogging "cloud.google.com/go/logging"
+	mexporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric"
 	texporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/metric"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/memory"
@@ -35,6 +39,9 @@ type orchestrator struct {
 	sessionService session.Service
 	searchAgent    *search.Agent
 	appName        string
+	analyzeCounter metric.Int64Counter
+	analyzeDurHist metric.Float64Histogram
+	errorCounter   metric.Int64Counter
 }
 
 func main() {
@@ -74,6 +81,17 @@ func main() {
 		otel.SetTracerProvider(tp)
 		defer tp.Shutdown(ctx)
 		slog.Info("cloud trace initialized", "project", projectID)
+	}
+
+	// Cloud Monitoring (custom metrics)
+	metricExporter, metricErr := mexporter.New(mexporter.WithProjectID(projectID))
+	if metricErr != nil {
+		slog.Warn("cloud monitoring init failed — metrics disabled", "error", metricErr)
+	} else {
+		mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExporter)))
+		otel.SetMeterProvider(mp)
+		defer mp.Shutdown(ctx)
+		slog.Info("cloud monitoring initialized", "project", projectID)
 	}
 
 	// Cloud Logging
@@ -132,12 +150,26 @@ func main() {
 		os.Exit(1)
 	}
 
+	meter := otel.Meter("vibecat/orchestrator")
+	analyzeCounter, _ := meter.Int64Counter("vibecat.analyze.requests",
+		metric.WithDescription("Total analyze requests"),
+	)
+	analyzeDurHist, _ := meter.Float64Histogram("vibecat.analyze.duration_ms",
+		metric.WithDescription("Analyze request duration in milliseconds"),
+	)
+	errorCounter, _ := meter.Int64Counter("vibecat.analyze.errors",
+		metric.WithDescription("Total analyze errors"),
+	)
+
 	orch := &orchestrator{
 		runner:         r,
 		genaiClient:    genaiClient,
 		sessionService: sessService,
 		searchAgent:    search.New(genaiClient),
 		appName:        "vibecat",
+		analyzeCounter: analyzeCounter,
+		analyzeDurHist: analyzeDurHist,
+		errorCounter:   errorCounter,
 	}
 
 	mux := http.NewServeMux()
@@ -163,11 +195,17 @@ func (o *orchestrator) analyzeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	analyzeStart := time.Now()
+	o.analyzeCounter.Add(r.Context(), 1)
+
 	slog.Info("analyze request received", "content_length", r.ContentLength, "remote", r.RemoteAddr)
 
 	tracer := otel.Tracer("vibecat/orchestrator")
 	_, span := tracer.Start(r.Context(), "orchestrator.analyze")
 	defer span.End()
+	defer func() {
+		o.analyzeDurHist.Record(r.Context(), float64(time.Since(analyzeStart).Milliseconds()))
+	}()
 
 	var req models.AnalysisRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -189,24 +227,30 @@ func (o *orchestrator) analyzeHandler(w http.ResponseWriter, r *http.Request) {
 		sessionID = "default"
 	}
 
-	// Ensure session exists (create if not found)
-	_, getErr := o.sessionService.Get(r.Context(), &session.GetRequest{
+	getResp, getErr := o.sessionService.Get(r.Context(), &session.GetRequest{
 		AppName:   o.appName,
 		UserID:    userID,
 		SessionID: sessionID,
 	})
 	if getErr != nil {
-		_, createErr := o.sessionService.Create(r.Context(), &session.CreateRequest{
+		createResp, createErr := o.sessionService.Create(r.Context(), &session.CreateRequest{
 			AppName:   o.appName,
 			UserID:    userID,
 			SessionID: sessionID,
 		})
 		if createErr != nil {
 			slog.Warn("failed to create session", "error", createErr, "session_id", sessionID)
+		} else if createResp != nil && createResp.Session != nil {
+			getResp = &session.GetResponse{Session: createResp.Session}
+		}
+	}
+	if getResp != nil && getResp.Session != nil && getResp.Session.State() != nil {
+		_ = getResp.Session.State().Set("activity_minutes", req.ActivityMinutes)
+		if req.Language != "" {
+			_ = getResp.Session.State().Set("language", req.Language)
 		}
 	}
 
-	// Serialize request as JSON for the agent graph input
 	reqJSON, err := json.Marshal(req)
 	if err != nil {
 		http.Error(w, "failed to serialize request", http.StatusInternalServerError)
@@ -245,7 +289,7 @@ func (o *orchestrator) analyzeHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	getResp, getErr := o.sessionService.Get(r.Context(), &session.GetRequest{
+	getResp, getErr = o.sessionService.Get(r.Context(), &session.GetRequest{
 		AppName:   o.appName,
 		UserID:    userID,
 		SessionID: sessionID,
@@ -266,6 +310,7 @@ func (o *orchestrator) analyzeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if lastResult.Decision == nil && lastResult.Vision == nil && lastResult.SpeechText == "" {
+		o.errorCounter.Add(r.Context(), 1)
 		slog.Warn("agent graph produced no usable result", "user_id", userID, "session_id", sessionID, "had_error", hadError)
 		http.Error(w, "agent graph failed to produce result", http.StatusServiceUnavailable)
 		return
