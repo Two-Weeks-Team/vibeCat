@@ -5,7 +5,6 @@ import VibeCatCore
 @MainActor
 final class CatVoice {
     private let audioPlayer: AudioPlayer
-    private let synthesizer = AVSpeechSynthesizer()
     private var isLiveConnected = false
 
     init(audioPlayer: AudioPlayer) {
@@ -20,22 +19,16 @@ final class CatVoice {
         audioPlayer.enqueue(pcmData)
     }
 
-    func speak(_ text: String) {
-        guard !isLiveConnected else { return }
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.rate = 0.5
-        utterance.volume = 0.9
-        synthesizer.speak(utterance)
+    func flush() {
+        audioPlayer.flush()
     }
 
     func stop() {
-        audioPlayer.stop()
-        synthesizer.stopSpeaking(at: .immediate)
+        audioPlayer.clear()
     }
 
     func mute() {
         audioPlayer.mute()
-        synthesizer.stopSpeaking(at: .immediate)
     }
 
     func unmute() {

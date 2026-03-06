@@ -12,12 +12,13 @@ final class ImageProcessorTests: XCTestCase {
         XCTAssertEqual(resized.height, 480)
     }
 
-    func testResizeIfNeededScalesDownLargeImagePreservingAspectRatio() {
+    func testResizeIfNeededPassesThroughFullResolution() {
         let image = makeSolidImage(width: 2048, height: 1024, color: (10, 20, 30, 255))
         let resized = ImageProcessor.resizeIfNeeded(image)
 
-        XCTAssertEqual(resized.width, 1024)
-        XCTAssertEqual(resized.height, 512)
+        // resizeIfNeeded is now a no-op — full resolution is preserved
+        XCTAssertEqual(resized.width, 2048)
+        XCTAssertEqual(resized.height, 1024)
     }
 
     func testToJPEGDataProducesJPEGHeader() {

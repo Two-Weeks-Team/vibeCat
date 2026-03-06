@@ -2,8 +2,6 @@ import Foundation
 import AVFoundation
 import VibeCatCore
 
-/// Streams PCM audio buffers from the Gateway through AVAudioEngine.
-/// Accepts 24kHz 16-bit mono PCM from the server.
 @MainActor
 final class AudioPlayer {
     private let engine = AVAudioEngine()
@@ -12,6 +10,9 @@ final class AudioPlayer {
 
     private(set) var isPlaying = false
     private var isMuted = false
+    private var scheduledBufferCount = 0
+    private var pendingBytes = Data()
+    private let coalesceThreshold = 4800 // ~100ms at 24kHz 16-bit mono (2400 samples * 2 bytes)
 
     init() {
         outputFormat = AVAudioFormat(
@@ -25,30 +26,67 @@ final class AudioPlayer {
 
     func enqueue(_ pcmData: Data) {
         guard !isMuted else { return }
-        guard let buffer = makeBuffer(from: pcmData) else { return }
-        playerNode.scheduleBuffer(buffer) { [weak self] in
-            Task { @MainActor [weak self] in
-                self?.isPlaying = self?.playerNode.isPlaying ?? false
-            }
-        }
-        if !playerNode.isPlaying {
-            playerNode.play()
-            isPlaying = true
-        }
+        pendingBytes.append(pcmData)
+        guard pendingBytes.count >= coalesceThreshold else { return }
+        scheduleAccumulatedSamples()
+    }
+
+    func flush() {
+        guard !pendingBytes.isEmpty else { return }
+        scheduleAccumulatedSamples()
     }
 
     func stop() {
+        NSLog("[AUDIO] stop")
+        pendingBytes.removeAll(keepingCapacity: true)
         playerNode.stop()
+        scheduledBufferCount = 0
+        isPlaying = false
+    }
+
+    func clear() {
+        NSLog("[AUDIO] clear")
+        pendingBytes.removeAll(keepingCapacity: true)
+        playerNode.stop()
+        playerNode.reset()
+        scheduledBufferCount = 0
         isPlaying = false
     }
 
     func mute() {
+        NSLog("[AUDIO] mute")
         isMuted = true
         stop()
     }
 
     func unmute() {
+        NSLog("[AUDIO] unmute")
         isMuted = false
+    }
+
+    private func scheduleAccumulatedSamples() {
+        let data = pendingBytes
+        pendingBytes.removeAll(keepingCapacity: true)
+
+        guard let buffer = makeBuffer(from: data) else { return }
+
+        scheduledBufferCount += 1
+        isPlaying = true
+
+        playerNode.scheduleBuffer(buffer) { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.scheduledBufferCount -= 1
+                if self.scheduledBufferCount <= 0 {
+                    self.scheduledBufferCount = 0
+                    self.isPlaying = false
+                }
+            }
+        }
+
+        if !playerNode.isPlaying {
+            playerNode.play()
+        }
     }
 
     private func setupEngine() {
@@ -56,8 +94,9 @@ final class AudioPlayer {
         engine.connect(playerNode, to: engine.mainMixerNode, format: outputFormat)
         do {
             try engine.start()
+            NSLog("[AUDIO] setupEngine: success")
         } catch {
-            print("AudioPlayer: engine start failed: \(error)")
+            NSLog("[AUDIO] setupEngine: failed - %@", error.localizedDescription)
         }
     }
 

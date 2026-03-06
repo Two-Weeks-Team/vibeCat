@@ -8,6 +8,7 @@ public enum ImageDiffer {
         guard let previous else { return true }
         guard let prevThumb = thumbnail(previous), let currThumb = thumbnail(current) else { return true }
         let diff = pixelDiff(prevThumb, currThumb)
+        NSLog("[ImageDiffer] diff=%.4f threshold=%.4f pixels=%d", diff, threshold, prevThumb.count / 4)
         return diff > threshold
     }
 

@@ -99,6 +99,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private var musicItem: NSMenuItem?
     private var searchItem: NSMenuItem?
     private var proactiveItem: NSMenuItem?
+    private var pauseItem: NSMenuItem?
+    private var muteItem: NSMenuItem?
     private var setAPIKeyItem: NSMenuItem?
     private var recentSpeechMenu: NSMenu?
     private var emotionHistoryMenu: NSMenu?
@@ -115,6 +117,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     var onQuit: (() -> Void)?
     var onShowOnboarding: (() -> Void)?
     var onCharacterChanged: ((String) -> Void)?
+    var onMusicToggled: ((Bool) -> Void)?
+    var onSearchToggled: (() -> Void)?
+    var onProactiveAudioToggled: (() -> Void)?
 
     private(set) var connectionState: ConnectionState = .disconnected {
         didSet {
@@ -262,14 +267,34 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         let modelMenu = NSMenu()
         modelItems.removeAll(keepingCapacity: true)
-        for model in ["gemini-2.0-flash-live-001", "gemini-2.5-flash-preview-native-audio-dialog"] {
-            let item = NSMenuItem(title: model, action: #selector(selectModel(_:)), keyEquivalent: "")
+
+        let liveHeader = NSMenuItem(title: "Live API Model", action: nil, keyEquivalent: "")
+        liveHeader.isEnabled = false
+        modelMenu.addItem(liveHeader)
+
+        for model in [
+            "gemini-2.5-flash-native-audio-latest",
+            "gemini-2.0-flash-live-001",
+        ] {
+            let item = NSMenuItem(title: "  \(model)", action: #selector(selectModel(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = model
             item.state = AppSettings.shared.liveModel == model ? .on : .off
             modelMenu.addItem(item)
             modelItems.append(item)
         }
+
+        modelMenu.addItem(NSMenuItem.separator())
+
+        let visionHeader = NSMenuItem(title: "Vision API Model", action: nil, keyEquivalent: "")
+        visionHeader.isEnabled = false
+        modelMenu.addItem(visionHeader)
+
+        let visionInfoItem = NSMenuItem(title: "  gemini-3.1-flash-lite-preview", action: nil, keyEquivalent: "")
+        visionInfoItem.state = .on
+        visionInfoItem.isEnabled = false
+        modelMenu.addItem(visionInfoItem)
+
         let modelItem = NSMenuItem(title: "Model", action: nil, keyEquivalent: "")
         modelItem.submenu = modelMenu
         menu.addItem(modelItem)
@@ -331,10 +356,12 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         let pauseItem = NSMenuItem(title: "Pause", action: #selector(handlePause), keyEquivalent: "p")
         pauseItem.target = self
         menu.addItem(pauseItem)
+        self.pauseItem = pauseItem
 
         let muteItem = NSMenuItem(title: "Mute", action: #selector(handleMute), keyEquivalent: "m")
         muteItem.target = self
         menu.addItem(muteItem)
+        self.muteItem = muteItem
 
         menu.addItem(NSMenuItem.separator())
 
@@ -410,16 +437,27 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     @objc private func toggleMusic(_ sender: NSMenuItem) {
         AppSettings.shared.musicEnabled.toggle()
         sender.state = AppSettings.shared.musicEnabled ? .on : .off
+        onMusicToggled?(AppSettings.shared.musicEnabled)
     }
 
     @objc private func toggleSearch(_ sender: NSMenuItem) {
         AppSettings.shared.searchEnabled.toggle()
         sender.state = AppSettings.shared.searchEnabled ? .on : .off
+        onSearchToggled?()
     }
 
     @objc private func toggleProactiveAudio(_ sender: NSMenuItem) {
         AppSettings.shared.proactiveAudio.toggle()
         sender.state = AppSettings.shared.proactiveAudio ? .on : .off
+        onProactiveAudioToggled?()
+    }
+
+    func updatePauseState(_ isPaused: Bool) {
+        pauseItem?.title = isPaused ? "Resume" : "Pause"
+    }
+
+    func updateMuteState(_ isMuted: Bool) {
+        muteItem?.title = isMuted ? "Unmute" : "Mute"
     }
 
     @objc private func handleReconnect() {

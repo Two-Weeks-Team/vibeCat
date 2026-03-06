@@ -24,6 +24,10 @@ final class SpriteAnimator {
     init(character: String = "cat") {
         self.character = character
         loadFrames(for: character)
+        NSLog("[SpriteAnimator] Loaded %d states for '%@'. repoRoot=%@", frames.count, character, findRepoRoot().path)
+        for (state, imgs) in frames {
+            NSLog("[SpriteAnimator]   %@: %d frames", state.rawValue, imgs.count)
+        }
         startAnimation()
     }
 

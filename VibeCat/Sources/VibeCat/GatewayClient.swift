@@ -29,6 +29,8 @@ final class GatewayClient {
     private var webSocketTask: URLSessionWebSocketTask?
     private var urlSession: URLSession?
     private var heartbeatTimer: Timer?
+    private var protocolPingTimer: Timer?
+    private var awaitingPong = false
     private var state: ConnectionState = .disconnected {
         didSet { onStateChange?(state) }
     }
@@ -41,16 +43,29 @@ final class GatewayClient {
     private var isNetworkAvailable = true
     private var lastPongAt: Date?
     private var isManuallyDisconnected = false
+    private var isTTSSpeaking = false
     private var currentAPIKey: String?
+    private var currentSessionToken: String?
     private var setupSoul: String?
     private var lastPingSentAt: Date?
 
     private let pathMonitor = NWPathMonitor()
     private let pathMonitorQueue = DispatchQueue(label: "vibecat.gateway.path-monitor")
 
+    static func deviceIdentifier() -> String {
+        let key = "vibecat.deviceId"
+        if let existing = UserDefaults.standard.string(forKey: key) {
+            return existing
+        }
+        let newID = UUID().uuidString
+        UserDefaults.standard.set(newID, forKey: key)
+        return newID
+    }
+
     private let maxReconnectAttempts = 30
-    private let pingInterval: TimeInterval = 15
-    private let zombieTimeout: TimeInterval = 45
+    private let appHeartbeatInterval: TimeInterval = 30
+    private let protocolPingInterval: TimeInterval = 15
+    private let pongTimeout: TimeInterval = 60
     private let rapidFailureWindow: TimeInterval = 5
 
     private let settings = AppSettings.shared
@@ -70,6 +85,7 @@ final class GatewayClient {
 
     func connect(apiKey: String) {
         currentAPIKey = apiKey
+        currentSessionToken = nil
         isManuallyDisconnected = false
         reconnectAttempts = 0
         rapidFailureCount = 0
@@ -77,7 +93,9 @@ final class GatewayClient {
         reconnectWorkItem?.cancel()
         reconnectWorkItem = nil
         lastErrorDescription = nil
-        establishConnection(apiKey: apiKey)
+        Task { [weak self] in
+            await self?.registerAndConnect(apiKey: apiKey)
+        }
     }
 
     func disconnect() {
@@ -93,6 +111,7 @@ final class GatewayClient {
 
     func reconnect(apiKey: String) {
         currentAPIKey = apiKey
+        currentSessionToken = nil
         isManuallyDisconnected = false
         reconnectAttempts = 0
         rapidFailureCount = 0
@@ -103,7 +122,9 @@ final class GatewayClient {
         closeConnection()
         lastErrorDescription = nil
         state = .disconnected
-        scheduleReconnect(immediate: true)
+        Task { [weak self] in
+            await self?.registerAndConnect(apiKey: apiKey)
+        }
     }
 
     func setSoul(_ soul: String?) {
@@ -118,6 +139,8 @@ final class GatewayClient {
 
     func sendAudio(_ pcmData: Data) {
         guard case .connected = state else { return }
+        guard !isTTSSpeaking else { return }
+        NSLog("[GW-OUT] sendAudio: %lu bytes", pcmData.count)
         webSocketTask?.send(.data(pcmData)) { _ in }
     }
 
@@ -125,6 +148,7 @@ final class GatewayClient {
         guard case .connected = state else { return }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        NSLog("[GW-OUT] sendText: %@", trimmed)
         let payload: [String: Any] = [
             "clientContent": [
                 "turnComplete": true,
@@ -139,31 +163,108 @@ final class GatewayClient {
         sendJSON(payload)
     }
 
-    func sendScreenCapture(imageBase64: String, context: String, userId: String) {
+    func sendScreenCapture(imageBase64: String, context: String, userId: String, character: String, soul: String?) {
         guard case .connected(let sid) = state else { return }
-        let payload: [String: Any] = [
+        NSLog("[GW-OUT] sendScreenCapture: image=%lu bytes, context=%@, character=%@", imageBase64.count, context, character)
+        var payload: [String: Any] = [
             "type": "screenCapture",
             "image": imageBase64,
             "context": context,
             "sessionId": sid,
-            "userId": userId
+            "userId": userId,
+            "character": character
         ]
+        if let soul, !soul.isEmpty {
+            payload["soul"] = soul
+        }
         sendJSON(payload)
     }
 
-    func sendForceCapture(imageBase64: String, context: String, userId: String) {
+    func sendForceCapture(imageBase64: String, context: String, userId: String, character: String, soul: String?) {
         guard case .connected(let sid) = state else { return }
-        let payload: [String: Any] = [
+        NSLog("[GW-OUT] sendForceCapture: image=%lu bytes, context=%@, character=%@", imageBase64.count, context, character)
+        var payload: [String: Any] = [
             "type": "forceCapture",
             "image": imageBase64,
             "context": context,
             "sessionId": sid,
-            "userId": userId
+            "userId": userId,
+            "character": character
         ]
+        if let soul, !soul.isEmpty {
+            payload["soul"] = soul
+        }
         sendJSON(payload)
     }
 
-    private func establishConnection(apiKey: String) {
+    private func restBaseURL() -> URL? {
+        guard var components = URLComponents(string: settings.gatewayURL) else { return nil }
+        switch components.scheme?.lowercased() {
+        case "wss":
+            components.scheme = "https"
+        case "ws":
+            components.scheme = "http"
+        case "https", "http":
+            break
+        default:
+            return nil
+        }
+        components.path = ""
+        components.query = nil
+        components.fragment = nil
+        return components.url
+    }
+
+    private func registerAndConnect(apiKey: String) async {
+        guard !apiKey.isEmpty else {
+            lastErrorDescription = "Connection keeps failing — check API key"
+            state = .failed(GatewayError.registrationFailed)
+            return
+        }
+        guard let baseURL = restBaseURL() else {
+            lastErrorDescription = "Gateway URL invalid — check Settings"
+            state = .failed(GatewayError.invalidURL)
+            return
+        }
+
+        let registerURL = baseURL.appendingPathComponent("api/v1/auth/register")
+        var request = URLRequest(url: registerURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: String] = ["apiKey": apiKey]
+        guard let bodyData = try? JSONSerialization.data(withJSONObject: body) else {
+            lastErrorDescription = "Connection keeps failing — check API key"
+            state = .failed(GatewayError.registrationFailed)
+            return
+        }
+        request.httpBody = bodyData
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse,
+                  (200...299).contains(httpResponse.statusCode) else {
+                lastErrorDescription = "Connection keeps failing — check API key"
+                state = .failed(GatewayError.registrationFailed)
+                return
+            }
+
+            let decoded = try JSONDecoder().decode(RegisterResponse.self, from: data)
+            let token = decoded.sessionToken.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !token.isEmpty else {
+                lastErrorDescription = "Connection keeps failing — check API key"
+                state = .failed(GatewayError.registrationFailed)
+                return
+            }
+
+            currentSessionToken = token
+            establishConnection(token: token)
+        } catch {
+            lastErrorDescription = "Connection keeps failing — check API key"
+            state = .failed(GatewayError.registrationFailed)
+        }
+    }
+
+    private func establishConnection(token: String) {
         if case .connecting = state { return }
         if case .connected = state { return }
 
@@ -171,14 +272,30 @@ final class GatewayClient {
         lastConnectStartedAt = Date()
         sessionId = nil
 
-        guard let url = URL(string: settings.gatewayURL) else {
+        guard var urlComponents = URLComponents(string: settings.gatewayURL) else {
             lastErrorDescription = "Gateway URL invalid — check Settings"
             state = .failed(GatewayError.invalidURL)
             return
         }
 
+        // Ensure /ws/live path is present for WebSocket endpoint
+        if urlComponents.path.isEmpty || urlComponents.path == "/" {
+            urlComponents.path = "/ws/live"
+        } else if !urlComponents.path.hasSuffix("/ws/live") {
+            let base = urlComponents.path.hasSuffix("/") ? String(urlComponents.path.dropLast()) : urlComponents.path
+            urlComponents.path = base + "/ws/live"
+        }
+
+        guard let url = urlComponents.url else {
+            lastErrorDescription = "Gateway URL invalid — check Settings"
+            state = .failed(GatewayError.invalidURL)
+            return
+        }
+
+        NSLog("[APP] establishConnection: url=%@, hasToken=%d", url.absoluteString, !token.isEmpty)
+
         var request = URLRequest(url: url)
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
         let session = URLSession(configuration: .default)
         self.urlSession = session
@@ -197,7 +314,9 @@ final class GatewayClient {
             "language": settings.language,
             "liveModel": settings.liveModel,
             "proactiveAudio": settings.proactiveAudio,
-            "searchEnabled": settings.searchEnabled
+            "searchEnabled": settings.searchEnabled,
+            "affectiveDialog": true,
+            "deviceId": Self.deviceIdentifier()
         ]
         if let setupSoul {
             config["soul"] = setupSoul
@@ -217,6 +336,9 @@ final class GatewayClient {
     private func sendJSON(_ payload: [String: Any]) {
         guard let data = try? JSONSerialization.data(withJSONObject: payload),
               let text = String(data: data, encoding: .utf8) else { return }
+        let type = payload["type"] as? String ?? "unknown"
+        let preview = String(text.prefix(100))
+        NSLog("[GW-OUT] sendJSON: type=%@, preview=%@", type, preview)
         webSocketTask?.send(.string(text)) { _ in }
     }
 
@@ -242,11 +364,14 @@ final class GatewayClient {
         updateHeartbeatReceipt()
         switch message {
         case .data(let data):
+            NSLog("[GW-IN] data: %lu bytes", data.count)
             let parsed = AudioMessageParser.parse(data)
             switch parsed {
             case .audio(let audioData):
+                NSLog("[GW-IN] message type=audio, size=%lu bytes", audioData.count)
                 onAudioData?(audioData)
             case .setupComplete(let sid):
+                NSLog("[GW-IN] message type=setupComplete, sessionId=%@", sid)
                 sessionId = sid
                 reconnectAttempts = 0
                 rapidFailureCount = 0
@@ -254,17 +379,29 @@ final class GatewayClient {
                 lastErrorDescription = nil
                 state = .connected(sessionId: sid)
             case .sessionResumptionUpdate(let handle):
+                NSLog("[GW-IN] message type=sessionResumptionUpdate")
                 let trimmed = handle.trimmingCharacters(in: .whitespacesAndNewlines)
                 sessionHandle = trimmed.isEmpty ? nil : trimmed
                 onMessage?(parsed)
+            case .ttsStart(let ttsText):
+                NSLog("[GW-IN] message type=ttsStart, suppressing mic, hasText=%d", ttsText != nil ? 1 : 0)
+                isTTSSpeaking = true
+                onMessage?(parsed)
+            case .ttsEnd:
+                NSLog("[GW-IN] message type=ttsEnd, resuming mic")
+                isTTSSpeaking = false
+                onMessage?(parsed)
             default:
+                NSLog("[GW-IN] message type=other")
                 onMessage?(parsed)
             }
         case .string(let text):
+            NSLog("[GW-IN] string: %lu chars", text.count)
             guard let data = text.data(using: .utf8) else { return }
             let parsed = AudioMessageParser.parse(data)
             switch parsed {
             case .setupComplete(let sid):
+                NSLog("[GW-IN] message type=setupComplete, sessionId=%@", sid)
                 sessionId = sid
                 reconnectAttempts = 0
                 rapidFailureCount = 0
@@ -272,22 +409,38 @@ final class GatewayClient {
                 lastErrorDescription = nil
                 state = .connected(sessionId: sid)
             case .sessionResumptionUpdate(let handle):
+                NSLog("[GW-IN] message type=sessionResumptionUpdate")
                 let trimmed = handle.trimmingCharacters(in: .whitespacesAndNewlines)
                 sessionHandle = trimmed.isEmpty ? nil : trimmed
                 onMessage?(parsed)
+            case .ttsStart(let ttsText):
+                NSLog("[GW-IN] message type=ttsStart, suppressing mic, hasText=%d", ttsText != nil ? 1 : 0)
+                isTTSSpeaking = true
+                onMessage?(parsed)
+            case .ttsEnd:
+                NSLog("[GW-IN] message type=ttsEnd, resuming mic")
+                isTTSSpeaking = false
+                onMessage?(parsed)
             default:
+                NSLog("[GW-IN] message type=other")
                 onMessage?(parsed)
             }
         @unknown default:
+            NSLog("[GW-IN] unknown message type")
             break
         }
     }
 
     private func startHeartbeatTimer() {
         stopHeartbeatTimer()
-        heartbeatTimer = Timer.scheduledTimer(withTimeInterval: pingInterval, repeats: true) { [weak self] _ in
+        heartbeatTimer = Timer.scheduledTimer(withTimeInterval: appHeartbeatInterval, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.runHeartbeatHealthCheck()
+                self?.sendAppHeartbeat()
+            }
+        }
+        protocolPingTimer = Timer.scheduledTimer(withTimeInterval: protocolPingInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.sendProtocolPing()
             }
         }
     }
@@ -295,30 +448,50 @@ final class GatewayClient {
     private func stopHeartbeatTimer() {
         heartbeatTimer?.invalidate()
         heartbeatTimer = nil
+        protocolPingTimer?.invalidate()
+        protocolPingTimer = nil
+        awaitingPong = false
     }
 
-    private func runHeartbeatHealthCheck() {
+    private func sendAppHeartbeat() {
         guard case .connected = state else { return }
+        sendJSON(["type": "ping"])
+    }
 
-        if let lastPongAt, Date().timeIntervalSince(lastPongAt) > zombieTimeout {
+    private func sendProtocolPing() {
+        guard case .connected = state, let ws = webSocketTask else { return }
+
+        if awaitingPong, let lastPongAt, Date().timeIntervalSince(lastPongAt) > pongTimeout {
             lastErrorDescription = "Connection timed out — Reconnecting…"
             handleConnectionDropped(error: GatewayError.pongTimeout)
             return
         }
 
+        awaitingPong = true
         lastPingSentAt = Date()
-        let heartbeat: [String: Any] = [
-            "clientContent": [
-                "turnComplete": false,
-                "turns": []
-            ]
-        ]
-        sendJSON(heartbeat)
+        ws.sendPing { [weak self] error in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if let error {
+                    NSLog("[GatewayClient] Ping failed: %@", error.localizedDescription)
+                } else {
+                    self.awaitingPong = false
+                    self.lastPongAt = Date()
+                    if let sentAt = self.lastPingSentAt {
+                        let latency = Int((Date().timeIntervalSince(sentAt) * 1000).rounded())
+                        self.onLatencyUpdate?(max(0, latency))
+                        self.lastPingSentAt = nil
+                    }
+                }
+            }
+        }
     }
 
     private func handleConnectionDropped(error: Error) {
         if isManuallyDisconnected { return }
         if case .disconnected = state { return }
+
+        NSLog("[APP] handleConnectionDropped: %@", error.localizedDescription)
 
         stopHeartbeatTimer()
         closeConnection()
@@ -381,11 +554,19 @@ final class GatewayClient {
                 guard !self.isManuallyDisconnected else { return }
                 guard self.isNetworkAvailable else { return }
                 if case .connected = self.state { return }
-                self.establishConnection(apiKey: apiKey)
+                if let token = self.currentSessionToken, !token.isEmpty {
+                    self.establishConnection(token: token)
+                } else {
+                    await self.registerAndConnect(apiKey: apiKey)
+                }
             }
         }
         reconnectWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+
+    private struct RegisterResponse: Decodable {
+        let sessionToken: String
     }
 
     private func handleNetworkPath(_ path: NWPath) {
@@ -435,6 +616,7 @@ final class GatewayClient {
 
     enum GatewayError: Error, LocalizedError {
         case invalidURL
+        case registrationFailed
         case pongTimeout
         case networkUnavailable
 
@@ -442,6 +624,8 @@ final class GatewayClient {
             switch self {
             case .invalidURL:
                 return "Gateway URL invalid — check Settings"
+            case .registrationFailed:
+                return "Connection keeps failing — check API key"
             case .pongTimeout:
                 return "Connection timed out — Reconnecting…"
             case .networkUnavailable:

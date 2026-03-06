@@ -69,6 +69,17 @@ final class SpeechAudioCapture: @unchecked Sendable {
     private(set) var isVoiceProcessingActive = false
     private var streamingCallback: (@Sendable (AVAudioPCMBuffer) -> Void)?
 
+    /// RMS threshold for noise gate. Buffers with RMS below this are silently dropped.
+    /// ~0.02 linear ≈ -34dB — filters keyboard clicks, mouse sounds, fan noise, ambient hum
+    /// while passing through normal speech (typically RMS 0.03–0.3).
+    private let rmsThreshold: Float = 0.02
+
+    /// Number of consecutive above-threshold buffers required before streaming begins.
+    /// Prevents single noise spikes (clicks, taps) from triggering speech detection.
+    /// At 4096 samples / 16kHz ≈ 256ms per buffer, 2 buffers ≈ 512ms of sustained sound.
+    private let consecutiveThreshold: Int = 2
+    private var consecutiveAboveCount: Int = 0
+
     func start(streamingCallback: (@Sendable (AVAudioPCMBuffer) -> Void)? = nil) throws {
         self.streamingCallback = streamingCallback
 
@@ -98,9 +109,32 @@ final class SpeechAudioCapture: @unchecked Sendable {
         }
 
         self.recordingFormat = recordingFormat
+        let threshold = rmsThreshold
 
+        let requiredConsecutive = consecutiveThreshold
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: recordingFormat) { [weak self] buffer, _ in
             guard let self else { return }
+            guard let floatData = buffer.floatChannelData else { return }
+
+            let frameCount = Int(buffer.frameLength)
+            let samples = floatData[0]
+            var sumOfSquares: Float = 0.0
+            for i in 0..<frameCount {
+                let sample = samples[i]
+                sumOfSquares += sample * sample
+            }
+            let rms = sqrtf(sumOfSquares / Float(max(frameCount, 1)))
+
+            if rms < threshold {
+                self.consecutiveAboveCount = 0
+                return
+            }
+
+            self.consecutiveAboveCount += 1
+            if self.consecutiveAboveCount < requiredConsecutive {
+                return
+            }
+
             guard let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) else { return }
             copy.frameLength = buffer.frameLength
             if let src = buffer.floatChannelData, let dst = copy.floatChannelData {

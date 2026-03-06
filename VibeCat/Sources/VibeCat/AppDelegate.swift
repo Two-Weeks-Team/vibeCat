@@ -36,7 +36,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let wakeWords = ["vibecat", "vibe cat", "바이브캣"]
 
     private var isPaused = false
+    private var isMuted = false
     private var storedAPIKey: String?
+    private var isTurnActive = false
+    private var ttsActive = false
+    private var pendingTranscription = ""
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -71,12 +75,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             catVoice: voice,
             spriteAnimator: sprite
         )
+        analyzer.setAudioPlayer(audio)
         self.screenAnalyzer = analyzer
 
         let panel = CatPanel(catViewModel: viewModel, spriteAnimator: sprite)
         self.catPanel = panel
         panel.applySpriteSize(presetSize: initialPreset.size)
+        panel.setSmartHideReferences(audioPlayer: audio, screenAnalyzer: analyzer)
         panel.show()
+        NSLog("[AppDelegate] CatPanel shown. frame=%@ level=%d isVisible=%d", NSStringFromRect(panel.frame), panel.level.rawValue, panel.isVisible ? 1 : 0)
 
         gateway.setSoul(initialPreset.soul)
 
@@ -122,11 +129,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         sbc.onCharacterChanged = { [weak self] character in
             self?.handleCharacterChanged(character)
         }
+        sbc.onMusicToggled = { [weak self] enabled in
+            self?.backgroundMusicPlayer?.setEnabled(enabled)
+        }
+        sbc.onSearchToggled = { [weak self] in
+            self?.gatewayClient?.resendSetupPayloadIfConnected()
+        }
+        sbc.onProactiveAudioToggled = { [weak self] in
+            self?.gatewayClient?.resendSetupPayloadIfConnected()
+        }
         self.statusBarController = sbc
         self.trayAnimator = tray
 
-        sprite.onStateTransition = { [weak self] from, to in
+        sprite.onStateTransition = { [weak self, weak panel] from, to in
             self?.emotionTransitionStore.add(from: from, to: to)
+            panel?.updateEmotionForState(to)
         }
 
         wireGatewayCallbacks(
@@ -181,6 +198,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusBarController: StatusBarController
     ) {
         gateway.onAudioData = { data in
+            NSLog("[GW-IN] onAudioData: %lu bytes", data.count)
             voice.enqueueAudio(data)
         }
         gateway.onStateChange = { [weak statusBarController] state in
@@ -229,39 +247,114 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         gateway.onMessage = { [weak self, weak analyzer, weak panel, weak chatPanel] message in
             guard let self else { return }
             switch message {
-            case .companionSpeech(let text, let emotionStr, _):
+            case .companionSpeech(let text, let emotionStr, let urgency):
+                NSLog("[GW-IN] onMessage: companionSpeech, textLength=%lu, emotion=%@, chatModeActive=%d", text.count, emotionStr, self.chatModeActive)
+                self.isTurnActive = true
                 let emotion = CompanionEmotion(rawValue: emotionStr) ?? .neutral
-                let event = CompanionSpeechEvent(text: text, emotion: emotion)
                 if self.chatModeActive {
                     chatPanel?.updateLastAssistantMessage(text)
                 } else {
+                    let event = CompanionSpeechEvent(text: text, emotion: emotion, urgency: urgency)
                     analyzer?.handleCompanionSpeech(event)
                 }
             case .transcription(let text, let finished):
+                NSLog("[GW-IN] onMessage: transcription, textLength=%lu, finished=%d, chatModeActive=%d", text.count, finished, self.chatModeActive)
                 if self.chatModeActive {
                     if finished {
                         chatPanel?.finalizeListeningText(text)
                     } else {
                         chatPanel?.updateListeningText(text)
                     }
-                } else if finished {
-                    panel?.showBubble(text: text)
-                    self.maybeActivateChatFromWakeWord(text)
+                } else if !text.isEmpty {
+                    self.isTurnActive = true
+                    var displayText = text
+                    if let parsed = AudioMessageParser.parseEmotionTag(from: text) {
+                        displayText = parsed.cleanText
+                        analyzer?.handleCompanionSpeechEmotion(parsed.emotion)
+                    }
+                    if !displayText.isEmpty {
+                        self.pendingTranscription += displayText
+                        panel?.showBubble(text: self.pendingTranscription)
+                    }
+                    if finished {
+                        let fullText = self.pendingTranscription
+                        NSLog("[GW-IN] transcription COMPLETE: %@", String(fullText.prefix(80)))
+                        self.recentSpeechStore.add(fullText)
+                        self.statusBarController?.recordInteraction()
+                        self.pendingTranscription = ""
+                        self.maybeActivateChatFromWakeWord(fullText)
+                    }
                 }
-            default:
-                break
+            case .audio(let data):
+                NSLog("[GW-IN] onMessage: audio, dataSize=%lu", data.count)
+            case .turnComplete:
+                NSLog("[GW-IN] onMessage: turnComplete")
+                self.catVoice?.flush()
+                self.isTurnActive = false
+                self.pendingTranscription = ""
+                panel?.setTurnActive(false)
+            case .interrupted:
+                NSLog("[GW-IN] onMessage: interrupted")
+                self.catVoice?.stop()
+                self.isTurnActive = false
+                self.pendingTranscription = ""
+                panel?.setTurnActive(false)
+            case .sessionResumptionUpdate(let handle):
+                NSLog("[GW-IN] onMessage: sessionResumptionUpdate, handleLength=%lu", handle.count)
+            case .liveSessionReconnecting(let attempt, let max):
+                NSLog("[GW-IN] onMessage: liveSessionReconnecting, attempt=%d/%d", attempt, max)
+                self.statusBarController?.setLastErrorDescription("Live session reconnecting (\(attempt)/\(max))")
+            case .liveSessionReconnected:
+                NSLog("[GW-IN] onMessage: liveSessionReconnected")
+                self.statusBarController?.setLastErrorDescription(nil)
+            case .setupComplete(let sessionId):
+                NSLog("[GW-IN] onMessage: setupComplete, sessionId=%@", sessionId)
+            case .pong:
+                NSLog("[GW-IN] onMessage: pong")
+            case .ttsStart(let text):
+                NSLog("[GW-IN] onMessage: ttsStart, hasText=%d", text != nil ? 1 : 0)
+                self.ttsActive = true
+                self.catVoice?.stop()
+                if let text, !text.isEmpty {
+                    panel?.showBubble(text: text)
+                }
+                panel?.setTurnActive(true)
+            case .ttsEnd:
+                NSLog("[GW-IN] onMessage: ttsEnd")
+                self.ttsActive = false
+                panel?.setTurnActive(false)
+                Task { @MainActor [weak self] in
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    guard let self, !self.ttsActive, !self.isTurnActive else { return }
+                    self.spriteAnimator?.setState(.idle)
+                }
+            case .error(let code, let message):
+                NSLog("[GW-IN] onMessage: error, code=%@, message=%@", code, message)
+            case .unknown:
+                NSLog("[GW-IN] onMessage: unknown")
             }
         }
     }
 
     private func handleCharacterChanged(_ character: String) {
+        catPanel?.beginCharacterTransition()
+
         spriteAnimator?.setCharacter(character)
 
-        guard let preset = spriteAnimator?.loadPreset(for: character) else { return }
+        guard let preset = spriteAnimator?.loadPreset(for: character) else {
+            catPanel?.endCharacterTransition(characterName: character)
+            return
+        }
         AppSettings.shared.voice = preset.voice
         catPanel?.applySpriteSize(presetSize: preset.size)
         gatewayClient?.setSoul(preset.soul)
         gatewayClient?.resendSetupPayloadIfConnected()
+
+        let displayName = localizedCharacterName(character)
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            self?.catPanel?.endCharacterTransition(characterName: displayName)
+        }
     }
 
     private func showOnboarding() {
@@ -303,10 +396,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             circleGestureDetector?.stopMonitoring()
             isPaused = true
         }
+        statusBarController?.updatePauseState(isPaused)
     }
 
     private func handleMute() {
-        catVoice?.mute()
+        isMuted.toggle()
+        if isMuted {
+            catVoice?.mute()
+        } else {
+            catVoice?.unmute()
+        }
+        statusBarController?.updateMuteState(isMuted)
     }
 
     private func registerGlobalHotkey() {

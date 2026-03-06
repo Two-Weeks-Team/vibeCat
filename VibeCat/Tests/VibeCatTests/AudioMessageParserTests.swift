@@ -68,6 +68,53 @@ final class AudioMessageParserTests: XCTestCase {
         }
     }
 
+    // MARK: - parseEmotionTag
+
+    func testParseEmotionTagHappy() {
+        let result = AudioMessageParser.parseEmotionTag(from: "[happy] That looks right")
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.emotion, .happy)
+        XCTAssertEqual(result?.cleanText, "That looks right")
+    }
+
+    func testParseEmotionTagThinkingMapsToCurious() {
+        let result = AudioMessageParser.parseEmotionTag(from: "[thinking] Hmm interesting")
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.emotion, .curious)
+        XCTAssertEqual(result?.cleanText, "Hmm interesting")
+    }
+
+    func testParseEmotionTagConcerned() {
+        let result = AudioMessageParser.parseEmotionTag(from: "[concerned] That error looks bad")
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.emotion, .concerned)
+        XCTAssertEqual(result?.cleanText, "That error looks bad")
+    }
+
+    func testParseEmotionTagIdleMapsToNeutral() {
+        let result = AudioMessageParser.parseEmotionTag(from: "[idle] ")
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.emotion, .neutral)
+        XCTAssertEqual(result?.cleanText, "")
+    }
+
+    func testParseEmotionTagNoTagReturnsNil() {
+        let result = AudioMessageParser.parseEmotionTag(from: "No tag here")
+        XCTAssertNil(result)
+    }
+
+    func testParseEmotionTagMiddlePositionReturnsNil() {
+        let result = AudioMessageParser.parseEmotionTag(from: "Text [happy] in middle")
+        XCTAssertNil(result)
+    }
+
+    func testParseEmotionTagSurprised() {
+        let result = AudioMessageParser.parseEmotionTag(from: "[surprised] Wow!")
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.emotion, .surprised)
+        XCTAssertEqual(result?.cleanText, "Wow!")
+    }
+
     private func makeJSON(_ object: [String: Any]) throws -> Data {
         try JSONSerialization.data(withJSONObject: object)
     }

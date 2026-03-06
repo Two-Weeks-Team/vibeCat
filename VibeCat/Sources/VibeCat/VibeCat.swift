@@ -1,11 +1,17 @@
 import AppKit
+import Foundation
+
+/// FD kept open for process lifetime — OS releases the flock() on exit/crash.
+nonisolated(unsafe) private var singleInstanceFD: Int32 = -1
 
 @main
 struct VibeCatApp {
     static func main() {
-        let runningApps = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "com.vibecat.app")
-        if runningApps.count > 1 {
-            NSLog("[VibeCat] Already running — exiting duplicate instance")
+        let lockPath = NSTemporaryDirectory() + "com.vibecat.app.lock"
+        singleInstanceFD = open(lockPath, O_CREAT | O_RDWR, 0o600)
+        if singleInstanceFD == -1 || flock(singleInstanceFD, LOCK_EX | LOCK_NB) != 0 {
+            NSLog("[VibeCat] Already running — exiting duplicate instance (lock: %@)", lockPath)
+            if singleInstanceFD != -1 { close(singleInstanceFD) }
             return
         }
 

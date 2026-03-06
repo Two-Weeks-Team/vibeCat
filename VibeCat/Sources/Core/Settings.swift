@@ -47,7 +47,7 @@ public final class AppSettings: @unchecked Sendable {
     }
 
     public var liveModel: String {
-        get { defaults.string(forKey: Key.liveModel.rawValue) ?? "gemini-2.0-flash-live-001" }
+        get { defaults.string(forKey: Key.liveModel.rawValue) ?? "gemini-2.5-flash-native-audio-latest" }
         set { defaults.set(newValue, forKey: Key.liveModel.rawValue) }
     }
 
@@ -62,12 +62,18 @@ public final class AppSettings: @unchecked Sendable {
     }
 
     public var searchEnabled: Bool {
-        get { defaults.bool(forKey: Key.searchEnabled.rawValue) }
+        get {
+            if defaults.object(forKey: Key.searchEnabled.rawValue) == nil { return true }
+            return defaults.bool(forKey: Key.searchEnabled.rawValue)
+        }
         set { defaults.set(newValue, forKey: Key.searchEnabled.rawValue) }
     }
 
     public var proactiveAudio: Bool {
-        get { defaults.bool(forKey: Key.proactiveAudio.rawValue) }
+        get {
+            if defaults.object(forKey: Key.proactiveAudio.rawValue) == nil { return true }
+            return defaults.bool(forKey: Key.proactiveAudio.rawValue)
+        }
         set { defaults.set(newValue, forKey: Key.proactiveAudio.rawValue) }
     }
 

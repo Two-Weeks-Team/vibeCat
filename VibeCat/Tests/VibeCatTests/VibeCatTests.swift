@@ -33,11 +33,11 @@ final class VibeCatTests: XCTestCase {
         XCTAssertEqual(settings.character, "cat")
         XCTAssertEqual(settings.chattiness, "normal")
         XCTAssertEqual(settings.captureInterval, 5.0)
-        XCTAssertEqual(settings.liveModel, "gemini-2.0-flash-live-001")
+        XCTAssertEqual(settings.liveModel, "gemini-2.5-flash-native-audio-latest")
         XCTAssertFalse(settings.musicEnabled)
         XCTAssertEqual(settings.gatewayURL, "wss://realtime-gateway-163070481841.asia-northeast3.run.app")
-        XCTAssertFalse(settings.searchEnabled)
-        XCTAssertFalse(settings.proactiveAudio)
+        XCTAssertTrue(settings.searchEnabled)
+        XCTAssertTrue(settings.proactiveAudio)
     }
 
     func testAppSettingsPersistedValuesAreReturned() {

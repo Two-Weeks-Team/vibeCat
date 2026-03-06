@@ -14,12 +14,19 @@ final class ScreenCaptureService {
     }
 
     private var lastImage: CGImage?
+    private var lastFrontAppBundleID: String?
 
     // MARK: - Public API
 
     /// Capture the screen. Returns .unchanged if screen hasn't changed significantly.
     func captureAroundCursor() async -> CaptureResult {
         do {
+            let currentApp = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+            if currentApp != lastFrontAppBundleID {
+                lastImage = nil
+                lastFrontAppBundleID = currentApp
+            }
+
             let image = try await performCapture(fullWindow: false)
             if !ImageDiffer.hasSignificantChange(from: lastImage, to: image) {
                 return .unchanged
@@ -57,9 +64,19 @@ final class ScreenCaptureService {
     private func performCapture(fullWindow: Bool) async throws -> CGImage {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
 
-        guard let display = content.displays.first else {
+        guard !content.displays.isEmpty else {
             throw CaptureError.noDisplay
         }
+
+        // Find the display containing the mouse pointer (multi-monitor support)
+        let mouseLocation = NSEvent.mouseLocation
+        let mouseScreen = NSScreen.screens.first { NSMouseInRect(mouseLocation, $0.frame, false) }
+        let mouseDisplayID = mouseScreen.flatMap {
+            $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+        }
+        let display = mouseDisplayID.flatMap { id in
+            content.displays.first { $0.displayID == id }
+        } ?? content.displays.first!
 
         // Exclude VibeCat's own windows
         let excludedApps = content.applications.filter { app in
@@ -74,8 +91,8 @@ final class ScreenCaptureService {
         }
 
         let config = SCStreamConfiguration()
-        config.width = fullWindow ? 1920 : 1280
-        config.height = fullWindow ? 1080 : 720
+        config.width = display.width * 2
+        config.height = display.height * 2
         config.pixelFormat = kCVPixelFormatType_32BGRA
         config.showsCursor = false
         config.capturesAudio = false

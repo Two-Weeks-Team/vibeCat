@@ -6,9 +6,18 @@ final class CatPanel: NSPanel {
     private let imageView = NSImageView()
     private let emotionIndicator = NSTextField(labelWithString: "")
     private let bubbleView = ChatBubbleView()
+    private let spinnerView = NSProgressIndicator()
     private let catViewModel: CatViewModel
     private let spriteAnimator: SpriteAnimator
     private var spriteSize: CGFloat = 100
+
+    private weak var audioPlayer: AudioPlayer?
+    private weak var screenAnalyzer: ScreenAnalyzer?
+    private var smartHideTimer: Timer?
+    private var hideCountdownTimer: Timer?
+    private var bubbleDuration: TimeInterval = 2.0
+    private var currentBubbleText: String?
+    private var turnActive = false
 
     init(catViewModel: CatViewModel, spriteAnimator: SpriteAnimator) {
         self.catViewModel = catViewModel
@@ -46,6 +55,12 @@ final class CatPanel: NSPanel {
         imageView.imageScaling = .scaleProportionallyUpOrDown
         contentView.addSubview(imageView)
 
+        spinnerView.style = .spinning
+        spinnerView.controlSize = .small
+        spinnerView.isHidden = true
+        spinnerView.frame = NSRect(x: 0, y: 0, width: 24, height: 24)
+        contentView.addSubview(spinnerView)
+
         emotionIndicator.font = NSFont.systemFont(ofSize: 18)
         emotionIndicator.textColor = .white
         emotionIndicator.isHidden = true
@@ -64,7 +79,9 @@ final class CatPanel: NSPanel {
 
     private func wireViewModel() {
         catViewModel.onScreenFrameUpdate = { [weak self] screenFrame in
-            self?.setFrame(screenFrame, display: true)
+            guard let self else { return }
+            self.setFrame(screenFrame, display: true)
+            self.layoutOverlayElements()
         }
 
         catViewModel.onPositionUpdate = { [weak self] localPoint in
@@ -74,15 +91,78 @@ final class CatPanel: NSPanel {
     }
 
     func showBubble(text: String) {
+        let preview = String(text.prefix(50))
+        NSLog("[BUBBLE] showBubble: %@", preview)
+        let wasVisible = !bubbleView.isHidden && bubbleView.alphaValue > 0
+        currentBubbleText = text
+        bubbleDuration = min(10.0, max(3.0, Double(text.count) / 5.0))
         updateBubbleFrame(for: text)
-        bubbleView.show(text: text)
+        if wasVisible {
+            bubbleView.updateText(text)
+        } else {
+            bubbleView.show(text: text)
+        }
+        ensureSmartHidePolling()
+    }
+
+    func setTurnActive(_ active: Bool) {
+        turnActive = active
+        if !active {
+            evaluateBubbleHide()
+        }
+    }
+
+    private func ensureSmartHidePolling() {
+        guard smartHideTimer == nil else { return }
+        smartHideTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.evaluateBubbleHide()
+            }
+        }
+    }
+
+    private func evaluateBubbleHide() {
+        let audioActive = audioPlayer?.isPlaying ?? false
+
+        if turnActive || audioActive {
+            hideCountdownTimer?.invalidate()
+            hideCountdownTimer = nil
+            return
+        }
+
+        guard hideCountdownTimer == nil else { return }
+        hideCountdownTimer = Timer.scheduledTimer(withTimeInterval: bubbleDuration, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.bubbleView.hide()
+                self?.currentBubbleText = nil
+                self?.smartHideTimer?.invalidate()
+                self?.smartHideTimer = nil
+                self?.hideCountdownTimer = nil
+            }
+        }
     }
 
     func setEmotionIndicator(_ text: String?) {
         let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        NSLog("[BUBBLE] setEmotionIndicator: %@", trimmed)
         emotionIndicator.stringValue = trimmed
         emotionIndicator.isHidden = trimmed.isEmpty
         layoutOverlayElements()
+    }
+
+    func updateEmotionForState(_ state: SpriteAnimator.AnimationState) {
+        switch state {
+        case .happy, .celebrating:
+            setEmotionIndicator("🔥")
+        case .surprised:
+            setEmotionIndicator("⚡")
+        case .thinking:
+            setEmotionIndicator("💀")
+        case .frustrated:
+            setEmotionIndicator("😤")
+        case .idle:
+            setEmotionIndicator(nil)
+        }
     }
 
     func applySpriteSize(presetSize: String?) {
@@ -97,6 +177,36 @@ final class CatPanel: NSPanel {
 
         imageView.frame.size = NSSize(width: spriteSize, height: spriteSize)
         layoutOverlayElements()
+    }
+
+    func setSmartHideReferences(audioPlayer: AudioPlayer, screenAnalyzer: ScreenAnalyzer) {
+        self.audioPlayer = audioPlayer
+        self.screenAnalyzer = screenAnalyzer
+    }
+
+    func beginCharacterTransition() {
+        showBubble(text: "캐릭터 변경 중...")
+        spinnerView.isHidden = false
+        spinnerView.startAnimation(nil)
+        layoutSpinner()
+
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.25
+            self.imageView.animator().alphaValue = 0.25
+        }
+    }
+
+    func endCharacterTransition(characterName: String) {
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.3
+            self.imageView.animator().alphaValue = 1.0
+        } completionHandler: { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.spinnerView.stopAnimation(nil)
+                self?.spinnerView.isHidden = true
+                self?.showBubble(text: "\(characterName) 등장!")
+            }
+        }
     }
 
     func show() {
@@ -117,7 +227,19 @@ final class CatPanel: NSPanel {
 
     private func layoutOverlayElements() {
         let catFrame = imageView.frame
-        emotionIndicator.frame.origin = NSPoint(x: catFrame.maxX + 4, y: catFrame.maxY - 20)
+        emotionIndicator.frame.origin = NSPoint(x: catFrame.maxX - 4, y: catFrame.maxY - 4)
+        layoutSpinner()
+        if let text = currentBubbleText {
+            updateBubbleFrame(for: text)
+        }
+    }
+
+    private func layoutSpinner() {
+        let catFrame = imageView.frame
+        spinnerView.frame.origin = NSPoint(
+            x: catFrame.midX - spinnerView.frame.width / 2,
+            y: catFrame.midY - spinnerView.frame.height / 2
+        )
     }
 
     private func updateBubbleFrame(for text: String) {
@@ -127,31 +249,27 @@ final class CatPanel: NSPanel {
         let size = bubbleView.preferredSize(for: text)
         let catFrame = imageView.frame
 
-        var bubbleX = catFrame.maxX + 8
-        var tailDirection: ChatBubbleView.TailDirection = .left
-        var bubbleY = catFrame.maxY - size.height + 12
-
-        let projectedRight = frame.minX + bubbleX + size.width
-        if projectedRight > screenFrame.maxX - 8 {
-            bubbleX = catFrame.minX - size.width - 8
-            tailDirection = .right
-        }
+        var bubbleX = catFrame.midX - size.width / 2
+        var bubbleY = catFrame.maxY + 8
+        var tailDir: ChatBubbleView.TailDirection = .bottom
 
         let projectedTop = frame.minY + bubbleY + size.height
         if projectedTop > screenFrame.maxY - 8 {
-            bubbleY = catFrame.minY - size.height - 10
-            tailDirection = .up
+            bubbleY = catFrame.minY - size.height - 8
+            tailDir = .top
         }
 
-        if frame.minY + bubbleY < screenFrame.minY + 8 {
-            bubbleY = catFrame.maxY - size.height + 12
-            if tailDirection == .up {
-                tailDirection = bubbleX < catFrame.minX ? .right : .left
-            }
+        let projectedLeft = frame.minX + bubbleX
+        let projectedRight = projectedLeft + size.width
+        if projectedRight > screenFrame.maxX - 8 {
+            bubbleX -= (projectedRight - screenFrame.maxX + 8)
+        }
+        if projectedLeft < screenFrame.minX + 8 {
+            bubbleX += (screenFrame.minX + 8 - projectedLeft)
         }
 
-        bubbleView.setTailDirection(tailDirection)
+        bubbleView.setTailDirection(tailDir)
         bubbleView.frame = NSRect(x: bubbleX, y: bubbleY, width: size.width, height: size.height)
-        contentView.needsLayout = true
+        bubbleView.layoutSubtreeIfNeeded()
     }
 }
