@@ -49,11 +49,13 @@ flowchart LR
     C -->|WebSocket| RG[Realtime Gateway<br/>Go + GenAI SDK<br/>Cloud Run]
     RG -->|Live API| GL[Gemini Live API]
     RG -->|HTTP POST /analyze| AO[ADK Orchestrator<br/>Go + ADK Go SDK<br/>Cloud Run]
-    AO --> AG["9-Agent Graph"]
-    AG --> FS[(Firestore)]
-    AG --> GS[Google Search]
+    AO --> W1["Wave 1 ∥<br/>Vision + Memory"]
+    AO --> W2["Wave 2 ∥<br/>Mood + Celebration"]
+    AO --> W3["Wave 3 →<br/>Mediator → Scheduler<br/>→ Engagement → Search"]
+    W1 & W3 --> FS[(Firestore)]
+    W3 --> GS[Google Search]
     RG --> SM[Secret Manager]
-    RG & AO --> OBS[Cloud Logging<br/>Monitoring + Trace]
+    RG & AO --> OBS[Cloud Trace +<br/>Cloud Logging +<br/>ADK Telemetry]
 ```
 
 ### Three-Layer Split
@@ -222,10 +224,14 @@ vibeCat/
 |----------|-----------|
 | **Client** | Swift 6, SwiftUI, SPM, CoreGraphics, AVFoundation |
 | **Backend** | Go 1.24+, `google.golang.org/genai`, `google.golang.org/adk` |
-| **AI** | Gemini Live API, GenAI SDK, Google ADK, VAD |
-| **Infrastructure** | GCP Cloud Run, Firestore, Secret Manager, Artifact Registry |
-| **Observability** | Cloud Logging, Cloud Monitoring, Cloud Trace |
-| **CI/CD** | GitHub Actions, Cloud Build |
+| **AI Models** | `gemini-2.5-flash-native-audio-latest` (Live), `gemini-2.5-flash-preview-tts` (TTS), `gemini-3.1-flash-lite-preview` (Vision) |
+| **GenAI SDK** | Live API (VAD, Barge-in, AffectiveDialog, SessionResumption, ContextWindowCompression, OutputTranscription) |
+| **ADK** | Runner, ParallelAgent, SequentialAgent, LLMAgent, Session State, InMemoryService (memory + session), Telemetry, FunctionTool, GeminiTool (GoogleSearch) |
+| **Agent Graph** | 9 agents in 3 waves: Perception (Vision∥Memory) → Emotion (Mood∥Celebration) → Decision (Mediator→Scheduler→Engagement→Search) |
+| **Infrastructure** | GCP Cloud Run (2 services), Firestore, Secret Manager, Artifact Registry |
+| **Observability** | Cloud Trace (OpenTelemetry spans), Cloud Logging (structured), ADK Telemetry |
+| **Auth** | Device UUID (zero-onboarding, no client-side API keys) |
+| **CI/CD** | Cloud Build, `infra/deploy.sh` |
 
 ---
 

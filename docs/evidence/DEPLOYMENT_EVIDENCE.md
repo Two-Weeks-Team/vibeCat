@@ -1,8 +1,9 @@
 # VibeCat Deployment Evidence
 
-**Collected**: 2026-03-04
+**Collected**: 2026-03-06
 **Project**: vibecat-489105
 **Region**: asia-northeast3 (Seoul)
+**Last Deploy**: 2026-03-06
 
 ---
 
@@ -13,16 +14,23 @@
 | Field | Value |
 |-------|-------|
 | Service Name | `realtime-gateway` |
-| URL | `https://realtime-gateway-a4akw2crra-du.a.run.app` |
-| Alt URL | `https://realtime-gateway-163070481841.asia-northeast3.run.app` |
+| URL | `https://realtime-gateway-163070481841.asia-northeast3.run.app` |
 | Status | **Ready** (True) |
-| Active Revision | `realtime-gateway-00002-4sw` |
+| Active Revision | `realtime-gateway-00006-mq9` |
 | Traffic | 100% → latest revision |
 | Created | 2026-03-04T00:28:46Z |
-| Last Deploy | 2026-03-04T00:32:43Z |
+| Auth | Public (`allUsers` → `roles/run.invoker`) |
+
+**Key Changes in 00006**:
+- Live API reconnection race condition fix (`reconnecting` state flag)
+- Conditional session nil with pointer comparison (prevents killing newer sessions)
+- Audio frame drop during reconnect state
 
 **Health Check**:
 ```
+GET /health → 200 OK
+{"connections":0,"service":"realtime-gateway","status":"ok"}
+
 GET /readyz → 200 OK
 {"service":"realtime-gateway","status":"ok"}
 ```
@@ -32,12 +40,22 @@ GET /readyz → 200 OK
 | Field | Value |
 |-------|-------|
 | Service Name | `adk-orchestrator` |
-| URL | `https://adk-orchestrator-a4akw2crra-du.a.run.app` |
+| URL | `https://adk-orchestrator-163070481841.asia-northeast3.run.app` |
 | Status | **Ready** (True) |
-| Active Revision | `adk-orchestrator-00001-mbt` |
+| Active Revision | `adk-orchestrator-00008-5t2` |
 | Traffic | 100% → latest revision |
-| Created | 2026-03-04T00:28:33Z |
 | Access | Internal only (invoked by Gateway via `POST /analyze`) |
+
+**Key Changes in 00008**:
+- LLM dynamic message generation for Mediator, Celebration, Engagement agents
+- All hardcoded speech message pools replaced with `gemini-3.1-flash-lite-preview` generation
+- `llmSearchAgent` wired as live SubAgent in wave3 (previously dead code)
+- `genaiClient` passed to mediator, celebration, engagement constructors
+
+**Health Check**:
+```
+GET /health → 200 OK
+```
 
 ---
 
@@ -64,6 +82,14 @@ GET /readyz → 200 OK
 | Repository | Format | Created |
 |------------|--------|---------|
 | `vibecat-images` | DOCKER | 2026-03-04T09:19:04 |
+
+### Observability
+
+| Service | Status | Details |
+|---------|--------|---------|
+| Cloud Trace | ✅ Active | OpenTelemetry → `opentelemetry-operations-go/exporter/trace` |
+| Cloud Logging | ✅ Active | `cloud.google.com/go/logging` structured JSON |
+| ADK Telemetry | ✅ Active | `google.golang.org/adk/telemetry` with GCP resource |
 
 ---
 
@@ -168,8 +194,8 @@ GET /readyz → 200 OK
 
 | Requirement | Implementation | Verified |
 |-------------|---------------|----------|
-| GenAI SDK | `google.golang.org/genai` in Gateway | Yes |
-| Google ADK | `google.golang.org/adk` in Orchestrator | Yes |
+| GenAI SDK | `google.golang.org/genai v1.48.0` in Gateway + Orchestrator | Yes |
+| Google ADK | `google.golang.org/adk v0.5.0` in Orchestrator | Yes |
 | Gemini Live API | Live session via GenAI SDK | Yes |
 | VAD | `automaticActivityDetection: true` | Yes |
 
@@ -179,30 +205,70 @@ GET /readyz → 200 OK
 |-------|---------|--------|
 | VAD | Gemini Live API config | Implemented |
 | VisionAgent | `agents/vision` | Implemented + tested |
-| Mediator | `agents/mediator` | Implemented + tested |
+| Mediator | `agents/mediator` | Implemented + tested + LLM dynamic messages |
 | AdaptiveScheduler | `agents/scheduler` | Implemented + tested |
-| EngagementAgent | `agents/engagement` | Implemented + tested |
+| EngagementAgent | `agents/engagement` | Implemented + tested + LLM dynamic messages |
 | MemoryAgent | `agents/memory` | Implemented + tested |
 | MoodDetector | `agents/mood` | Implemented + tested |
-| CelebrationTrigger | `agents/celebration` | Implemented + tested |
+| CelebrationTrigger | `agents/celebration` | Implemented + tested + LLM dynamic messages |
 | SearchBuddy | `agents/search` | Implemented + tested |
+| LLMSearchBuddy | `agents/search` (llmagent) | Implemented (wave3 SubAgent) |
+
+### Agent Graph (3-Wave Architecture)
+
+```
+runner.New(Config{
+  Agent: sequentialagent → [
+    parallelagent → [Vision, Memory]         ← Wave 1: Parallel perception
+    parallelagent → [Mood, Celebration]       ← Wave 2: Parallel emotion
+    sequentialagent → [Mediator, Scheduler, Engagement, SearchBuddy, LLMSearchBuddy]  ← Wave 3: Sequential decision
+  ],
+  SessionService: session.InMemoryService(),
+  MemoryService: memory.InMemoryService(),
+})
+```
+
+### ADK Features Used (11)
+
+| # | Feature | Import |
+|---|---------|--------|
+| 1 | `agent.New()` | `google.golang.org/adk/agent` |
+| 2 | `sequentialagent.New()` | `.../workflowagents/sequentialagent` |
+| 3 | `parallelagent.New()` | `.../workflowagents/parallelagent` |
+| 4 | `llmagent.New()` | `google.golang.org/adk/agent/llmagent` |
+| 5 | `session.InMemoryService()` | `google.golang.org/adk/session` |
+| 6 | `memory.InMemoryService()` | `google.golang.org/adk/memory` |
+| 7 | `runner.New()` | `google.golang.org/adk/runner` |
+| 8 | `telemetry.New()` | `google.golang.org/adk/telemetry` |
+| 9 | `session.State/Event` | `google.golang.org/adk/session` |
+| 10 | `functiontool.New()` | `google.golang.org/adk/tool/functiontool` |
+| 11 | `geminitool.GoogleSearch{}` | `google.golang.org/adk/tool/geminitool` |
+
+### AI Models Used
+
+| Model | Purpose | Location |
+|-------|---------|----------|
+| `gemini-2.5-flash-native-audio-latest` | Live API (voice conversation) | Gateway |
+| `gemini-2.5-flash-preview-tts` | Text-to-speech | Gateway |
+| `gemini-3.1-flash-lite-preview` | Vision analysis | Orchestrator |
+| `gemini-3.1-flash-lite-preview` | LLM Search agent | Orchestrator |
+| `gemini-3.1-flash-lite-preview` | Dynamic message generation (Mediator, Celebration, Engagement) | Orchestrator |
 
 ---
 
 ## 6. Blog Posts (dev.to)
 
-| # | Title | dev.to ID | Status | Score |
-|---|-------|-----------|--------|-------|
-| Pivot | "Why I Killed My App Two Weeks Before the Deadline" | — | **Published** | — |
-| P1 | "The Empty Chair Problem" | 3307451 | Draft | 98/100 |
-| P2 | "Teaching Nine Agents to Think Like a Colleague" | 3307456 | Draft | 97/100 |
-| P3 | "The WebSocket Proxy Nobody Asked For" | 3307463 | Draft | 95/100 |
-| P4 | "Six Characters, One Soul Format" | 3307467 | Draft | 99/100 |
-| P5 | "Making Swift 6 Talk to Go" | 3307469 | Draft | 96/100 |
-| P6 | "The Cloud Run 404 That Almost Ended Everything" | 3307471 | Draft | 95/100 |
-| P7 | "Retrospective: What VibeCat Taught Me" | 3307474 | Draft | 96/100 |
+| # | Title | Status |
+|---|-------|--------|
+| 1 | "Why I Killed My App Two Weeks Before the Deadline" | **Published** |
+| 2 | "The Empty Chair Problem" | **Published** |
+| 3 | "Teaching Nine Agents to Think Like a Colleague" | **Published** |
+| 4 | "The WebSocket Proxy Nobody Asked For" | **Published** |
+| 5 | "Six Characters, One Soul Format" | **Published** |
+| P2 | Additional posts | Draft (user-managed) |
 
 All posts include `#GeminiLiveAgentChallenge` tag for +0.6 bonus points.
+Blog publishing is user-managed.
 
 ---
 
@@ -216,7 +282,22 @@ All posts include `#GeminiLiveAgentChallenge` tag for +0.6 bonus points.
 | Character | `cat` |
 | Chattiness | `normal` |
 | Capture Interval | 5.0s |
-| Live Model | `gemini-2.0-flash-live-001` |
+| Live Model | `gemini-2.5-flash-native-audio-latest` |
+
+---
+
+## 8. Live API Features
+
+| Feature | Status |
+|---------|--------|
+| VAD (Voice Activity Detection) | ✅ Active |
+| Barge-in (StartOfActivityInterrupts) | ✅ Active |
+| ProactiveAudio | ✅ Active |
+| OutputAudioTranscription | ✅ Active |
+| InputAudioTranscription | ✅ Active |
+| ContextWindowCompression | ✅ Active (trigger 4096, target 2048) |
+| SessionResumption | ✅ Active (handle-based) |
+| AffectiveDialog | ✅ Active |
 
 ---
 
@@ -224,7 +305,8 @@ All posts include `#GeminiLiveAgentChallenge` tag for +0.6 bonus points.
 
 ```bash
 # Health check
-curl https://realtime-gateway-a4akw2crra-du.a.run.app/readyz
+curl https://realtime-gateway-163070481841.asia-northeast3.run.app/health
+curl https://realtime-gateway-163070481841.asia-northeast3.run.app/readyz
 
 # Cloud Run status
 gcloud run services list --project=vibecat-489105 --region=asia-northeast3
@@ -232,11 +314,11 @@ gcloud run services list --project=vibecat-489105 --region=asia-northeast3
 # Run all tests
 make test                    # Swift (24 tests)
 make backend-test            # Go (Gateway + Orchestrator)
-GATEWAY_URL=https://realtime-gateway-a4akw2crra-du.a.run.app go test ./...  # E2E (in tests/e2e/)
-
-# CI status
-gh run list --repo Two-Weeks-Team/vibeCat --limit 3
 
 # Build & run client
 make run
+
+# Local backend development
+source .env && cd backend/adk-orchestrator && PORT=9091 GEMINI_API_KEY=$GEMINI_API_KEY go run .
+source .env && cd backend/realtime-gateway && PORT=9090 GEMINI_API_KEY=$GEMINI_API_KEY ADK_ORCHESTRATOR_URL=http://localhost:9091 go run .
 ```
