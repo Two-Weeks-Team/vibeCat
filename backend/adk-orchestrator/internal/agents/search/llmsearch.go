@@ -7,6 +7,7 @@ import (
 
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/agent/llmagent"
+	"google.golang.org/adk/model"
 	"google.golang.org/adk/model/gemini"
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
@@ -101,6 +102,22 @@ Respond in %s.`, lang),
 			formatTool,
 		},
 		OutputKey: "search_result",
+		BeforeModelCallbacks: []llmagent.BeforeModelCallback{
+			func(ctx agent.CallbackContext, req *model.LLMRequest) (*model.LLMResponse, error) {
+				slog.Info("[ADK] LLM call started", "agent", ctx.AgentName(), "contents", len(req.Contents))
+				return nil, nil
+			},
+		},
+		AfterModelCallbacks: []llmagent.AfterModelCallback{
+			func(ctx agent.CallbackContext, resp *model.LLMResponse, respErr error) (*model.LLMResponse, error) {
+				if respErr != nil {
+					slog.Warn("[ADK] LLM call failed", "agent", ctx.AgentName(), "error", respErr)
+				} else {
+					slog.Info("[ADK] LLM call completed", "agent", ctx.AgentName())
+				}
+				return nil, nil
+			},
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create llm search agent: %w", err)

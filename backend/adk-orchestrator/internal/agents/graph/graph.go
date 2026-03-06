@@ -4,6 +4,7 @@ import (
 	"log/slog"
 
 	"google.golang.org/adk/agent"
+	"google.golang.org/adk/agent/workflowagents/loopagent"
 	"google.golang.org/adk/agent/workflowagents/parallelagent"
 	"google.golang.org/adk/agent/workflowagents/sequentialagent"
 	"google.golang.org/genai"
@@ -144,14 +145,28 @@ func New(genaiClient *genai.Client, storeClient *store.Client, apiKey ...string)
 		key = apiKey[0]
 	}
 
-	wave3SubAgents := []agent.Agent{mediatorAgent, schedulerAgent, engagementAgent, searchAgent}
+	searchSubAgents := []agent.Agent{searchAgent}
 	llmSearchAgent, llmSearchErr := search.NewLLMSearchAgent(key, "Korean")
 	if llmSearchErr != nil {
 		slog.Warn("failed to create LLM search agent — using custom search only", "error", llmSearchErr)
 	} else {
-		wave3SubAgents = append(wave3SubAgents, llmSearchAgent)
-		slog.Info("LLM search agent wired into wave3 (llmagent + functiontool + geminitool)")
+		searchSubAgents = append(searchSubAgents, llmSearchAgent)
+		slog.Info("LLM search agent wired into search loop (llmagent + functiontool + geminitool)")
 	}
+
+	searchLoop, err := loopagent.New(loopagent.Config{
+		AgentConfig: agent.Config{
+			Name:        "search_refinement_loop",
+			Description: "Iterative search refinement — runs search agents up to 2 times for better results",
+			SubAgents:   searchSubAgents,
+		},
+		MaxIterations: 2,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	wave3SubAgents := []agent.Agent{mediatorAgent, schedulerAgent, engagementAgent, searchLoop}
 
 	wave1, err := parallelagent.New(parallelagent.Config{
 		AgentConfig: agent.Config{

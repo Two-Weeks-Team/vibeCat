@@ -13,6 +13,8 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/memory"
+	"google.golang.org/adk/plugin"
+	"google.golang.org/adk/plugin/retryandreflect"
 	"google.golang.org/adk/runner"
 	"google.golang.org/adk/session"
 	"google.golang.org/adk/telemetry"
@@ -109,14 +111,21 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create ADK runner with in-memory session service
+	// Create ADK runner with in-memory session service + retryandreflect plugin
 	sessService := session.InMemoryService()
 	memService := memory.InMemoryService()
+	retryPlugin := retryandreflect.MustNew(
+		retryandreflect.WithMaxRetries(3),
+		retryandreflect.WithTrackingScope(retryandreflect.Invocation),
+	)
 	r, err := runner.New(runner.Config{
 		AppName:        "vibecat",
 		Agent:          agentGraph,
 		SessionService: sessService,
 		MemoryService:  memService,
+		PluginConfig: runner.PluginConfig{
+			Plugins: []*plugin.Plugin{retryPlugin},
+		},
 	})
 	if err != nil {
 		slog.Error("failed to create runner", "error", err)
