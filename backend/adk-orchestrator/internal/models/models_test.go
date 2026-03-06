@@ -68,13 +68,15 @@ func TestConstantsAndMessageCatalogs(t *testing.T) {
 	if MoodFocused == "" || MoodFrustrated == "" || MoodStuck == "" || MoodIdle == "" {
 		t.Fatal("expected mood constants to be non-empty")
 	}
-	if len(SupportiveMessages[MoodFrustrated]) == 0 {
-		t.Fatal("expected supportive messages for frustrated mood")
-	}
-	if len(SupportiveMessages[MoodStuck]) == 0 {
-		t.Fatal("expected supportive messages for stuck mood")
-	}
-	if len(CelebrationMessages) == 0 {
-		t.Fatal("expected celebration messages")
+	for _, lang := range []string{"Korean", "English"} {
+		if len(SupportiveMessages[MoodFrustrated][lang]) == 0 {
+			t.Fatalf("expected supportive messages for frustrated mood in %s", lang)
+		}
+		if len(SupportiveMessages[MoodStuck][lang]) == 0 {
+			t.Fatalf("expected supportive messages for stuck mood in %s", lang)
+		}
+		if len(CelebrationMessages[lang]) == 0 {
+			t.Fatalf("expected celebration messages in %s", lang)
+		}
 	}
 }

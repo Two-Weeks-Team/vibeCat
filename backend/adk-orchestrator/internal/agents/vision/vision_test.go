@@ -5,33 +5,14 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"vibecat/adk-orchestrator/internal/models"
 )
 
 func TestNew(t *testing.T) {
 	a := New(nil)
 	if a == nil {
 		t.Fatal("expected non-nil agent")
-	}
-}
-
-func TestDetectSuccess(t *testing.T) {
-	tests := []struct {
-		name string
-		text string
-		want bool
-	}{
-		{name: "detects tests passed", text: "All tests passed in CI", want: true},
-		{name: "detects deployed", text: "service deployed to prod", want: true},
-		{name: "detects pr merged", text: "PR merged successfully", want: true},
-		{name: "no success pattern", text: "still debugging issue", want: false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := detectSuccess(tt.text); got != tt.want {
-				t.Fatalf("detectSuccess() = %v, want %v", got, tt.want)
-			}
-		})
 	}
 }
 
@@ -69,9 +50,34 @@ func TestTrackErrorHistoryCap(t *testing.T) {
 	}
 }
 
+func TestTrackSuccessAndRepeatedSuccess(t *testing.T) {
+	a := New(nil)
+	content := "Great news! All tests passed successfully"
+
+	a.trackSuccess(content)
+	if a.isRepeatedSuccess(content) {
+		t.Fatal("expected not repeated with one history entry")
+	}
+
+	a.trackSuccess(content)
+	if !a.isRepeatedSuccess(content) {
+		t.Fatal("expected repeated after two matching history entries")
+	}
+}
+
+func TestTrackSuccessHistoryCap(t *testing.T) {
+	a := New(nil)
+	for i := 0; i < 30; i++ {
+		a.trackSuccess(fmt.Sprintf("success-%d", i))
+	}
+	if len(a.successHistory) != 21 {
+		t.Fatalf("len(successHistory) = %d, want 21", len(a.successHistory))
+	}
+}
+
 func TestAnalyzeFallbackWithoutClientOrImage(t *testing.T) {
 	a := New(nil)
-	got := a.analyze(context.Background(), "", "terminal shows build output")
+	got := a.analyze(context.Background(), &models.AnalysisRequest{Context: "terminal shows build output"})
 
 	if got.Significance != 3 {
 		t.Fatalf("Significance = %d, want 3", got.Significance)

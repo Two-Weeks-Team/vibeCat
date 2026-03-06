@@ -1,8 +1,10 @@
-// Package graph wires all 9 VibeCat agents into an ADK sequential agent graph.
 package graph
 
 import (
+	"log/slog"
+
 	"google.golang.org/adk/agent"
+	"google.golang.org/adk/agent/workflowagents/parallelagent"
 	"google.golang.org/adk/agent/workflowagents/sequentialagent"
 	"google.golang.org/genai"
 
@@ -29,74 +31,156 @@ import (
 //  8. SearchBuddy   — Google Search when stuck/frustrated
 //
 // storeClient may be nil — MemoryAgent will run in stub mode.
-func New(genaiClient *genai.Client, storeClient *store.Client) (agent.Agent, error) {
+func beforeLog() agent.BeforeAgentCallback {
+	return func(ctx agent.CallbackContext) (*genai.Content, error) {
+		slog.Info("[ADK] agent started", "agent", ctx.AgentName())
+		return nil, nil
+	}
+}
+
+func afterLog() agent.AfterAgentCallback {
+	return func(ctx agent.CallbackContext) (*genai.Content, error) {
+		slog.Info("[ADK] agent completed", "agent", ctx.AgentName())
+		return nil, nil
+	}
+}
+
+func New(genaiClient *genai.Client, storeClient *store.Client, apiKey ...string) (agent.Agent, error) {
+	cbs := agent.Config{
+		BeforeAgentCallbacks: []agent.BeforeAgentCallback{beforeLog()},
+		AfterAgentCallbacks:  []agent.AfterAgentCallback{afterLog()},
+	}
+
 	memoryAgent, err := agent.New(agent.Config{
-		Name:        "memory_agent",
-		Description: "Retrieves cross-session context and stores end-of-session summaries",
-		Run:         memory.New(genaiClient, storeClient).Run,
+		Name:                 "memory_agent",
+		Description:          "Retrieves cross-session context and stores end-of-session summaries",
+		Run:                  memory.New(genaiClient, storeClient).Run,
+		BeforeAgentCallbacks: cbs.BeforeAgentCallbacks,
+		AfterAgentCallbacks:  cbs.AfterAgentCallbacks,
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	visionAgent, err := agent.New(agent.Config{
-		Name:        "vision_agent",
-		Description: "Analyzes developer screen captures for errors, success, and context",
-		Run:         vision.New(genaiClient).Run,
+		Name:                 "vision_agent",
+		Description:          "Analyzes developer screen captures for errors, success, and context",
+		Run:                  vision.New(genaiClient).Run,
+		BeforeAgentCallbacks: cbs.BeforeAgentCallbacks,
+		AfterAgentCallbacks:  cbs.AfterAgentCallbacks,
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	moodAgent, err := agent.New(agent.Config{
-		Name:        "mood_detector",
-		Description: "Classifies developer mood from vision signals and interaction patterns",
-		Run:         mood.New().Run,
+		Name:                 "mood_detector",
+		Description:          "Classifies developer mood from vision signals and interaction patterns",
+		Run:                  mood.New().Run,
+		BeforeAgentCallbacks: cbs.BeforeAgentCallbacks,
+		AfterAgentCallbacks:  cbs.AfterAgentCallbacks,
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	celebrationAgent, err := agent.New(agent.Config{
-		Name:        "celebration_trigger",
-		Description: "Detects success events and triggers celebration responses",
-		Run:         celebration.New().Run,
+		Name:                 "celebration_trigger",
+		Description:          "Detects success events and triggers celebration responses",
+		Run:                  celebration.New(genaiClient).Run,
+		BeforeAgentCallbacks: cbs.BeforeAgentCallbacks,
+		AfterAgentCallbacks:  cbs.AfterAgentCallbacks,
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	mediatorAgent, err := agent.New(agent.Config{
-		Name:        "mediator",
-		Description: "Decides when to speak based on significance, cooldown, mood, and celebration",
-		Run:         mediator.New().Run,
+		Name:                 "mediator",
+		Description:          "Decides when to speak based on significance, cooldown, mood, and celebration",
+		Run:                  mediator.New(genaiClient).Run,
+		BeforeAgentCallbacks: cbs.BeforeAgentCallbacks,
+		AfterAgentCallbacks:  cbs.AfterAgentCallbacks,
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	schedulerAgent, err := agent.New(agent.Config{
-		Name:        "adaptive_scheduler",
-		Description: "Adjusts timing thresholds based on interaction rate",
-		Run:         scheduler.New().Run,
+		Name:                 "adaptive_scheduler",
+		Description:          "Adjusts timing thresholds based on interaction rate",
+		Run:                  scheduler.New().Run,
+		BeforeAgentCallbacks: cbs.BeforeAgentCallbacks,
+		AfterAgentCallbacks:  cbs.AfterAgentCallbacks,
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	engagementAgent, err := agent.New(agent.Config{
-		Name:        "engagement_agent",
-		Description: "Proactively engages when developer has been silent too long",
-		Run:         engagement.New().Run,
+		Name:                 "engagement_agent",
+		Description:          "Proactively engages when developer has been silent too long",
+		Run:                  engagement.New(genaiClient).Run,
+		BeforeAgentCallbacks: cbs.BeforeAgentCallbacks,
+		AfterAgentCallbacks:  cbs.AfterAgentCallbacks,
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	searchAgent, err := agent.New(agent.Config{
-		Name:        "search_buddy",
-		Description: "Searches Google for solutions when developer is stuck or frustrated",
-		Run:         search.New(genaiClient).Run,
+		Name:                 "search_buddy",
+		Description:          "Searches Google for solutions when developer is stuck or frustrated",
+		Run:                  search.New(genaiClient).Run,
+		BeforeAgentCallbacks: cbs.BeforeAgentCallbacks,
+		AfterAgentCallbacks:  cbs.AfterAgentCallbacks,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	key := ""
+	if len(apiKey) > 0 {
+		key = apiKey[0]
+	}
+
+	wave3SubAgents := []agent.Agent{mediatorAgent, schedulerAgent, engagementAgent, searchAgent}
+	llmSearchAgent, llmSearchErr := search.NewLLMSearchAgent(key, "Korean")
+	if llmSearchErr != nil {
+		slog.Warn("failed to create LLM search agent — using custom search only", "error", llmSearchErr)
+	} else {
+		wave3SubAgents = append(wave3SubAgents, llmSearchAgent)
+		slog.Info("LLM search agent wired into wave3 (llmagent + functiontool + geminitool)")
+	}
+
+	wave1, err := parallelagent.New(parallelagent.Config{
+		AgentConfig: agent.Config{
+			Name:        "wave1_perception",
+			Description: "Parallel: Vision analysis + Memory retrieval",
+			SubAgents:   []agent.Agent{visionAgent, memoryAgent},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	wave2, err := parallelagent.New(parallelagent.Config{
+		AgentConfig: agent.Config{
+			Name:        "wave2_emotion",
+			Description: "Parallel: Mood detection + Celebration check",
+			SubAgents:   []agent.Agent{moodAgent, celebrationAgent},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	wave3, err := sequentialagent.New(sequentialagent.Config{
+		AgentConfig: agent.Config{
+			Name:        "wave3_decision",
+			Description: "Sequential: Decision agents that depend on perception + emotion results",
+			SubAgents:   wave3SubAgents,
+		},
 	})
 	if err != nil {
 		return nil, err
@@ -105,17 +189,8 @@ func New(genaiClient *genai.Client, storeClient *store.Client) (agent.Agent, err
 	graph, err := sequentialagent.New(sequentialagent.Config{
 		AgentConfig: agent.Config{
 			Name:        "vibecat_graph",
-			Description: "VibeCat 9-agent orchestration graph for developer companion intelligence",
-			SubAgents: []agent.Agent{
-				memoryAgent,
-				visionAgent,
-				moodAgent,
-				celebrationAgent,
-				mediatorAgent,
-				schedulerAgent,
-				engagementAgent,
-				searchAgent,
-			},
+			Description: "VibeCat 9-agent orchestration: perception(parallel) → emotion(parallel) → decision(sequential)",
+			SubAgents:   []agent.Agent{wave1, wave2, wave3},
 		},
 	})
 	if err != nil {

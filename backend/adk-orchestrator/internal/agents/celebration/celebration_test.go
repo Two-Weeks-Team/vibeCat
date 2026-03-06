@@ -64,7 +64,7 @@ func decodeSingleResult(t *testing.T, seq func(func(*session.Event, error) bool)
 }
 
 func TestNew(t *testing.T) {
-	a := New()
+	a := New(nil)
 	if !a.lastCelebration.IsZero() {
 		t.Fatal("expected zero initial lastCelebration")
 	}
@@ -80,13 +80,13 @@ func TestRunCelebrationTrigger(t *testing.T) {
 		{
 			name:            "triggers when success and outside cooldown",
 			lastCelebration: time.Now().Add(-cooldown - time.Second),
-			input:           models.AnalysisResult{Vision: &models.VisionAnalysis{SuccessDetected: true}},
+			input:           models.AnalysisResult{Vision: &models.VisionAnalysis{SuccessDetected: true, Significance: 9}},
 			wantTriggered:   true,
 		},
 		{
 			name:            "suppressed during cooldown",
 			lastCelebration: time.Now(),
-			input:           models.AnalysisResult{Vision: &models.VisionAnalysis{SuccessDetected: true}},
+			input:           models.AnalysisResult{Vision: &models.VisionAnalysis{SuccessDetected: true, Significance: 9}},
 			wantTriggered:   false,
 		},
 		{

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"iter"
+	"log/slog"
+	"strings"
 	"time"
 
 	"google.golang.org/adk/agent"
@@ -14,14 +16,18 @@ import (
 	"vibecat/adk-orchestrator/internal/models"
 )
 
-const silenceThreshold = 30 * time.Second
+const (
+	silenceThreshold = 180 * time.Second
+	engageGenModel   = "gemini-3.1-flash-lite-preview"
+)
 
 type Agent struct {
+	genaiClient  *genai.Client
 	lastActivity time.Time
 }
 
-func New() *Agent {
-	return &Agent{lastActivity: time.Now()}
+func New(genaiClient *genai.Client) *Agent {
+	return &Agent{genaiClient: genaiClient, lastActivity: time.Now()}
 }
 
 func (a *Agent) Run(ctx agent.InvocationContext) iter.Seq2[*session.Event, error] {
@@ -43,15 +49,23 @@ func (a *Agent) Run(ctx agent.InvocationContext) iter.Seq2[*session.Event, error
 			a.lastActivity = time.Now()
 		}
 
-		if time.Since(a.lastActivity) > silenceThreshold {
+		sinceLast := time.Since(a.lastActivity)
+		slog.Info("[ENGAGEMENT] check",
+			"since_last_activity", sinceLast.String(),
+			"threshold", silenceThreshold.String(),
+			"already_speaking", result.Decision != nil && result.Decision.ShouldSpeak,
+		)
+
+		if sinceLast > silenceThreshold {
 			if result.Decision == nil {
 				result.Decision = &models.MediatorDecision{}
 			}
 			if !result.Decision.ShouldSpeak {
 				result.Decision.ShouldSpeak = true
 				result.Decision.Reason = "silence_engagement"
-				result.SpeechText = "잘 되고 있어요? 뭔가 도움이 필요하면 말해줘요!"
+				result.SpeechText = a.generateSilenceMessage(ctx, readLanguageFromState(ctx))
 				a.lastActivity = time.Now()
+				slog.Info("[ENGAGEMENT] silence engagement TRIGGERED", "silence_duration", sinceLast.String())
 			}
 		}
 
@@ -68,5 +82,92 @@ func (a *Agent) Run(ctx agent.InvocationContext) iter.Seq2[*session.Event, error
 				},
 			},
 		}, nil)
+	}
+}
+
+func readLanguageFromState(ctx agent.InvocationContext) string {
+	sess := ctx.Session()
+	if sess == nil || sess.State() == nil {
+		return "Korean"
+	}
+	val, err := sess.State().Get("language")
+	if err != nil {
+		return "Korean"
+	}
+	if s, ok := val.(string); ok {
+		trimmed := strings.TrimSpace(s)
+		if trimmed != "" {
+			return trimmed
+		}
+	}
+	return "Korean"
+}
+
+func (a *Agent) generateSilenceMessage(ctx agent.InvocationContext, language string) string {
+	if a.genaiClient != nil {
+		msg := a.generateDynamic(ctx, language)
+		if msg != "" {
+			return msg
+		}
+		slog.Warn("[ENGAGEMENT] dynamic generation failed, using fallback")
+	}
+	if language == "English" {
+		return "Things have been quiet. Need a hand with anything?"
+	}
+	return "좀 조용하네요. 혹시 도움이 필요한 부분이 있나요?"
+}
+
+func (a *Agent) generateDynamic(ctx agent.InvocationContext, language string) string {
+	lang := normalizeLanguage(language)
+
+	prompt := fmt.Sprintf(`You are VibeCat, a coding companion for solo developers.
+The developer has been quiet for a while. Generate ONE short check-in message (under 80 characters).
+
+Rules:
+- Be casual and warm, not pushy
+- Suggest something concrete: take a break, try a different approach, review recent changes, etc.
+- Vary your tone: sometimes concerned, sometimes playful, sometimes practical
+- Do NOT say "한동안 조용하네요" or start with observations about silence
+- Respond in %s
+- Return ONLY the message text`, lang)
+
+	resp, err := a.genaiClient.Models.GenerateContent(ctx, engageGenModel, []*genai.Content{
+		{Parts: []*genai.Part{{Text: prompt}}, Role: genai.RoleUser},
+	}, &genai.GenerateContentConfig{
+		MaxOutputTokens: 80,
+	})
+	if err != nil {
+		slog.Warn("[ENGAGEMENT] LLM call failed", "error", err)
+		return ""
+	}
+
+	if len(resp.Candidates) == 0 || resp.Candidates[0].Content == nil {
+		return ""
+	}
+
+	text := ""
+	for _, part := range resp.Candidates[0].Content.Parts {
+		text += part.Text
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	return text
+}
+
+func normalizeLanguage(language string) string {
+	trimmed := strings.TrimSpace(language)
+	if trimmed == "" {
+		return "Korean"
+	}
+	lower := strings.ToLower(trimmed)
+	switch lower {
+	case "ko", "kr", "korean", "korean language":
+		return "Korean"
+	case "en", "eng", "english", "english language":
+		return "English"
+	default:
+		return trimmed
 	}
 }

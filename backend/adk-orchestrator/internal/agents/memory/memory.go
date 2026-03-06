@@ -59,9 +59,10 @@ func (a *Agent) Run(ctx agent.InvocationContext) iter.Seq2[*session.Event, error
 		if userID == "" {
 			userID = "default"
 		}
+		language := normalizeLanguage(req.Language)
 
 		// Retrieve memory context for this user
-		memCtx := a.retrieveMemory(ctx, userID)
+		memCtx := a.retrieveMemory(ctx, userID, language)
 		if memCtx != "" {
 			// Inject memory context into the result's speech text as a context bridge
 			// This will be picked up by the Gateway to inject into Gemini's system instruction
@@ -87,7 +88,7 @@ func (a *Agent) Run(ctx agent.InvocationContext) iter.Seq2[*session.Event, error
 }
 
 // retrieveMemory fetches the user's cross-session memory and formats it as context.
-func (a *Agent) retrieveMemory(ctx context.Context, userID string) string {
+func (a *Agent) retrieveMemory(ctx context.Context, userID, language string) string {
 	if a.store == nil {
 		return ""
 	}
@@ -104,11 +105,12 @@ func (a *Agent) retrieveMemory(ctx context.Context, userID string) string {
 	// Build context bridge from most recent summary
 	latest := entry.RecentSummaries[len(entry.RecentSummaries)-1]
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("지난 세션 (%s): %s", latest.Date.Format("1월 2일"), latest.Summary))
+	sb.WriteString(fmt.Sprintf("Previous session (%s): %s", latest.Date.Format("Jan 2"), latest.Summary))
 	if len(latest.UnresolvedIssues) > 0 {
-		sb.WriteString("\n미해결 이슈: ")
+		sb.WriteString("\nUnresolved issues: ")
 		sb.WriteString(strings.Join(latest.UnresolvedIssues, ", "))
 	}
+	sb.WriteString(fmt.Sprintf("\nRespond in %s.", language))
 	return sb.String()
 }
 
@@ -119,7 +121,7 @@ func (a *Agent) SaveSessionSummary(ctx context.Context, userID string, history [
 		return nil
 	}
 
-	summary := a.generateSummary(ctx, history)
+	summary := a.generateSummary(ctx, history, "English")
 	unresolvedIssues := extractUnresolvedIssues(history)
 
 	entry, err := a.store.GetMemory(ctx, userID)
@@ -149,7 +151,7 @@ func (a *Agent) SaveSessionSummary(ctx context.Context, userID string, history [
 }
 
 // generateSummary uses Gemini to summarize the session history.
-func (a *Agent) generateSummary(ctx context.Context, history []string) string {
+func (a *Agent) generateSummary(ctx context.Context, history []string, language string) string {
 	if a.genaiClient == nil || len(history) == 0 {
 		return "Session completed."
 	}
@@ -159,16 +161,18 @@ func (a *Agent) generateSummary(ctx context.Context, history []string) string {
 		combined = combined[len(combined)-4000:]
 	}
 
-	prompt := fmt.Sprintf(`Summarize this developer session in 1-2 sentences. Focus on what was worked on and any unresolved issues.
+	prompt := fmt.Sprintf(`VibeCat is a macOS desktop AI companion for solo developers.
+Summarize this developer session in 1-2 sentences. Focus on what was worked on and any unresolved issues.
 
 Session events:
 %s
 
-Return a brief summary in Korean.`, combined)
+Return ONLY valid JSON in this schema: {"summary":"..."}.
+Respond in %s.`, combined, normalizeLanguage(language))
 
-	resp, err := a.genaiClient.Models.GenerateContent(ctx, "gemini-2.0-flash", []*genai.Content{
+	resp, err := a.genaiClient.Models.GenerateContent(ctx, "gemini-3.1-pro-preview", []*genai.Content{
 		{Parts: []*genai.Part{{Text: prompt}}, Role: genai.RoleUser},
-	}, nil)
+	}, &genai.GenerateContentConfig{ResponseMIMEType: "application/json"})
 	if err != nil {
 		slog.Warn("memory agent: summary generation failed", "error", err)
 		return "Session completed."
@@ -185,7 +189,31 @@ Return a brief summary in Korean.`, combined)
 	if text == "" {
 		return "Session completed."
 	}
+
+	var payload struct {
+		Summary string `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(text), &payload); err == nil && payload.Summary != "" {
+		return payload.Summary
+	}
+
 	return text
+}
+
+func normalizeLanguage(language string) string {
+	trimmed := strings.TrimSpace(language)
+	if trimmed == "" {
+		return "Korean"
+	}
+	lower := strings.ToLower(trimmed)
+	switch lower {
+	case "ko", "kr", "korean", "korean language", "한국어":
+		return "Korean"
+	case "en", "eng", "english", "english language":
+		return "English"
+	default:
+		return trimmed
+	}
 }
 
 // extractUnresolvedIssues looks for error patterns in history that were never resolved.

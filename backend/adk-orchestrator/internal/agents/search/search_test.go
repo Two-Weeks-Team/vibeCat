@@ -96,7 +96,7 @@ func TestBuildQuery(t *testing.T) {
 
 func TestSearchNilClientFallback(t *testing.T) {
 	a := New(nil)
-	got := a.search(nil, "go test failure", models.AnalysisResult{})
+	got := a.search(nil, "go test failure", models.AnalysisResult{}, "English")
 	if got == nil {
 		t.Fatal("expected fallback search result")
 	}

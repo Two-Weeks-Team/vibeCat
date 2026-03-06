@@ -1,6 +1,7 @@
 package mediator
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -8,7 +9,10 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	a := New()
+	a := New(nil)
+	if defaultCooldown != 10*time.Second {
+		t.Fatalf("defaultCooldown = %v, want %v", defaultCooldown, 10*time.Second)
+	}
 	if a.cooldown != defaultCooldown {
 		t.Fatalf("cooldown = %v, want %v", a.cooldown, defaultCooldown)
 	}
@@ -63,13 +67,6 @@ func TestDecide(t *testing.T) {
 			wantReason: "significant_event",
 		},
 		{
-			name:       "duplicate content suppressed",
-			agent:      &Agent{lastSpoke: time.Now().Add(-1 * time.Hour), cooldown: defaultCooldown, lastContent: "same"},
-			vision:     &models.VisionAnalysis{Significance: 10, Content: "same"},
-			wantSpeak:  false,
-			wantReason: "duplicate",
-		},
-		{
 			name:        "error sets high urgency",
 			agent:       &Agent{lastSpoke: time.Now().Add(-1 * time.Hour), cooldown: defaultCooldown},
 			vision:      &models.VisionAnalysis{Significance: 10, Content: "error screen", ErrorDetected: true},
@@ -108,10 +105,31 @@ func TestSupportiveMessage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			msg := supportiveMessage(tt.mood)
+			msg := fallbackSupportiveMessage(tt.mood, "Korean")
 			if (msg != "") != tt.want {
-				t.Fatalf("supportiveMessage(%q) = %q, want non-empty=%v", tt.mood, msg, tt.want)
+				t.Fatalf("fallbackSupportiveMessage(%q) = %q, want non-empty=%v", tt.mood, msg, tt.want)
 			}
 		})
+	}
+}
+
+func TestConcurrentSpeechTracking(t *testing.T) {
+	a := New(nil)
+	a.lastSpoke = time.Now().Add(-1 * time.Hour)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			a.trackSpeechText("build failed at pkg/service")
+			_ = a.isSimilarToRecent("build failed at pkg/service")
+			_ = a.decide(&models.VisionAnalysis{Significance: 9, Content: "build failed at pkg/service"}, nil, nil)
+		}()
+	}
+	wg.Wait()
+
+	if len(a.recentSpeechTexts) > maxRecentSpeech {
+		t.Fatalf("len(recentSpeechTexts) = %d, want <= %d", len(a.recentSpeechTexts), maxRecentSpeech)
 	}
 }

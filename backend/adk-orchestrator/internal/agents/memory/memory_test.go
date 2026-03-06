@@ -26,7 +26,7 @@ func TestGenerateSummaryFallback(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := a.generateSummary(context.Background(), tt.history)
+			got := a.generateSummary(context.Background(), tt.history, "English")
 			if got != tt.want {
 				t.Fatalf("generateSummary() = %q, want %q", got, tt.want)
 			}
@@ -58,7 +58,7 @@ func TestExtractUnresolvedIssues(t *testing.T) {
 
 func TestRetrieveMemoryNilStore(t *testing.T) {
 	a := New(nil, nil)
-	if got := a.retrieveMemory(context.Background(), "user-1"); got != "" {
+	if got := a.retrieveMemory(context.Background(), "user-1", "English"); got != "" {
 		t.Fatalf("retrieveMemory() = %q, want empty", got)
 	}
 }

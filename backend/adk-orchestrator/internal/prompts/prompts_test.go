@@ -14,17 +14,17 @@ func TestBuildSystemPrompt_IncludesLanguageDirective(t *testing.T) {
 		{
 			name:     "Korean language",
 			language: "ko",
-			want:     "Always respond in Korean",
+			want:     "Respond in Korean",
 		},
 		{
 			name:     "English language",
 			language: "en",
-			want:     "Always respond in English",
+			want:     "Respond in English",
 		},
 		{
 			name:     "Empty defaults to Korean",
 			language: "",
-			want:     "Always respond in Korean",
+			want:     "Respond in Korean",
 		},
 	}
 
@@ -59,26 +59,8 @@ func TestBuildSystemPrompt_AppendsToPersona(t *testing.T) {
 		t.Errorf("BuildSystemPrompt() should start with persona content, got %q", result)
 	}
 
-	if !strings.Contains(result, "Always respond in English") {
+	if !strings.Contains(result, "Respond in English") {
 		t.Error("BuildSystemPrompt() should contain language directive")
-	}
-}
-
-func TestDefaultCatPersona(t *testing.T) {
-	if DefaultCatPersona.Name != "cat" {
-		t.Errorf("DefaultCatPersona.Name = %q, want %q", DefaultCatPersona.Name, "cat")
-	}
-
-	if DefaultCatPersona.Voice != "Zephyr" {
-		t.Errorf("DefaultCatPersona.Voice = %q, want %q", DefaultCatPersona.Voice, "Zephyr")
-	}
-
-	if !strings.Contains(DefaultCatPersona.SystemPrompt, "Cat — Soul Profile") {
-		t.Error("DefaultCatPersona.SystemPrompt should contain Cat soul profile")
-	}
-
-	if !strings.Contains(DefaultCatPersona.SystemPrompt, "Identity") {
-		t.Error("DefaultCatPersona.SystemPrompt should contain Identity section")
 	}
 }
 
@@ -89,7 +71,7 @@ func TestLoadPersonaFromFile_Success(t *testing.T) {
 		t.Fatalf("LoadPersonaFromFile() error = %v", err)
 	}
 
-	if !strings.Contains(content, "Cat — Soul Profile") {
+	if !strings.Contains(content, "# Cat") {
 		t.Error("Loaded content should contain Cat soul profile header")
 	}
 
@@ -120,18 +102,8 @@ func TestLoadCharacterPersona(t *testing.T) {
 		t.Errorf("persona.Voice = %q, want %q", persona.Voice, "Zephyr")
 	}
 
-	if !strings.Contains(persona.SystemPrompt, "Cat — Soul Profile") {
+	if !strings.Contains(persona.SystemPrompt, "# Cat") {
 		t.Error("persona.SystemPrompt should contain Cat soul profile")
-	}
-}
-
-func TestVisionSystemPrompt(t *testing.T) {
-	if !strings.Contains(VisionSystemPrompt, "screen analysis agent") {
-		t.Error("VisionSystemPrompt should mention screen analysis")
-	}
-
-	if !strings.Contains(VisionSystemPrompt, "JSON") {
-		t.Error("VisionSystemPrompt should mention JSON")
 	}
 }
 
@@ -139,10 +111,26 @@ func TestEngagementPrompt(t *testing.T) {
 	if !strings.Contains(EngagementPrompt, "quiet for a while") {
 		t.Error("EngagementPrompt should mention quiet period")
 	}
+
+	if !strings.Contains(EngagementPrompt, ProjectPurpose) {
+		t.Error("EngagementPrompt should include ProjectPurpose")
+	}
 }
 
-func TestFallbackPersonality(t *testing.T) {
-	if !strings.Contains(FallbackPersonality, "helpful coding companion") {
-		t.Error("FallbackPersonality should mention helpful coding companion")
+func TestBuildSystemPrompt_IncludesCommonBehaviorAndPurpose(t *testing.T) {
+	persona := CharacterPersona{
+		Name:         "cat",
+		Voice:        "Zephyr",
+		SystemPrompt: "Original persona content.",
+	}
+
+	result := BuildSystemPrompt(persona, "en")
+
+	if !strings.Contains(result, CommonBehavior) {
+		t.Error("BuildSystemPrompt() should include CommonBehavior")
+	}
+
+	if !strings.Contains(result, ProjectPurpose) {
+		t.Error("BuildSystemPrompt() should include ProjectPurpose")
 	}
 }

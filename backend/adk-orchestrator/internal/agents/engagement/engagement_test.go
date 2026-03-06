@@ -64,7 +64,7 @@ func decodeSingleResult(t *testing.T, seq func(func(*session.Event, error) bool)
 }
 
 func TestRunEngagementAfterSilence(t *testing.T) {
-	a := New()
+	a := New(nil)
 	a.lastActivity = time.Now().Add(-silenceThreshold - time.Second)
 
 	data, err := json.Marshal(models.AnalysisResult{})
@@ -86,7 +86,7 @@ func TestRunEngagementAfterSilence(t *testing.T) {
 }
 
 func TestRunPreservesExistingSpeakDecision(t *testing.T) {
-	a := New()
+	a := New(nil)
 	a.lastActivity = time.Now().Add(-silenceThreshold - time.Second)
 
 	input := models.AnalysisResult{Decision: &models.MediatorDecision{ShouldSpeak: true, Reason: "existing"}}

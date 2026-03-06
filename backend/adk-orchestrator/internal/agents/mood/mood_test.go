@@ -37,8 +37,9 @@ func TestClassify(t *testing.T) {
 		{
 			name: "stuck when many prior errors and moderate confidence",
 			agent: &Agent{
-				errorCount:   3,
-				silenceStart: time.Now().Add(-6 * time.Minute),
+				errorCount:    3,
+				lastErrorTime: time.Now(),
+				silenceStart:  time.Now().Add(-6 * time.Minute),
 			},
 			vision:      &models.VisionAnalysis{RepeatedError: true},
 			wantMood:    models.MoodStuck,
@@ -71,7 +72,7 @@ func TestClassify(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := tt.agent.classify(tt.vision)
+			got := tt.agent.classify(tt.vision, "", 0)
 			if got.Mood != tt.wantMood {
 				t.Fatalf("Mood = %q, want %q", got.Mood, tt.wantMood)
 			}
@@ -92,7 +93,7 @@ func TestClassify(t *testing.T) {
 
 func TestClassifyIncrementsErrorCount(t *testing.T) {
 	a := &Agent{silenceStart: time.Now()}
-	_ = a.classify(&models.VisionAnalysis{ErrorDetected: true})
+	_ = a.classify(&models.VisionAnalysis{ErrorDetected: true}, "", 0)
 	if a.errorCount != 1 {
 		t.Fatalf("errorCount = %d, want 1", a.errorCount)
 	}
