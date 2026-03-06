@@ -85,11 +85,12 @@ jobs:
         with:
           clean: true
 
-      - name: Select Xcode 16+
+      - name: Select Xcode 16+ and accept license
         run: |
           XCODE_PATH=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
           if [ -z "$XCODE_PATH" ]; then XCODE_PATH="/Applications/Xcode.app"; fi
           echo "DEVELOPER_DIR=$XCODE_PATH/Contents/Developer" >> "$GITHUB_ENV"
+          sudo xcodebuild -license accept 2>/dev/null || true
           swift --version
 
       - name: Build
