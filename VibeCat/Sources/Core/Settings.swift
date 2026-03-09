@@ -41,7 +41,7 @@ public final class AppSettings: @unchecked Sendable {
     public var captureInterval: Double {
         get {
             let v = defaults.double(forKey: Key.captureInterval.rawValue)
-            return v > 0 ? v : 5.0
+            return v > 0 ? v : 1.0
         }
         set { defaults.set(newValue, forKey: Key.captureInterval.rawValue) }
     }

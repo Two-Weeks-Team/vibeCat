@@ -3,6 +3,7 @@ import Foundation
 public enum ServerMessage: Sendable {
     case audio(Data)
     case transcription(text: String, finished: Bool)
+    case inputTranscription(text: String, finished: Bool)
     case turnComplete
     case interrupted
     case companionSpeech(text: String, emotion: String, urgency: String)
@@ -19,7 +20,7 @@ public enum ServerMessage: Sendable {
 
 public enum AudioMessageParser {
     private static let emotionTagPattern = try! NSRegularExpression(
-        pattern: #"^\[(thinking|idle|surprised|happy|concerned)\]\s*"#
+        pattern: #"^\[(\w+)\]\s*"#
     )
 
     public static func parseEmotionTag(from text: String) -> (emotion: CompanionEmotion, cleanText: String)? {
@@ -31,12 +32,12 @@ public enum AudioMessageParser {
         let tag = String(text[tagRange]).lowercased()
         let emotion: CompanionEmotion
         switch tag {
-        case "happy": emotion = .happy
-        case "surprised": emotion = .surprised
-        case "thinking": emotion = .curious
-        case "concerned": emotion = .concerned
-        case "idle": emotion = .neutral
-        default: return nil
+        case "happy", "excited", "celebrating", "joyful": emotion = .happy
+        case "surprised", "shocked", "amazed": emotion = .surprised
+        case "thinking", "curious", "wondering", "pondering": emotion = .curious
+        case "concerned", "worried", "frustrated", "angry", "annoyed": emotion = .concerned
+        case "idle", "calm", "neutral", "relaxed", "peaceful", "content": emotion = .neutral
+        default: emotion = .neutral
         }
         let cleanText = emotionTagPattern.stringByReplacingMatches(
             in: text, range: nsRange, withTemplate: ""
@@ -55,6 +56,10 @@ public enum AudioMessageParser {
             let text = json["text"] as? String ?? ""
             let finished = json["finished"] as? Bool ?? false
             return .transcription(text: text, finished: finished)
+        case "inputTranscription":
+            let text = json["text"] as? String ?? ""
+            let finished = json["finished"] as? Bool ?? false
+            return .inputTranscription(text: text, finished: finished)
         case "turnComplete":
             return .turnComplete
         case "interrupted":

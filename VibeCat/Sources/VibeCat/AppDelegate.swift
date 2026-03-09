@@ -285,17 +285,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         self.maybeActivateChatFromWakeWord(fullText)
                     }
                 }
+            case .inputTranscription(let text, let finished):
+                NSLog("[GW-IN] onMessage: inputTranscription, text=%@, finished=%d", String(text.prefix(60)), finished)
             case .audio(let data):
                 NSLog("[GW-IN] onMessage: audio, dataSize=%lu", data.count)
             case .turnComplete:
                 NSLog("[GW-IN] onMessage: turnComplete")
                 self.catVoice?.flush()
+                self.speechRecognizer?.setModelSpeaking(false)
                 self.isTurnActive = false
                 self.pendingTranscription = ""
                 panel?.setTurnActive(false)
             case .interrupted:
                 NSLog("[GW-IN] onMessage: interrupted")
                 self.catVoice?.stop()
+                self.speechRecognizer?.setModelSpeaking(false)
                 self.isTurnActive = false
                 self.pendingTranscription = ""
                 panel?.setTurnActive(false)
@@ -314,6 +318,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .ttsStart(let text):
                 NSLog("[GW-IN] onMessage: ttsStart, hasText=%d", text != nil ? 1 : 0)
                 self.ttsActive = true
+                self.speechRecognizer?.setModelSpeaking(true)
                 self.catVoice?.stop()
                 if let text, !text.isEmpty {
                     panel?.showBubble(text: text)
@@ -323,6 +328,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NSLog("[GW-IN] onMessage: ttsEnd")
                 self.ttsActive = false
                 panel?.setTurnActive(false)
+                Task { @MainActor [weak self] in
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    self?.speechRecognizer?.setModelSpeaking(false)
+                }
                 Task { @MainActor [weak self] in
                     try? await Task.sleep(nanoseconds: 2_000_000_000)
                     guard let self, !self.ttsActive, !self.isTurnActive else { return }
@@ -447,7 +456,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func wireSpeechCapture(speechRecognizer: SpeechRecognizer, gateway: GatewayClient) {
         speechRecognizer.onAudioBufferCaptured = { [weak self] buffer in
-            guard let converter = self?.audioConverter else { return }
+            guard let converter = self?.audioConverter else {
+                NSLog("[AUDIO-PIPE] buffer dropped: audioConverter is nil")
+                return
+            }
             self?.audioConversionQueue.async { [weak self] in
                 guard let data = Self.convertAudioBufferToPCM16k(buffer: buffer, converter: converter) else { return }
                 Task { @MainActor [weak self] in

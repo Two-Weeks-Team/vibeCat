@@ -6,9 +6,36 @@ public enum ImageProcessor {
     public static let jpegQuality: CGFloat = 0.65
     public static let maxDataSize = 3_145_728
     public static let maxPixelDimension = 2048
+    public static let fastPathMaxWidth = 768
 
     public static func resizeIfNeeded(_ image: CGImage) -> CGImage {
         return image
+    }
+
+    public static func toFastPathJPEG(_ image: CGImage) -> Data? {
+        let aspectRatio = CGFloat(image.height) / CGFloat(image.width)
+        let targetWidth = fastPathMaxWidth
+        let targetHeight = max(1, Int(CGFloat(targetWidth) * aspectRatio))
+        let resized = resizeTo(image, width: targetWidth, height: targetHeight)
+        return encodeJPEG(resized, quality: 0.70)
+    }
+
+    private static func resizeTo(_ image: CGImage, width: Int, height: Int) -> CGImage {
+        let sRGB = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: sRGB,
+            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+        ) else { return image }
+        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return context.makeImage() ?? image
     }
 
     public static func toJPEGData(_ image: CGImage, quality: CGFloat = jpegQuality) -> Data? {

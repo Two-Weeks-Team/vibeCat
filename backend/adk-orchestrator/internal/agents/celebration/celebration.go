@@ -25,6 +25,7 @@ const (
 type Agent struct {
 	genaiClient     *genai.Client
 	lastCelebration time.Time
+	recentMessages  []string
 }
 
 func New(genaiClient *genai.Client) *Agent {
@@ -39,6 +40,27 @@ func (a *Agent) Run(ctx agent.InvocationContext) iter.Seq2[*session.Event, error
 		}
 
 		result := models.AnalysisResult{Vision: vision}
+
+		// Recover cooldown from session state
+		if sess := ctx.Session(); sess != nil && sess.State() != nil {
+			if ts, err := sess.State().Get("celebration_last_time"); err == nil {
+				if tsStr, ok := ts.(string); ok {
+					if parsed, parseErr := time.Parse(time.RFC3339, tsStr); parseErr == nil {
+						if parsed.After(a.lastCelebration) {
+							a.lastCelebration = parsed
+						}
+					}
+				}
+			}
+			if recent, err := sess.State().Get("celebration_recent_messages"); err == nil {
+				if recentStr, ok := recent.(string); ok {
+					var msgs []string
+					if jsonErr := json.Unmarshal([]byte(recentStr), &msgs); jsonErr == nil {
+						a.recentMessages = msgs
+					}
+				}
+			}
+		}
 
 		slog.Info("[CELEBRATION] check",
 			"has_vision", vision != nil,
@@ -63,6 +85,10 @@ func (a *Agent) Run(ctx agent.InvocationContext) iter.Seq2[*session.Event, error
 					Emotion:     "happy",
 					Message:     msg,
 				}
+				a.recentMessages = append(a.recentMessages, msg)
+				if len(a.recentMessages) > 3 {
+					a.recentMessages = a.recentMessages[len(a.recentMessages)-3:]
+				}
 				slog.Info("[CELEBRATION] TRIGGERED", "message", msg)
 			} else {
 				slog.Info("[CELEBRATION] skipped (cooldown)")
@@ -86,6 +112,9 @@ func (a *Agent) Run(ctx agent.InvocationContext) iter.Seq2[*session.Event, error
 		} else {
 			stateDelta["celebration_event"] = ""
 		}
+		stateDelta["celebration_last_time"] = a.lastCelebration.Format(time.RFC3339)
+		recentJSON, _ := json.Marshal(a.recentMessages)
+		stateDelta["celebration_recent_messages"] = string(recentJSON)
 
 		yield(&session.Event{
 			Actions: session.EventActions{StateDelta: stateDelta},
@@ -197,7 +226,8 @@ Rules:
 - Keep it natural and brief — this goes in a speech bubble
 - Vary your style: sometimes use exclamations, sometimes be understated-cool
 - Respond in %s
-- Return ONLY the message text`, screenContext, lang)
+- Do NOT use any of these recent phrases: %s
+- Return ONLY the message text`, screenContext, lang, strings.Join(a.recentMessages, "; "))
 
 	resp, err := a.genaiClient.Models.GenerateContent(ctx, celebGenModel, []*genai.Content{
 		{Parts: []*genai.Part{{Text: prompt}}, Role: genai.RoleUser},

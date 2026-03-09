@@ -31,6 +31,7 @@ final class SpeechRecognizer {
 
         let capture = audioCapture
         let callback = onAudioBufferCaptured
+        NSLog("[SPEECH] startListening: hasCallback=%d", callback != nil ? 1 : 0)
 
         do {
             try await Task.detached {
@@ -39,7 +40,9 @@ final class SpeechRecognizer {
 
             currentAudioFormat = capture.recordingFormat
             isListening = true
+            NSLog("[SPEECH] startListening: success, format=%@, isListening=%d", String(describing: currentAudioFormat), isListening ? 1 : 0)
         } catch {
+            NSLog("[SPEECH] startListening: FAILED error=%@", String(describing: error))
             audioCapture.stop()
             currentAudioFormat = nil
             isListening = false
@@ -57,6 +60,10 @@ final class SpeechRecognizer {
         guard !isListening else { return }
         Task { await startListening() }
     }
+
+    func setModelSpeaking(_ speaking: Bool) {
+        audioCapture.modelSpeaking = speaking
+    }
 }
 
 enum SpeechRecognizerError: Error {
@@ -69,15 +76,18 @@ final class SpeechAudioCapture: @unchecked Sendable {
     private(set) var isVoiceProcessingActive = false
     private var streamingCallback: (@Sendable (AVAudioPCMBuffer) -> Void)?
 
-    /// RMS threshold for noise gate. Buffers with RMS below this are silently dropped.
-    /// ~0.02 linear ≈ -34dB — filters keyboard clicks, mouse sounds, fan noise, ambient hum
-    /// while passing through normal speech (typically RMS 0.03–0.3).
-    private let rmsThreshold: Float = 0.02
+    private let rmsThreshold: Float = 0.003
+
+    /// Higher threshold during model speech: echo ~0.005-0.03, user speech ~0.03-0.5.
+    private let bargeInThreshold: Float = 0.025
+
+    /// Written from main thread, read from audio thread.
+    /// Aligned Bool on ARM64 has natural atomicity for single-writer/single-reader.
+    var modelSpeaking: Bool = false
 
     /// Number of consecutive above-threshold buffers required before streaming begins.
-    /// Prevents single noise spikes (clicks, taps) from triggering speech detection.
-    /// At 4096 samples / 16kHz ≈ 256ms per buffer, 2 buffers ≈ 512ms of sustained sound.
-    private let consecutiveThreshold: Int = 2
+    /// At 4096 samples / 44100 Hz ≈ 93ms per buffer, 1 buffer passes immediately.
+    private let consecutiveThreshold: Int = 1
     private var consecutiveAboveCount: Int = 0
 
     func start(streamingCallback: (@Sendable (AVAudioPCMBuffer) -> Void)? = nil) throws {
@@ -88,8 +98,8 @@ final class SpeechAudioCapture: @unchecked Sendable {
         let inputNode = engine.inputNode
 
         do {
-            try inputNode.setVoiceProcessingEnabled(true)
-            isVoiceProcessingActive = true
+            try inputNode.setVoiceProcessingEnabled(false)
+            isVoiceProcessingActive = false
         } catch {
             isVoiceProcessingActive = false
         }
@@ -109,31 +119,22 @@ final class SpeechAudioCapture: @unchecked Sendable {
         }
 
         self.recordingFormat = recordingFormat
-        let threshold = rmsThreshold
 
-        let requiredConsecutive = consecutiveThreshold
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: recordingFormat) { [weak self] buffer, _ in
             guard let self else { return }
-            guard let floatData = buffer.floatChannelData else { return }
+            guard let channelData = buffer.floatChannelData else { return }
 
-            let frameCount = Int(buffer.frameLength)
-            let samples = floatData[0]
-            var sumOfSquares: Float = 0.0
-            for i in 0..<frameCount {
-                let sample = samples[i]
-                sumOfSquares += sample * sample
+            let frames = Int(buffer.frameLength)
+            let samples = channelData[0]
+            var sumSquares: Float = 0
+            for i in 0..<frames {
+                let s = samples[i]
+                sumSquares += s * s
             }
-            let rms = sqrtf(sumOfSquares / Float(max(frameCount, 1)))
-
-            if rms < threshold {
-                self.consecutiveAboveCount = 0
-                return
-            }
-
-            self.consecutiveAboveCount += 1
-            if self.consecutiveAboveCount < requiredConsecutive {
-                return
-            }
+            let rms = sqrtf(sumSquares / Float(max(frames, 1)))
+            // During model speech, use higher threshold to block echo while allowing barge-in
+            let threshold = self.modelSpeaking ? self.bargeInThreshold : self.rmsThreshold
+            guard rms >= threshold else { return }
 
             guard let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) else { return }
             copy.frameLength = buffer.frameLength

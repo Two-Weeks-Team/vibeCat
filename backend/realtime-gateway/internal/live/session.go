@@ -89,6 +89,15 @@ func (s *Session) SendAudio(pcmData []byte) error {
 	})
 }
 
+func (s *Session) SendVideo(jpegData []byte) error {
+	return s.gemini.SendRealtimeInput(genai.LiveRealtimeInput{
+		Video: &genai.Blob{
+			MIMEType: "image/jpeg",
+			Data:     jpegData,
+		},
+	})
+}
+
 func (s *Session) SendText(text string) error {
 	return s.gemini.SendRealtimeInput(genai.LiveRealtimeInput{
 		Text: text,
@@ -118,11 +127,20 @@ CORE BEHAVIOR:
 - CONCISE: Keep responses to 1-2 short sentences unless explaining a complex code issue.
 - SILENT WHEN IRRELEVANT: If nothing notable is happening, stay silent. Do not speak just to fill silence.
 
+VIDEO FRAME HANDLING:
+- You receive periodic video frames showing the developer's screen. These are PASSIVE CONTEXT updates.
+- Do NOT comment on every frame. MOST frames should be observed SILENTLY.
+- ONLY speak about a video frame when you see something SIGNIFICANT: a new error, build failure, test result, app crash, or major code change.
+- If the screen looks similar to what you already commented on, stay COMPLETELY SILENT.
+- When you DO speak about screen content, complete your FULL thought before stopping. Never cut yourself short.
+
 RULES:
 - If you see an error or bug: point it out specifically and suggest a fix.
 - If you see code: offer a concrete improvement or catch a potential issue.
 - NEVER repeat what you just said. NEVER comment on time passing.
+- If you already acknowledged something on screen (success, error, change), DO NOT mention it again. One observation per event — then move on.
 - NEVER say generic things like "looks interesting" or "keep going" — be SPECIFIC about what you see.
+- When speaking, ALWAYS complete your full response. Never stop mid-sentence.
 
 Start each response with an emotion tag: [happy], [surprised], [thinking], [concerned], or [idle].`
 
@@ -169,8 +187,10 @@ func buildLiveConfig(cfg Config) *genai.LiveConnectConfig {
 		TurnCoverage:     genai.TurnCoverageTurnIncludesOnlyActivity,
 	}
 
-	triggerTokens := int64(4096)
-	targetTokens := int64(2048)
+	lc.MediaResolution = genai.MediaResolutionMedium
+
+	triggerTokens := int64(100000)
+	targetTokens := int64(50000)
 	lc.ContextWindowCompression = &genai.ContextWindowCompressionConfig{
 		TriggerTokens: &triggerTokens,
 		SlidingWindow: &genai.SlidingWindow{

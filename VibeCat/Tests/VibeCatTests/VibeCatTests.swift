@@ -32,7 +32,7 @@ final class VibeCatTests: XCTestCase {
         XCTAssertEqual(settings.voice, "Zephyr")
         XCTAssertEqual(settings.character, "cat")
         XCTAssertEqual(settings.chattiness, "normal")
-        XCTAssertEqual(settings.captureInterval, 5.0)
+        XCTAssertEqual(settings.captureInterval, 1.0)
         XCTAssertEqual(settings.liveModel, "gemini-2.5-flash-native-audio-latest")
         XCTAssertFalse(settings.musicEnabled)
         XCTAssertEqual(settings.gatewayURL, "wss://realtime-gateway-163070481841.asia-northeast3.run.app")
@@ -69,10 +69,10 @@ final class VibeCatTests: XCTestCase {
     func testCaptureIntervalFallsBackToDefaultWhenNonPositive() {
         let settings = AppSettings.shared
         settings.captureInterval = 0
-        XCTAssertEqual(settings.captureInterval, 5.0)
+        XCTAssertEqual(settings.captureInterval, 1.0)
 
         settings.captureInterval = -4
-        XCTAssertEqual(settings.captureInterval, 5.0)
+        XCTAssertEqual(settings.captureInterval, 1.0)
     }
 
     private func clearSettings() {

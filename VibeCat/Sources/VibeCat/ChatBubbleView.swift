@@ -14,6 +14,7 @@ final class ChatBubbleView: NSView {
 
     private let label = NSTextField(wrappingLabelWithString: "")
     private var tailDirection: TailDirection = .bottom
+    private var tailXRatio: CGFloat = 0.5
 
     private let horizontalPadding: CGFloat = 14
     private let verticalPadding: CGFloat = 10
@@ -69,10 +70,12 @@ final class ChatBubbleView: NSView {
             let maxX = bodyRect.maxX
             let minY = bodyRect.minY
             let maxY = bodyRect.maxY
-            let midX = bodyRect.midX
+            let tailCenterX = max(bodyRect.minX + cornerRadius + tailSize.width / 2,
+                                   min(bodyRect.maxX - cornerRadius - tailSize.width / 2,
+                                       bodyRect.minX + bodyRect.width * tailXRatio))
 
-            let tailLeft = midX - tailSize.width / 2
-            let tailRight = midX + tailSize.width / 2
+            let tailLeft = tailCenterX - tailSize.width / 2
+            let tailRight = tailCenterX + tailSize.width / 2
 
             path.move(to: NSPoint(x: minX + cornerRadius, y: maxY))
             path.line(to: NSPoint(x: maxX - cornerRadius, y: maxY))
@@ -88,7 +91,7 @@ final class ChatBubbleView: NSView {
             path.line(to: NSPoint(x: tailRight, y: minY))
             
             let cp1 = NSPoint(x: tailRight - 2, y: minY - tailSize.height * 0.4)
-            path.curve(to: NSPoint(x: midX, y: bounds.minY), controlPoint1: cp1, controlPoint2: cp1)
+            path.curve(to: NSPoint(x: tailCenterX, y: bounds.minY), controlPoint1: cp1, controlPoint2: cp1)
             let cp2 = NSPoint(x: tailLeft + 2, y: minY - tailSize.height * 0.4)
             path.curve(to: NSPoint(x: tailLeft, y: minY), controlPoint1: cp2, controlPoint2: cp2)
             
@@ -107,17 +110,19 @@ final class ChatBubbleView: NSView {
             let maxX = bodyRect.maxX
             let minY = bodyRect.minY
             let maxY = bodyRect.maxY
-            let midX = bodyRect.midX
+            let tailCenterX = max(bodyRect.minX + cornerRadius + tailSize.width / 2,
+                                   min(bodyRect.maxX - cornerRadius - tailSize.width / 2,
+                                       bodyRect.minX + bodyRect.width * tailXRatio))
 
-            let tailLeft = midX - tailSize.width / 2
-            let tailRight = midX + tailSize.width / 2
+            let tailLeft = tailCenterX - tailSize.width / 2
+            let tailRight = tailCenterX + tailSize.width / 2
 
             path.move(to: NSPoint(x: minX + cornerRadius, y: maxY))
             
             path.line(to: NSPoint(x: tailLeft, y: maxY))
             
             let cp1 = NSPoint(x: tailLeft + 2, y: maxY + tailSize.height * 0.4)
-            path.curve(to: NSPoint(x: midX, y: bounds.maxY), controlPoint1: cp1, controlPoint2: cp1)
+            path.curve(to: NSPoint(x: tailCenterX, y: bounds.maxY), controlPoint1: cp1, controlPoint2: cp1)
             let cp2 = NSPoint(x: tailRight - 2, y: maxY + tailSize.height * 0.4)
             path.curve(to: NSPoint(x: tailRight, y: maxY), controlPoint1: cp2, controlPoint2: cp2)
             
@@ -151,8 +156,8 @@ final class ChatBubbleView: NSView {
         path.stroke()
     }
 
-    private let maxBubbleWidth: CGFloat = 320
-    private let maxBubbleHeight: CGFloat = 220
+    private let maxBubbleWidth: CGFloat = 380
+    private let maxBubbleHeight: CGFloat = 300
 
     func preferredSize(for text: String) -> NSSize {
         let maxTextWidth: CGFloat = maxBubbleWidth - horizontalPadding * 2
@@ -174,6 +179,13 @@ final class ChatBubbleView: NSView {
         guard tailDirection != direction else { return }
         tailDirection = direction
         needsLayout = true
+        needsDisplay = true
+    }
+
+    func setTailPosition(_ ratio: CGFloat) {
+        let clamped = max(0.15, min(0.85, ratio))
+        guard abs(tailXRatio - clamped) > 0.01 else { return }
+        tailXRatio = clamped
         needsDisplay = true
     }
 
@@ -220,6 +232,7 @@ final class ChatBubbleView: NSView {
 
     func updateText(_ text: String) {
         label.stringValue = text
+        needsLayout = true
         needsDisplay = true
     }
 

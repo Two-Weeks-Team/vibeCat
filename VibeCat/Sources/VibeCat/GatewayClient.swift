@@ -43,7 +43,10 @@ final class GatewayClient {
     private var isNetworkAvailable = true
     private var lastPongAt: Date?
     private var isManuallyDisconnected = false
-    private var isTTSSpeaking = false
+    private(set) var isTTSSpeaking = false
+    /// Timestamp when the last TTS speech ended. Used by ScreenAnalyzer for post-speech cooldown.
+    private(set) var lastSpeechEndTime: Date = .distantPast
+    private var ttsEndCooldownTask: Task<Void, Never>?
     private var currentAPIKey: String?
     private var currentSessionToken: String?
     private var setupSoul: String?
@@ -139,9 +142,14 @@ final class GatewayClient {
 
     func sendAudio(_ pcmData: Data) {
         guard case .connected = state else { return }
-        guard !isTTSSpeaking else { return }
         NSLog("[GW-OUT] sendAudio: %lu bytes", pcmData.count)
         webSocketTask?.send(.data(pcmData)) { _ in }
+    }
+
+    func sendVideoFrame(_ jpegData: Data) {
+        guard case .connected = state else { return }
+        NSLog("[GW-OUT] sendVideoFrame: %lu bytes", jpegData.count)
+        webSocketTask?.send(.data(jpegData)) { _ in }
     }
 
     func sendText(_ text: String) {
@@ -387,12 +395,21 @@ final class GatewayClient {
                 onMessage?(parsed)
             case .ttsStart(let ttsText):
                 NSLog("[GW-IN] message type=ttsStart, suppressing mic, hasText=%d", ttsText != nil ? 1 : 0)
+                ttsEndCooldownTask?.cancel()
+                ttsEndCooldownTask = nil
                 isTTSSpeaking = true
                 onMessage?(parsed)
             case .ttsEnd:
-                NSLog("[GW-IN] message type=ttsEnd, resuming mic")
-                isTTSSpeaking = false
+                NSLog("[GW-IN] message type=ttsEnd, cooldown before resuming mic")
                 onMessage?(parsed)
+                ttsEndCooldownTask?.cancel()
+                ttsEndCooldownTask = Task { @MainActor [weak self] in
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    guard !Task.isCancelled, let self else { return }
+                    self.isTTSSpeaking = false
+                    self.lastSpeechEndTime = Date()
+                    NSLog("[GW-IN] mic resumed after cooldown")
+                }
             default:
                 NSLog("[GW-IN] message type=other")
                 onMessage?(parsed)
@@ -417,12 +434,21 @@ final class GatewayClient {
                 onMessage?(parsed)
             case .ttsStart(let ttsText):
                 NSLog("[GW-IN] message type=ttsStart, suppressing mic, hasText=%d", ttsText != nil ? 1 : 0)
+                ttsEndCooldownTask?.cancel()
+                ttsEndCooldownTask = nil
                 isTTSSpeaking = true
                 onMessage?(parsed)
             case .ttsEnd:
-                NSLog("[GW-IN] message type=ttsEnd, resuming mic")
-                isTTSSpeaking = false
+                NSLog("[GW-IN] message type=ttsEnd, cooldown before resuming mic")
                 onMessage?(parsed)
+                ttsEndCooldownTask?.cancel()
+                ttsEndCooldownTask = Task { @MainActor [weak self] in
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    guard !Task.isCancelled, let self else { return }
+                    self.isTTSSpeaking = false
+                    self.lastSpeechEndTime = Date()
+                    NSLog("[GW-IN] mic resumed after cooldown")
+                }
             default:
                 NSLog("[GW-IN] message type=other")
                 onMessage?(parsed)

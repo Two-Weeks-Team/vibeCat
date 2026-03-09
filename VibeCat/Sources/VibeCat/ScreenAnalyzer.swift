@@ -17,6 +17,15 @@ final class ScreenAnalyzer {
     private var userId: String = "local-user"
     private var sessionStartTime: Date = Date()
 
+    private var workspaceObserver: NSObjectProtocol?
+    private var appSwitchDebounceTimer: Timer?
+
+    private var lastFastPathSend: Date = .distantPast
+    private var lastSmartPathSend: Date = .distantPast
+    private let fastPathCooldown: TimeInterval = 5.0
+    private let smartPathCooldown: TimeInterval = 15.0
+    private let postSpeechCooldown: TimeInterval = 5.0
+
     var onSpeechEvent: ((CompanionSpeechEvent) -> Void)?
     var onBackgroundSpeech: ((String) -> Void)?
 
@@ -45,38 +54,83 @@ final class ScreenAnalyzer {
         isRunning = true
         sessionStartTime = Date()
         scheduleNextCapture()
+        observeAppSwitches()
     }
 
     func pause() {
         isRunning = false
         analysisTimer?.invalidate()
         analysisTimer = nil
+        removeAppSwitchObserver()
     }
 
     func resume() {
         guard !isRunning else { return }
         isRunning = true
         scheduleNextCapture()
+        observeAppSwitches()
     }
+
+    // MARK: - App Switch Detection
+
+    private func observeAppSwitches() {
+        removeAppSwitchObserver()
+        workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.handleAppSwitch()
+            }
+        }
+    }
+
+    private func removeAppSwitchObserver() {
+        if let observer = workspaceObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+            workspaceObserver = nil
+        }
+        appSwitchDebounceTimer?.invalidate()
+        appSwitchDebounceTimer = nil
+    }
+
+    private func handleAppSwitch() {
+        appSwitchDebounceTimer?.invalidate()
+        appSwitchDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.isRunning, !self.isAnalyzing else { return }
+                NSLog("[CAPTURE] App switched — triggering immediate capture")
+                await self.runAnalysisCycle(forceSmartPath: true)
+            }
+        }
+    }
+
+    // MARK: - Capture Scheduling
 
     private func scheduleNextCapture() {
         let interval = AppSettings.shared.captureInterval
         analysisTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
             Task { @MainActor [weak self] in
-                await self?.runAnalysisCycle()
+                await self?.runAnalysisCycle(forceSmartPath: false)
             }
         }
     }
 
-    private func runAnalysisCycle() async {
-        let audioActive = audioPlayer?.isPlaying ?? false
-        NSLog("[CAPTURE] runAnalysisCycle: start, isRunning=%d, isAnalyzing=%d, isConnected=%d, audioActive=%d", isRunning, isAnalyzing, gatewayClient.isConnected, audioActive)
+    private var isSpeechActive: Bool {
+        let audioPlaying = audioPlayer?.isPlaying ?? false
+        let ttsSpeaking = gatewayClient.isTTSSpeaking
+        let recentlyStopped = Date().timeIntervalSince(gatewayClient.lastSpeechEndTime) < postSpeechCooldown
+        return audioPlaying || ttsSpeaking || recentlyStopped
+    }
+
+    private func runAnalysisCycle(forceSmartPath: Bool) async {
+        let speechActive = isSpeechActive
+        NSLog("[CAPTURE] runAnalysisCycle: isRunning=%d, isAnalyzing=%d, isConnected=%d, speechActive=%d",
+              isRunning, isAnalyzing, gatewayClient.isConnected, speechActive)
         guard isRunning, !isAnalyzing else {
             if isRunning { scheduleNextCapture() }
             return
-        }
-        if audioActive {
-            NSLog("[CAPTURE] runAnalysisCycle: audio playing, capturing but won't interrupt speech")
         }
         guard gatewayClient.isConnected else {
             if isRunning { scheduleNextCapture() }
@@ -88,37 +142,68 @@ final class ScreenAnalyzer {
             if isRunning { scheduleNextCapture() }
         }
 
+        if speechActive {
+            NSLog("[CAPTURE] suppressed — speech active (audio/tts/cooldown)")
+            return
+        }
+
         let result = await captureService.captureAroundCursor()
         switch result {
         case .unchanged:
-            NSLog("[CAPTURE] runAnalysisCycle: result=unchanged")
+            NSLog("[CAPTURE] unchanged")
             return
         case .unavailable(let reason):
-            NSLog("[CAPTURE] runAnalysisCycle: result=unavailable, reason=%@", reason)
+            NSLog("[CAPTURE] unavailable: %@", reason)
             return
         case .captured(let image):
-            NSLog("[CAPTURE] runAnalysisCycle: result=captured, width=%zu, height=%zu", image.width, image.height)
-            await sendToGateway(image: image, highSignificance: false)
+            NSLog("[CAPTURE] captured: %dx%d", image.width, image.height)
+
+            let now = Date()
+
+            if now.timeIntervalSince(lastFastPathSend) >= fastPathCooldown {
+                sendFastPath(image: image)
+                lastFastPathSend = now
+            }
+
+            let smartPathReady = forceSmartPath || now.timeIntervalSince(lastSmartPathSend) >= smartPathCooldown
+            if smartPathReady {
+                await sendSmartPath(image: image, highSignificance: forceSmartPath)
+                lastSmartPathSend = now
+            }
         }
     }
 
     func forceAnalysis() async {
-        guard gatewayClient.isConnected else { return }
+        guard gatewayClient.isConnected, !isSpeechActive else { return }
         let result = await captureService.forceCapture()
         if case .captured(let image) = result {
-            await sendToGateway(image: image, highSignificance: true)
+            sendFastPath(image: image)
+            lastFastPathSend = Date()
+            await sendSmartPath(image: image, highSignificance: true)
+            lastSmartPathSend = Date()
         }
     }
 
-    private func sendToGateway(image: CGImage, highSignificance: Bool) async {
+    // MARK: - Fast Path (video frame → Gemini Live API)
+
+    private func sendFastPath(image: CGImage) {
+        guard let jpegData = ImageProcessor.toFastPathJPEG(image) else { return }
+        NSLog("[CAPTURE] Fast Path: sending %d bytes JPEG to Live API", jpegData.count)
+        gatewayClient.sendVideoFrame(jpegData)
+    }
+
+    // MARK: - Smart Path (base64 image → ADK orchestrator)
+
+    private func sendSmartPath(image: CGImage, highSignificance: Bool) async {
         guard gatewayClient.isConnected else { return }
         guard let base64 = ImageProcessor.toBase64JPEG(image) else { return }
 
-        let context = buildContext()
+        let appName = NSWorkspace.shared.frontmostApplication?.localizedName ?? "Unknown"
+        let context = "[App: \(appName)]"
         let character = AppSettings.shared.character
         let soul = spriteAnimator.loadPreset(for: character).soul
 
-        NSLog("[CAPTURE] sendToGateway: base64Length=%lu, character=%@, context=%@, highSignificance=%d", base64.count, character, context, highSignificance)
+        NSLog("[CAPTURE] Smart Path: base64=%d bytes, character=%@, app=%@", base64.count, character, appName)
 
         if highSignificance {
             gatewayClient.sendForceCapture(imageBase64: base64, context: context, userId: userId, character: character, soul: soul, activityMinutes: activityMinutes)
@@ -127,11 +212,6 @@ final class ScreenAnalyzer {
         }
 
         spriteAnimator.setState(.thinking)
-    }
-
-    private func buildContext() -> String {
-        let frontApp = NSWorkspace.shared.frontmostApplication?.localizedName ?? "Unknown"
-        return "Active app: \(frontApp)"
     }
 
     func handleCompanionSpeech(_ event: CompanionSpeechEvent) {
@@ -143,7 +223,6 @@ final class ScreenAnalyzer {
         if !NSApp.isActive {
             onBackgroundSpeech?(event.text)
         }
-        // Sprite idle is managed by TTS lifecycle (ttsEnd → delayed idle in AppDelegate)
     }
 
     func handleCompanionSpeechEmotion(_ emotion: CompanionEmotion) {

@@ -17,6 +17,7 @@ final class SpriteAnimator {
     private let sessionStartedAt = Date()
     private var idleOverrideState: AnimationState?
     private var isStretchingOverride = false
+    private var thinkingTimeoutTask: Task<Void, Never>?
 
     var onFrameUpdate: ((NSImage) -> Void)?
     var onStateTransition: ((AnimationState, AnimationState) -> Void)?
@@ -37,12 +38,26 @@ final class SpriteAnimator {
         currentState = state
         currentFrame = 0
 
+        // Cancel any pending thinking timeout
+        thinkingTimeoutTask?.cancel()
+        thinkingTimeoutTask = nil
+
         if state != .idle {
             clearIdleOverride()
         }
 
         if previous == .celebrating, state == .idle {
             applyIdleOverride(state: .happy, duration: 4.0, stretching: false)
+        }
+
+        // Auto-reset to idle if stuck in thinking for 10 seconds
+        if state == .thinking {
+            thinkingTimeoutTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                guard let self, !Task.isCancelled, self.currentState == .thinking else { return }
+                NSLog("[SpriteAnimator] Thinking timeout — auto-reset to idle")
+                self.setState(.idle)
+            }
         }
 
         restartAnimationTimer()

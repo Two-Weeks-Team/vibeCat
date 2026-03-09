@@ -12,7 +12,7 @@ final class AudioPlayer {
     private var isMuted = false
     private var scheduledBufferCount = 0
     private var pendingBytes = Data()
-    private let coalesceThreshold = 4800 // ~100ms at 24kHz 16-bit mono (2400 samples * 2 bytes)
+    private let coalesceThreshold = 960 // ~20ms at 24kHz 16-bit mono (480 samples * 2 bytes)
 
     init() {
         outputFormat = AVAudioFormat(

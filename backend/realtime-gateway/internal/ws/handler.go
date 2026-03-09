@@ -65,6 +65,11 @@ type liveSessionState struct {
 	errChan      chan error
 	ttsMu        sync.Mutex
 	ttsCancel    context.CancelFunc
+
+	// modelSpeaking is true while Gemini is actively sending audio response.
+	// While true: client audio is NOT forwarded (prevents self-interruption),
+	// screen captures are deferred, and cancelTTS is suppressed.
+	modelSpeaking bool
 }
 
 func (ls *liveSessionState) isReconnecting() bool {
@@ -115,6 +120,18 @@ func (ls *liveSessionState) setConfig(c live.Config) {
 	ls.mu.Unlock()
 }
 
+func (ls *liveSessionState) isModelSpeaking() bool {
+	ls.mu.RLock()
+	defer ls.mu.RUnlock()
+	return ls.modelSpeaking
+}
+
+func (ls *liveSessionState) setModelSpeaking(v bool) {
+	ls.mu.Lock()
+	ls.modelSpeaking = v
+	ls.mu.Unlock()
+}
+
 func (ls *liveSessionState) cancelTTS() {
 	ls.ttsMu.Lock()
 	if ls.ttsCancel != nil {
@@ -128,6 +145,10 @@ func (ls *liveSessionState) setTTSCancel(cancel context.CancelFunc) {
 	ls.ttsMu.Lock()
 	ls.ttsCancel = cancel
 	ls.ttsMu.Unlock()
+}
+
+func isJPEG(data []byte) bool {
+	return len(data) > 2 && data[0] == 0xFF && data[1] == 0xD8
 }
 
 func newConnID() string {
@@ -209,13 +230,25 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client, ttsCli
 
 			switch msgType {
 			case websocket.BinaryMessage:
-				ls.cancelTTS()
-				if sess := ls.getSession(); sess != nil {
-					if sendErr := sess.SendAudio(data); sendErr != nil {
-						slog.Warn("send audio to gemini failed", "conn_id", c.ID, "error", sendErr)
+				if isJPEG(data) {
+					if sess := ls.getSession(); sess != nil {
+						if !ls.isModelSpeaking() {
+							if sendErr := sess.SendVideo(data); sendErr != nil {
+								slog.Warn("send video to gemini failed", "conn_id", c.ID, "error", sendErr)
+							} else {
+								slog.Debug("video frame sent to gemini", "conn_id", c.ID, "bytes", len(data))
+							}
+						}
 					}
-				} else if !ls.isReconnecting() {
-					_ = rawConn.WriteMessage(websocket.BinaryMessage, data)
+				} else {
+					ls.cancelTTS()
+					if sess := ls.getSession(); sess != nil {
+						if sendErr := sess.SendAudio(data); sendErr != nil {
+							slog.Warn("send audio to gemini failed", "conn_id", c.ID, "error", sendErr)
+						}
+					} else if !ls.isReconnecting() {
+						_ = rawConn.WriteMessage(websocket.BinaryMessage, data)
+					}
 				}
 
 			case websocket.TextMessage:
@@ -352,6 +385,10 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client, ttsCli
 					if adkClient == nil {
 						continue
 					}
+					if ls.isModelSpeaking() && msg.Type == "screenCapture" {
+						slog.Debug("skipping screen capture during model speech", "conn_id", c.ID)
+						continue
+					}
 					var captureMsg struct {
 						Type            string `json:"type"`
 						Image           string `json:"image"`
@@ -397,6 +434,17 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client, ttsCli
 						if analyzeErr != nil {
 							slog.Warn("[HANDLER] <<< ADK analyze FAILED", "conn_id", c.ID, "error", analyzeErr, "elapsed", elapsed.String())
 							return
+						}
+
+						if result != nil && result.Vision != nil && result.Vision.Content != "" {
+							if sess := ls.getSession(); sess != nil {
+								contextMsg := fmt.Sprintf("[Screen Context] %s", result.Vision.Content)
+								if sendErr := sess.SendText(contextMsg); sendErr != nil {
+									slog.Debug("inject screen context failed", "conn_id", c.ID, "error", sendErr)
+								} else {
+									slog.Info("[HANDLER] injected screen context into live session", "conn_id", c.ID, "content_len", len(result.Vision.Content))
+								}
+							}
 						}
 
 						shouldSpeak := result != nil && result.Decision != nil && result.Decision.ShouldSpeak
@@ -506,6 +554,8 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client, ttsCli
 }
 
 func receiveFromGemini(ctx context.Context, c *Conn, sess *live.Session, ls *liveSessionState, adkClient *adk.Client, ttsClient *tts.Client) {
+	turnHasAudio := false
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -516,6 +566,10 @@ func receiveFromGemini(ctx context.Context, c *Conn, sess *live.Session, ls *liv
 		msg, err := sess.Receive()
 		if err != nil {
 			slog.Warn("gemini receive error", "conn_id", c.ID, "error", err)
+			if turnHasAudio {
+				ls.setModelSpeaking(false)
+				lockedSendJSON(c, map[string]string{"type": "ttsEnd"})
+			}
 			if ls.getSession() == sess {
 				ls.setSession(nil)
 			}
@@ -543,6 +597,14 @@ func receiveFromGemini(ctx context.Context, c *Conn, sess *live.Session, ls *liv
 				for _, part := range sc.ModelTurn.Parts {
 					if part.InlineData != nil && len(part.InlineData.Data) > 0 {
 						hasAudio = true
+
+						if !turnHasAudio {
+							turnHasAudio = true
+							ls.setModelSpeaking(true)
+							lockedSendJSON(c, map[string]any{"type": "ttsStart", "text": ""})
+							slog.Info("[GEMINI-RX] model audio started, suppressing client input", "conn_id", c.ID)
+						}
+
 						c.mu.Lock()
 						c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 						writeErr := c.conn.WriteMessage(websocket.BinaryMessage, part.InlineData.Data)
@@ -602,10 +664,20 @@ func receiveFromGemini(ctx context.Context, c *Conn, sess *live.Session, ls *liv
 			}
 
 			if sc.TurnComplete {
+				if turnHasAudio {
+					turnHasAudio = false
+					ls.setModelSpeaking(false)
+					lockedSendJSON(c, map[string]string{"type": "ttsEnd"})
+				}
 				lockedSendJSON(c, map[string]string{"type": "turnComplete"})
 			}
 
 			if sc.Interrupted {
+				if turnHasAudio {
+					turnHasAudio = false
+					ls.setModelSpeaking(false)
+					lockedSendJSON(c, map[string]string{"type": "ttsEnd"})
+				}
 				lockedSendJSON(c, map[string]string{"type": "interrupted"})
 			}
 		}

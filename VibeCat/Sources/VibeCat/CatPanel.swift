@@ -64,6 +64,8 @@ final class CatPanel: NSPanel {
         emotionIndicator.font = NSFont.systemFont(ofSize: 18)
         emotionIndicator.textColor = .white
         emotionIndicator.isHidden = true
+        emotionIndicator.alphaValue = 0
+        emotionIndicator.wantsLayer = true
         emotionIndicator.frame = NSRect(x: 0, y: 0, width: 28, height: 24)
         contentView.addSubview(emotionIndicator)
 
@@ -93,14 +95,20 @@ final class CatPanel: NSPanel {
     func showBubble(text: String) {
         let preview = String(text.prefix(50))
         NSLog("[BUBBLE] showBubble: %@", preview)
-        let wasVisible = !bubbleView.isHidden && bubbleView.alphaValue > 0
-        currentBubbleText = text
-        bubbleDuration = min(10.0, max(3.0, Double(text.count) / 5.0))
-        updateBubbleFrame(for: text)
-        if wasVisible {
-            bubbleView.updateText(text)
+        let displayText: String
+        if text.count > 200 {
+            displayText = "…" + String(text.suffix(180))
         } else {
-            bubbleView.show(text: text)
+            displayText = text
+        }
+        let wasVisible = !bubbleView.isHidden && bubbleView.alphaValue > 0
+        currentBubbleText = displayText
+        bubbleDuration = min(10.0, max(3.0, Double(text.count) / 5.0))
+        updateBubbleFrame(for: displayText)
+        if wasVisible {
+            bubbleView.updateText(displayText)
+        } else {
+            bubbleView.show(text: displayText)
         }
         ensureSmartHidePolling()
     }
@@ -145,19 +153,66 @@ final class CatPanel: NSPanel {
     func setEmotionIndicator(_ text: String?) {
         let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         NSLog("[BUBBLE] setEmotionIndicator: %@", trimmed)
-        emotionIndicator.stringValue = trimmed
-        emotionIndicator.isHidden = trimmed.isEmpty
-        layoutOverlayElements()
+
+        if trimmed.isEmpty {
+            stopEmotionAnimation()
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0.25
+                self.emotionIndicator.animator().alphaValue = 0
+            }, completionHandler: { [weak self] in
+                Task { @MainActor in
+                    self?.emotionIndicator.isHidden = true
+                    self?.emotionIndicator.stringValue = ""
+                }
+            })
+        } else {
+            emotionIndicator.stringValue = trimmed
+            emotionIndicator.isHidden = false
+            emotionIndicator.alphaValue = 0
+            layoutOverlayElements()
+
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0.3
+                self.emotionIndicator.animator().alphaValue = 1.0
+            })
+            startEmotionAnimation()
+        }
+    }
+
+    private func startEmotionAnimation() {
+        guard let layer = emotionIndicator.layer else { return }
+        layer.removeAllAnimations()
+
+        let float = CAKeyframeAnimation(keyPath: "transform.translation.y")
+        float.values = [0, 3, 0, -3, 0]
+        float.keyTimes = [0, 0.25, 0.5, 0.75, 1.0]
+        float.duration = 2.0
+        float.repeatCount = .infinity
+        float.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        layer.add(float, forKey: "float")
+
+        let pulse = CABasicAnimation(keyPath: "transform.scale")
+        pulse.fromValue = 1.0
+        pulse.toValue = 1.15
+        pulse.duration = 1.8
+        pulse.autoreverses = true
+        pulse.repeatCount = .infinity
+        pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        layer.add(pulse, forKey: "pulse")
+    }
+
+    private func stopEmotionAnimation() {
+        emotionIndicator.layer?.removeAllAnimations()
     }
 
     func updateEmotionForState(_ state: SpriteAnimator.AnimationState) {
         switch state {
         case .happy, .celebrating:
-            setEmotionIndicator("🔥")
+            setEmotionIndicator("🎉")
         case .surprised:
-            setEmotionIndicator("⚡")
+            setEmotionIndicator("❗")
         case .thinking:
-            setEmotionIndicator("💀")
+            setEmotionIndicator("💭")
         case .frustrated:
             setEmotionIndicator("😤")
         case .idle:
@@ -268,6 +323,9 @@ final class CatPanel: NSPanel {
             bubbleX += (screenFrame.minX + 8 - projectedLeft)
         }
 
+        let tailLocalX = catFrame.midX - bubbleX
+        let tailRatio = tailLocalX / size.width
+        bubbleView.setTailPosition(tailRatio)
         bubbleView.setTailDirection(tailDir)
         bubbleView.frame = NSRect(x: bubbleX, y: bubbleY, width: size.width, height: size.height)
         bubbleView.layoutSubtreeIfNeeded()
