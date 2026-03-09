@@ -102,8 +102,8 @@ func TestBuildLiveConfig(t *testing.T) {
 				if ad.EndOfSpeechSensitivity != genai.EndSensitivityLow {
 					t.Fatalf("EndOfSpeechSensitivity = %v, want %v", ad.EndOfSpeechSensitivity, genai.EndSensitivityLow)
 				}
-				if ad.PrefixPaddingMs == nil || *ad.PrefixPaddingMs != 300 {
-					t.Fatalf("PrefixPaddingMs = %v, want 300", ad.PrefixPaddingMs)
+				if ad.PrefixPaddingMs == nil || *ad.PrefixPaddingMs != 500 {
+					t.Fatalf("PrefixPaddingMs = %v, want 500", ad.PrefixPaddingMs)
 				}
 				if ad.SilenceDurationMs == nil || *ad.SilenceDurationMs != 500 {
 					t.Fatalf("SilenceDurationMs = %v, want 500", ad.SilenceDurationMs)

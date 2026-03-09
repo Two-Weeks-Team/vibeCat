@@ -95,12 +95,7 @@ final class CatPanel: NSPanel {
     func showBubble(text: String) {
         let preview = String(text.prefix(50))
         NSLog("[BUBBLE] showBubble: %@", preview)
-        let displayText: String
-        if text.count > 200 {
-            displayText = "…" + String(text.suffix(180))
-        } else {
-            displayText = text
-        }
+        let displayText = text
         let wasVisible = !bubbleView.isHidden && bubbleView.alphaValue > 0
         currentBubbleText = displayText
         bubbleDuration = min(10.0, max(3.0, Double(text.count) / 5.0))
@@ -122,11 +117,13 @@ final class CatPanel: NSPanel {
 
     private func ensureSmartHidePolling() {
         guard smartHideTimer == nil else { return }
-        smartHideTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
+        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
                 self?.evaluateBubbleHide()
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        smartHideTimer = timer
     }
 
     private func evaluateBubbleHide() {
@@ -277,7 +274,10 @@ final class CatPanel: NSPanel {
             x: localPoint.x - imageView.frame.width / 2,
             y: localPoint.y - imageView.frame.height / 2
         )
-        layoutOverlayElements()
+        emotionIndicator.frame.origin = NSPoint(x: imageView.frame.maxX - 4, y: imageView.frame.maxY - 4)
+        if !bubbleView.isHidden, let text = currentBubbleText {
+            updateBubbleFrame(for: text)
+        }
     }
 
     private func layoutOverlayElements() {

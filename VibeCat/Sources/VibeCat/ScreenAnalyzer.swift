@@ -187,21 +187,33 @@ final class ScreenAnalyzer {
     // MARK: - Fast Path (video frame → Gemini Live API)
 
     private func sendFastPath(image: CGImage) {
-        guard let jpegData = ImageProcessor.toFastPathJPEG(image) else { return }
-        NSLog("[CAPTURE] Fast Path: sending %d bytes JPEG to Live API", jpegData.count)
-        gatewayClient.sendVideoFrame(jpegData)
+        let img = image
+        let client = gatewayClient
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard let jpegData = ImageProcessor.toFastPathJPEG(img) else { return }
+            NSLog("[CAPTURE] Fast Path: sending %d bytes JPEG to Live API", jpegData.count)
+            DispatchQueue.main.async { client.sendVideoFrame(jpegData) }
+        }
     }
 
     // MARK: - Smart Path (base64 image → ADK orchestrator)
 
     private func sendSmartPath(image: CGImage, highSignificance: Bool) async {
         guard gatewayClient.isConnected else { return }
-        guard let base64 = ImageProcessor.toBase64JPEG(image) else { return }
 
         let appName = NSWorkspace.shared.frontmostApplication?.localizedName ?? "Unknown"
         let context = "[App: \(appName)]"
         let character = AppSettings.shared.character
         let soul = spriteAnimator.loadPreset(for: character).soul
+
+        let img = image
+        let base64: String? = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result = ImageProcessor.toBase64JPEG(img)
+                continuation.resume(returning: result)
+            }
+        }
+        guard let base64 else { return }
 
         NSLog("[CAPTURE] Smart Path: base64=%d bytes, character=%@, app=%@", base64.count, character, appName)
 

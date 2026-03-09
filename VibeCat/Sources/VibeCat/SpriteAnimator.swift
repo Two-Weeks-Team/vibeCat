@@ -128,11 +128,13 @@ final class SpriteAnimator {
 
     private func restartAnimationTimer() {
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: currentFrameInterval(), repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
+        let newTimer = Timer(timeInterval: currentFrameInterval(), repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
                 self?.advanceFrame()
             }
         }
+        RunLoop.main.add(newTimer, forMode: .common)
+        timer = newTimer
     }
 
     func stop() {

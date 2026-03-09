@@ -16,6 +16,8 @@ final class CircleGestureDetector {
     private let timeWindow: TimeInterval = 6.0
     private let minRadius: CGFloat = 60
     private let maxBufferSize = 300
+    private var lastMouseHandleTime: Date = .distantPast
+    private let mouseThrottleInterval: TimeInterval = 1.0 / 30.0
 
     func startMonitoring() {
         stopMonitoring()
@@ -47,8 +49,10 @@ final class CircleGestureDetector {
     }
 
     private func handleMouseMoved() {
-        let point = NSEvent.mouseLocation
         let now = Date()
+        guard now.timeIntervalSince(lastMouseHandleTime) >= mouseThrottleInterval else { return }
+        lastMouseHandleTime = now
+        let point = NSEvent.mouseLocation
 
         positions.append((point: point, time: now))
         pruneOldPositions(before: now.addingTimeInterval(-timeWindow))

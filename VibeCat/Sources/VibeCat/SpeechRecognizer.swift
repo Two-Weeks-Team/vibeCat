@@ -76,18 +76,15 @@ final class SpeechAudioCapture: @unchecked Sendable {
     private(set) var isVoiceProcessingActive = false
     private var streamingCallback: (@Sendable (AVAudioPCMBuffer) -> Void)?
 
-    private let rmsThreshold: Float = 0.003
-
-    /// Higher threshold during model speech: echo ~0.005-0.03, user speech ~0.03-0.5.
-    private let bargeInThreshold: Float = 0.025
-
-    /// Written from main thread, read from audio thread.
-    /// Aligned Bool on ARM64 has natural atomicity for single-writer/single-reader.
-    var modelSpeaking: Bool = false
-
-    /// Number of consecutive above-threshold buffers required before streaming begins.
-    /// At 4096 samples / 44100 Hz ≈ 93ms per buffer, 1 buffer passes immediately.
-    private let consecutiveThreshold: Int = 1
+    private let rmsThreshold: Float = 0.01
+    private let bargeInThreshold: Float = 0.05
+    private let _speakingLock = NSLock()
+    private var _modelSpeaking: Bool = false
+    var modelSpeaking: Bool {
+        get { _speakingLock.withLock { _modelSpeaking } }
+        set { _speakingLock.withLock { _modelSpeaking = newValue } }
+    }
+    private let consecutiveThreshold: Int = 3
     private var consecutiveAboveCount: Int = 0
 
     func start(streamingCallback: (@Sendable (AVAudioPCMBuffer) -> Void)? = nil) throws {

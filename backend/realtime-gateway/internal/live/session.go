@@ -174,7 +174,7 @@ func buildLiveConfig(cfg Config) *genai.LiveConnectConfig {
 	lc.OutputAudioTranscription = &genai.AudioTranscriptionConfig{}
 	lc.InputAudioTranscription = &genai.AudioTranscriptionConfig{}
 
-	prefixPadding := int32(300)
+	prefixPadding := int32(500)
 	silenceDuration := int32(500)
 	lc.RealtimeInputConfig = &genai.RealtimeInputConfig{
 		AutomaticActivityDetection: &genai.AutomaticActivityDetection{

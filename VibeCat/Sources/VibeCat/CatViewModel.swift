@@ -27,11 +27,13 @@ final class CatViewModel {
         let clamped = clampToBounds(globalToLocal(screenPoint))
         targetPosition = clamped
         returnHomeTimer?.invalidate()
-        returnHomeTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { [weak self] _ in
-            Task { @MainActor [weak self] in
+        let timer = Timer(timeInterval: 5.0, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
                 self?.returnHome()
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        returnHomeTimer = timer
     }
 
     func returnHome() {
@@ -39,12 +41,14 @@ final class CatViewModel {
     }
 
     private func startMoveLoop() {
-        moveTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
                 self?.updateFromMouse()
                 self?.updatePosition()
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        moveTimer = timer
     }
 
     private let catOffsetX: CGFloat = 150

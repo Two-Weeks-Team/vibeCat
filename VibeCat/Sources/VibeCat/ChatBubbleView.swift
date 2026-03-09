@@ -157,7 +157,7 @@ final class ChatBubbleView: NSView {
     }
 
     private let maxBubbleWidth: CGFloat = 380
-    private let maxBubbleHeight: CGFloat = 300
+    private let maxBubbleHeight: CGFloat = 500
 
     func preferredSize(for text: String) -> NSSize {
         let maxTextWidth: CGFloat = maxBubbleWidth - horizontalPadding * 2
