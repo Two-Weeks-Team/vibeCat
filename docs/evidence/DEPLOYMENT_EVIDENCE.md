@@ -1,9 +1,9 @@
 # VibeCat Deployment Evidence
 
-**Collected**: 2026-03-06
+**Collected**: 2026-03-09 (updated)
 **Project**: vibecat-489105
 **Region**: asia-northeast3 (Seoul)
-**Last Deploy**: 2026-03-06
+**Last Deploy**: 2026-03-09
 
 ---
 
@@ -16,12 +16,14 @@
 | Service Name | `realtime-gateway` |
 | URL | `https://realtime-gateway-163070481841.asia-northeast3.run.app` |
 | Status | **Ready** (True) |
-| Active Revision | `realtime-gateway-00006-mq9` |
+| Active Revision | `realtime-gateway-00010-m9p` |
 | Traffic | 100% → latest revision |
 | Created | 2026-03-04T00:28:46Z |
 | Auth | Public (`allUsers` → `roles/run.invoker`) |
 
-**Key Changes in 00006**:
+**Key Changes in 00010**:
+- Rest reminder pipeline: `activityMinutes` passthrough from client → orchestrator
+- Cloud Monitoring custom metrics via OpenTelemetry metric exporter
 - Live API reconnection race condition fix (`reconnecting` state flag)
 - Conditional session nil with pointer comparison (prevents killing newer sessions)
 - Audio frame drop during reconnect state
@@ -42,14 +44,20 @@ GET /readyz → 200 OK
 | Service Name | `adk-orchestrator` |
 | URL | `https://adk-orchestrator-163070481841.asia-northeast3.run.app` |
 | Status | **Ready** (True) |
-| Active Revision | `adk-orchestrator-00008-5t2` |
+| Active Revision | `adk-orchestrator-00011-qj4` |
 | Traffic | 100% → latest revision |
 | Access | Internal only (invoked by Gateway via `POST /analyze`) |
 
-**Key Changes in 00008**:
+**Key Changes in 00011**:
+- ADK `retryandreflect` plugin for automatic agent failure recovery
+- ADK `loopagent` wrapping search for iterative refinement
+- ADK `BeforeModel/AfterModel` callbacks on LLM search agent (logging, guard-rails)
+- Cloud Monitoring custom metrics (3 OTel instruments: agent duration, active sessions, analysis counter)
+- Rest reminder system: 50-minute activity tracking → proactive break suggestions
+- Session state management for activity minutes tracking
 - LLM dynamic message generation for Mediator, Celebration, Engagement agents
 - All hardcoded speech message pools replaced with `gemini-3.1-flash-lite-preview` generation
-- `llmSearchAgent` wired as live SubAgent in wave3 (previously dead code)
+- `llmSearchAgent` wired as live SubAgent in wave3
 - `genaiClient` passed to mediator, celebration, engagement constructors
 
 **Health Check**:
@@ -89,6 +97,7 @@ GET /health → 200 OK
 |---------|--------|---------|
 | Cloud Trace | ✅ Active | OpenTelemetry → `opentelemetry-operations-go/exporter/trace` |
 | Cloud Logging | ✅ Active | `cloud.google.com/go/logging` structured JSON |
+| Cloud Monitoring | ✅ Active | OpenTelemetry → `opentelemetry-operations-go/exporter/metric` — 3 custom metrics: agent duration histogram, active sessions gauge, analysis counter |
 | ADK Telemetry | ✅ Active | `google.golang.org/adk/telemetry` with GCP resource |
 
 ---
@@ -158,7 +167,8 @@ GET /health → 200 OK
 | ModelsTests | 4 | **pass** |
 | AudioMessageParserTests | 4 | **pass** |
 | SettingsTests | 4 | **pass** |
-| **Total** | **24** | **all pass** |
+| ScreenAnalyzerTests | 7 | **pass** |
+| **Total** | **31** | **all pass** |
 
 ### E2E Tests
 
@@ -228,21 +238,24 @@ runner.New(Config{
 })
 ```
 
-### ADK Features Used (11)
+### ADK Features Used (14)
 
 | # | Feature | Import |
 |---|---------|--------|
 | 1 | `agent.New()` | `google.golang.org/adk/agent` |
 | 2 | `sequentialagent.New()` | `.../workflowagents/sequentialagent` |
 | 3 | `parallelagent.New()` | `.../workflowagents/parallelagent` |
-| 4 | `llmagent.New()` | `google.golang.org/adk/agent/llmagent` |
-| 5 | `session.InMemoryService()` | `google.golang.org/adk/session` |
-| 6 | `memory.InMemoryService()` | `google.golang.org/adk/memory` |
-| 7 | `runner.New()` | `google.golang.org/adk/runner` |
-| 8 | `telemetry.New()` | `google.golang.org/adk/telemetry` |
-| 9 | `session.State/Event` | `google.golang.org/adk/session` |
-| 10 | `functiontool.New()` | `google.golang.org/adk/tool/functiontool` |
-| 11 | `geminitool.GoogleSearch{}` | `google.golang.org/adk/tool/geminitool` |
+| 4 | `loopagent.New()` | `.../workflowagents/loopagent` |
+| 5 | `llmagent.New()` | `google.golang.org/adk/agent/llmagent` |
+| 6 | `session.InMemoryService()` | `google.golang.org/adk/session` |
+| 7 | `memory.InMemoryService()` | `google.golang.org/adk/memory` |
+| 8 | `runner.New()` | `google.golang.org/adk/runner` |
+| 9 | `telemetry.New()` | `google.golang.org/adk/telemetry` |
+| 10 | `session.State/Event` | `google.golang.org/adk/session` |
+| 11 | `functiontool.New()` | `google.golang.org/adk/tool/functiontool` |
+| 12 | `geminitool.GoogleSearch{}` | `google.golang.org/adk/tool/geminitool` |
+| 13 | `retryandreflect` plugin | `google.golang.org/adk/plugin/retryandreflect` |
+| 14 | `BeforeModel/AfterModel` callbacks | `google.golang.org/adk/agent/llmagent` |
 
 ### AI Models Used
 
@@ -256,19 +269,32 @@ runner.New(Config{
 
 ---
 
-## 6. Blog Posts (dev.to)
+## 6. Blog Posts (dev.to — username: `combba`)
+
+### Published (4)
+
+| # | Title | Date | URL |
+|---|-------|------|-----|
+| 1 | "I tried turning scattered features into one experience" | Feb 25 | https://dev.to/combba/today-i-tried-turning-scattered-features-into-one-experience-39cp |
+| 2 | "the websocket cascade from hell" | Feb 25 | https://dev.to/combba/the-websocket-cascade-from-hell-3o1a |
+| 3 | "missless failed at real-time video — so we pivoted to vibeCat" | Mar 4 | https://dev.to/combba/missless-failed-at-real-time-video-so-we-pivoted-to-vibecat-1bdn |
+| 4 | "the empty chair problem — why I'm building a desktop AI instead of another chatbot" | Mar 6 | https://dev.to/combba/the-empty-chair-problem-why-im-building-a-desktop-ai-instead-of-another-chatbot-46fm |
+
+### Drafts (1 on dev.to + 3 prepared locally)
 
 | # | Title | Status |
 |---|-------|--------|
-| 1 | "Why I Killed My App Two Weeks Before the Deadline" | **Published** |
-| 2 | "The Empty Chair Problem" | **Published** |
-| 3 | "Teaching Nine Agents to Think Like a Colleague" | **Published** |
-| 4 | "The WebSocket Proxy Nobody Asked For" | **Published** |
-| 5 | "Six Characters, One Soul Format" | **Published** |
-| P2 | Additional posts | Draft (user-managed) |
+| 5 | "the cat that watches your screen: building vibecat for the gemini live agent challenge" | **Draft** (on dev.to) |
+| 6 | "Teaching Nine Agents to Think Like a Colleague" | **Draft** (prepared) |
+| 7 | "Six Characters, One Soul Format" | **Draft** (prepared) |
+| 8 | "from localhost to Cloud Run: deploying a multi-agent system" | **Draft** (prepared) |
 
-All posts include `#GeminiLiveAgentChallenge` tag for +0.6 bonus points.
-Blog publishing is user-managed.
+### Narrative Arc
+
+1. missless early development (Posts 1-2) → missless failure & pivot (Post 3) → VibeCat philosophy (Post 4) → VibeCat technical deep-dives (Posts 5-8)
+
+All posts include `#GeminiLiveAgentChallenge` tag + hackathon disclosure statement for +0.6 bonus points.
+Blog publishing is user-managed — user will set posts to public.
 
 ---
 
@@ -312,7 +338,7 @@ curl https://realtime-gateway-163070481841.asia-northeast3.run.app/readyz
 gcloud run services list --project=vibecat-489105 --region=asia-northeast3
 
 # Run all tests
-make test                    # Swift (24 tests)
+make test                    # Swift (31 tests)
 make backend-test            # Go (Gateway + Orchestrator)
 
 # Build & run client

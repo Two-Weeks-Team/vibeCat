@@ -37,7 +37,7 @@
 
 | 항목 | 점수 | 현재 상태 | 필요한 작업 |
 |------|------|----------|-----------|
-| 블로그 게시 (#GeminiLiveAgentChallenge) | +0.6 | ✅ dev.to 5개 게시 완료 | 사용자가 추가 관리 |
+| 블로그 게시 (#GeminiLiveAgentChallenge) | +0.6 | ✅ dev.to 4개 게시 + 1 드래프트 + 3개 추가 예정 | 사용자가 공개 전환 |
 | 자동 배포 (IaC) | +0.2 | ✅ `infra/deploy.sh` + `setup.sh` 존재 | 검증만 |
 | GDG 멤버십 | +0.2 | ⏳ 미완료 | gdg.community.dev 가입 |
 
@@ -59,7 +59,7 @@
 
 | 서비스 | 상태 | 비고 |
 |--------|------|------|
-| **Cloud Run** | ✅ 배포 완료 | Gateway `00006-mq9`, Orchestrator `00008-5t2` |
+| **Cloud Run** | ✅ 배포 완료 | Gateway `00010-m9p`, Orchestrator `00011-qj4` |
 | **Cloud Logging** | ✅ 명시적 클라이언트 | `cloud.google.com/go/logging` 구조화 로그 |
 | **Cloud Trace** | ✅ 명시적 span | OpenTelemetry → Cloud Trace exporter |
 | **ADK Telemetry** | ✅ 활성 | `google.golang.org/adk/telemetry` |
@@ -68,8 +68,7 @@
 
 | 서비스 | 문서 위치 | 코드 |
 |--------|----------|------|
-| Cloud Storage | `DEPLOYMENT_AND_OPERATIONS.md` | 없음 |
-| Cloud Monitoring (커스텀 메트릭) | 이 문서 | 미구현 (P2) |
+| Cloud Storage | `DEPLOYMENT_AND_OPERATIONS.md` | 없음 (P3 — 필요 시) |
 
 ---
 
@@ -81,7 +80,7 @@
 |------------|----------|--------|----------|-----------|------|
 | **Cloud Trace** (명시적 span) | 20분 | ~30줄 | ★★★★★ | 높음 — Trace Explorer 워터폴 | ✅ 완료 |
 | **Cloud Logging** (구조화 로그) | 15분 | ~20줄 | ★★★★☆ | 중간 — Logs Explorer | ✅ 완료 |
-| **Cloud Monitoring** (커스텀 대시보드) | 30분 | ~25줄 | ★★★★☆ | 매우 높음 — 대시보드 스크린샷 | ❌ 미구현 |
+| **Cloud Monitoring** (커스텀 대시보드) | 30분 | ~25줄 | ★★★★☆ | 매우 높음 — 대시보드 스크린샷 | ✅ 완료 (OTel metric exporter) |
 | **ADK Telemetry** (OpenTelemetry) | 10분 | ~10줄 | ★★★☆☆ | 중간 — Trace에 통합 | ✅ 완료 |
 | **Cloud Run 배포** | 30분 | 스크립트 실행 | ★★★★★ | 필수 — 배포 증명 | ✅ 완료 |
 
@@ -136,7 +135,7 @@ import monitoring "cloud.google.com/go/monitoring/apiv3/v2"
 
 ## 4. ADK 기능 확장 전략
 
-### ✅ 현재 사용 (11개 기능 — 모두 구현 완료)
+### ✅ 현재 사용 (14개 기능 — 모두 구현 완료)
 
 | 기능 | Import | 용도 | 상태 |
 |------|--------|------|------|
@@ -151,6 +150,9 @@ import monitoring "cloud.google.com/go/monitoring/apiv3/v2"
 | `session.State/Event` | `google.golang.org/adk/session` | 에이전트 간 상태 공유 | ✅ |
 | `functiontool.New()` | `google.golang.org/adk/tool/functiontool` | 타입 안전 도구 정의 | ✅ |
 | `geminitool.GoogleSearch{}` | `google.golang.org/adk/tool/geminitool` | 네이티브 검색 그라운딩 | ✅ |
+| `loopagent.New()` | `.../workflowagents/loopagent` | 검색 반복 정제 | ✅ |
+| `retryandreflect` plugin | `google.golang.org/adk/plugin/retryandreflect` | 자동 반성+재시도 | ✅ |
+| `BeforeModel/AfterModel` | `google.golang.org/adk/agent/llmagent` | 가드레일, 로깅 콜백 | ✅ |
 
 ### 향후 추가 가능한 ADK 기능
 
@@ -393,21 +395,21 @@ let setup: [String: Any] = [
 | parallelagent 적용 (Vision+Memory, Mood+Celebration) | ~15줄 | ADK ParallelAgent | Technical ★★★★☆ | ✅ |
 | functiontool로 에이전트 도구 정의 (3개) | ~75줄 | ADK FunctionTool | Technical ★★★★★ | ✅ |
 | geminitool.GoogleSearch 네이티브 통합 | ~5줄 | ADK GeminiTool | Technical ★★★★☆ | ✅ |
-| BeforeModel/AfterModel 콜백 (로깅/가드레일) | ~30줄 | ADK Callbacks | Technical ★★★★★ | ❌ 미구현 |
-| **ADK `retryandreflect` 플러그인** | ~10줄 | ADK Plugin | Technical ★★★★☆ | ❌ 미구현 |
-| **ADK `loopagent` 반복 정제** | ~15줄 | ADK LoopAgent | Technical ★★★☆☆ | ❌ 미구현 |
+| BeforeModel/AfterModel 콜백 (로깅/가드레일) | ~30줄 | ADK Callbacks | Technical ★★★★★ | ✅ 완료 (search agent) |
+| **ADK `retryandreflect` 플러그인** | ~10줄 | ADK Plugin | Technical ★★★★☆ | ✅ 완료 (main.go plugin) |
+| **ADK `loopagent` 반복 정제** | ~15줄 | ADK LoopAgent | Technical ★★★☆☆ | ✅ 완료 (search refinement) |
 | ADK memory.InMemoryService 연동 | ~15줄 | ADK Memory | Technical ★★★★☆ | ✅ |
-| **멀티모달 감정 융합** (AffectiveDialog + MoodDetector + 스크린) | ~40줄 | ADK (Orchestrator) | Innovation ★★★★★ | ❌ 미구현 |
-| 로컬 SQLite (GRDB.swift) 구현 | ~200줄 | — (로컬) | UX ★★★★☆ | ❌ 미구현 |
-| Apple Watch 인게이지먼트 (휴식 알림 + 시간 추적) | ~150줄 | ADK (확장) | Innovation ★★★★★ | ❌ 미구현 |
-| **컨텍스트 인식 침묵** (Flow state 감지 → 쿨다운 연장) | ~15줄 | ADK (Mediator) | Innovation ★★★★☆ | ❌ 미구현 |
+| **멀티모달 감정 융합** (AffectiveDialog + MoodDetector + 스크린) | ~40줄 | ADK (Orchestrator) | Innovation ★★★★★ | ✅ 완료 (voice fusion in mood.go) |
+| 로컬 SQLite (GRDB.swift) 구현 | ~200줄 | — (로컬) | UX ★★★★☆ | ❌ 미구현 (P3) |
+| 휴식 알림 인게이지먼트 (시간 추적 + 프로액티브 알림) | ~150줄 | ADK (확장) | Innovation ★★★★★ | ✅ 완료 (rest reminder pipeline) |
+| **컨텍스트 인식 침묵** (Flow state 감지 → 쿨다운 연장) | ~15줄 | ADK (Mediator) | Innovation ★★★★☆ | ✅ 완료 (flow state cooldown) |
 
 ### Day 6-8: P2 — 배포 + 데모 준비 — 대부분 완료
 
 | 작업 | 점수 영향 | 상태 |
 |------|----------|------|
-| Cloud Run 배포 (`./infra/deploy.sh`) | Technical ★★★★★ (필수) | ✅ 배포 완료 (00006/00008) |
-| Cloud Monitoring 커스텀 대시보드 | Technical ★★★★☆ | ❌ 미구현 |
+| Cloud Run 배포 (`./infra/deploy.sh`) | Technical ★★★★★ (필수) | ✅ 배포 완료 (00010/00011) |
+| Cloud Monitoring 커스텀 대시보드 | Technical ★★★★☆ | ✅ 완료 (OTel metric exporter) |
 | 아키텍처 다이어그램 (Mermaid) | Demo ★★★★★ | ✅ README.md에 포함 |
 | GCP Console 증거 수집 (Trace, Logs, Monitoring, Firestore) | Demo ★★★★★ | ⏳ 사용자 작업 |
 | 데모 영상 스토리보드 작성 | Demo ★★★★☆ | ✅ `docs/analysis/DEMO_STORYBOARD.md` |
@@ -517,16 +519,17 @@ let setup: [String: Any] = [
 
 | 항목 | 점수 |
 |------|------|
-| Innovation | 1.8/2.0 |
-| Technical | 1.45/1.5 |
+| Innovation | 1.9/2.0 |
+| Technical | 1.5/1.5 |
 | Demo | 1.4/1.5 |
-| **기본 합계** | **4.65/5.0** |
+| **기본 합계** | **4.8/5.0** |
 | 블로그 보너스 | +0.6 |
 | 자동 배포 보너스 | +0.2 |
 | GDG 보너스 | +0.2 |
-| **최종 예측** | **5.65/6.0** |
+| **최종 예측** | **5.8/6.0** |
 
-> **보수적 예측 5.65, 낙관적 예측 6.0**. 0.35 차이는 데모 영상 품질과 심사위원 주관에 의존.
+> **보수적 예측 5.8, 낙관적 예측 6.0**. 0.2 차이는 데모 영상 품질과 심사위원 주관에 의존.
+> **업데이트 (2026-03-09)**: Cloud Monitoring, ADK BeforeModel/AfterModel, retryandreflect, loopagent, 멀티모달 감정 융합, 휴식 알림, 컨텍스트 인식 침묵 모두 구현 완료. Technical 만점 달성.
 
 ---
 
@@ -545,7 +548,7 @@ let setup: [String: Any] = [
 | 7 | **Google Search** | 웹 검색 그라운딩 (geminitool 네이티브) | 기존 (geminitool 전환) |
 | 8 | **Cloud Trace** | 분산 추적 (Gateway→Orchestrator→9-agent 워터폴) | ✅ 구현 완료 |
 | 9 | **Cloud Logging** | 구조화 에이전트 결정 로그 | ✅ 구현 완료 |
-| 10 | **Cloud Monitoring** | 커스텀 메트릭 대시보드 | ❌ 미구현 |
+| 10 | **Cloud Monitoring** | 커스텀 메트릭 대시보드 (OTel metric exporter) | ✅ 구현 완료 |
 
 ### 인프라 서비스 (4개)
 

@@ -20,6 +20,7 @@
 | Tab 3 | Cloud Logging → Log Explorer | Filter: `resource.type="cloud_run_revision"` |
 | Tab 4 | Firestore → Data → sessions collection | Show memory documents |
 | Tab 5 | Secret Manager → `gemini-api-key` | Show key exists, value hidden |
+| Tab 6 | Cloud Monitoring → Metrics Explorer | Custom metrics: `vibecat/agent_duration_ms`, `vibecat/active_sessions`, `vibecat/analysis_total` |
 
 ### Terminal Windows (pre-staged, not yet running)
 ```bash
@@ -395,6 +396,13 @@ def test_empty_list():
 - Cat animation must be visible — ensure sprite is not obscured by VS Code window
 - Emotional arc is the key story beat here — linger on the log transition for 5 seconds
 
+#### Optional Extension: Rest Reminder (if time allows — can replace part of [3:15-3:40])
+- After 50+ minutes of continuous coding activity, EngagementAgent triggers a rest reminder
+- VibeCat says: *"이미 50분 넘게 코딩했어요! 잠깐 쉬어가요~ 🐱"*
+- Show log: `engagement_agent: rest_reminder: true, activity_minutes: 52`
+- This demonstrates the proactive engagement pipeline: client tracks `activityMinutes` → Gateway passes to Orchestrator → EngagementAgent triggers rest suggestion
+- **Demo tip**: Pre-set `sessionStartTime` to 50 minutes ago, or fast-forward with a code injection during demo prep
+
 ---
 
 ### [2:45 – 3:15] REMEMBER + SEARCH
@@ -566,11 +574,13 @@ def test_empty_list():
 ┌──────────────────────┬──────────────────────────────┐
 │                      │                              │
 │   VibeCat app        │   GCP Console montage        │
-│   Cat waving         │   (rapid cuts, 2s each):     │
+│   Cat waving         │   (rapid cuts, 1.5s each):   │
 │                      │   1. Cloud Run — 2 services  │
 │                      │   2. Firestore — data        │
 │                      │   3. Cloud Trace — waterfall │
-│                      │   4. Secret Manager — key    │
+│                      │   4. Cloud Monitoring —      │
+│                      │      custom metrics dashboard│
+│                      │   5. Secret Manager — key    │
 │                      │                              │
 └──────────────────────┴──────────────────────────────┘
 ```
@@ -582,24 +592,25 @@ def test_empty_list():
 4. **[3:48]** Highlight: GCP services listed (Cloud Run, Firestore, Secret Manager, Trace)
 5. **[3:50]** Split screen: cat waving on left, GCP Console rapid montage on right
 6. **[3:50]** Cloud Run → both services `RUNNING` (green status)
-7. **[3:52]** Firestore → sessions collection with data
-8. **[3:54]** Cloud Trace → waterfall with agent spans
-9. **[3:56]** Secret Manager → `gemini-api-key` (value hidden)
-10. **[3:58]** Full screen: cat waving, speech bubble: *"같이 코딩해요! 🐱"*
+7. **[3:51.5]** Firestore → sessions collection with data
+8. **[3:53]** Cloud Trace → waterfall with agent spans
+9. **[3:54.5]** Cloud Monitoring → Metrics Explorer showing `vibecat/agent_duration_ms` histogram + `vibecat/active_sessions` gauge
+10. **[3:56]** Secret Manager → `gemini-api-key` (value hidden)
+11. **[3:57.5]** Full screen: cat waving, speech bubble: *"같이 코딩해요! 🐱"*
 11. **[4:00]** Fade to black. Title card: "VibeCat — Gemini Live Agent Challenge 2026"
 
 #### Narration Script
 > *[Confident, closing tone — music swells slightly]*
 >
-> "Three layers. Nine agents."
+> "Three layers. Nine agents. Fourteen ADK features."
 >
 > *[Architecture diagram animates]*
 >
-> "All powered by Gemini Live API, Google ADK, and Cloud Run."
+> "Powered by Gemini Live API, Google ADK — with parallel agents, loop agents, retry-and-reflect self-healing, and BeforeModel callbacks — all deployed on Cloud Run with full observability."
 >
-> *[GCP Console montage]*
+> *[GCP Console montage — Cloud Run, Firestore, Trace, Monitoring, Secret Manager]*
 >
-> "Deployed. Operational. Proven."
+> "Deployed. Monitored. Proven."
 >
 > *[Cat waves]*
 >
@@ -619,6 +630,7 @@ def test_empty_list():
 - **Cloud Run** → Services → both `realtime-gateway` and `adk-orchestrator` showing green `RUNNING`
 - **Firestore** → Data → sessions collection with at least 1 document
 - **Cloud Trace** → most recent trace with agent waterfall
+- **Cloud Monitoring** → Metrics Explorer → custom metric `custom.googleapis.com/vibecat/agent_duration_ms` showing histogram of 9-agent execution times; also `vibecat/active_sessions` gauge and `vibecat/analysis_total` counter
 - **Secret Manager** → `gemini-api-key` secret (value must be hidden/redacted)
 
 #### Director Notes
