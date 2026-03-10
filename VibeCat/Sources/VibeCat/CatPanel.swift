@@ -101,7 +101,7 @@ final class CatPanel: NSPanel {
         let wasVisible = !bubbleView.isHidden && bubbleView.alphaValue > 0
         currentBubbleText = displayText
         bubbleShownAt = Date()
-        bubbleDuration = min(10.0, max(3.0, Double(text.count) / 5.0))
+        bubbleDuration = 2.0
         hideCountdownTimer?.invalidate()
         hideCountdownTimer = nil
         updateBubbleFrame(for: displayText)

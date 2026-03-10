@@ -56,6 +56,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return false
         }
 
+        var isCooldown: Bool {
+            if case .cooldown = self { return true }
+            return false
+        }
+
         var source: SpeechSource? {
             if case .modelSpeaking(let s) = self { return s }
             return nil
@@ -309,14 +314,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             switch message {
             case .companionSpeech(let text, let emotionStr, let urgency):
                 NSLog("[GW-IN] onMessage: companionSpeech, textLength=%lu, emotion=%@, chatModeActive=%d, state=%@", text.count, emotionStr, self.chatModeActive, self.speechState.description)
-                if self.speechState.isSpeaking {
-                    NSLog("[GW-IN] companionSpeech: interrupting current playback for ADK response")
-                    self.catVoice?.stop()
-                    self.pendingTranscription = ""
+                if self.speechState.isSpeaking || self.speechState.isCooldown {
+                    NSLog("[GW-IN] companionSpeech DROPPED: speech active (state=%@)", self.speechState.description)
+                    return
                 }
                 let timeSinceLastSpeech = Date().timeIntervalSince(self.lastSpeechEndTime)
-                if case .idle = self.speechState, timeSinceLastSpeech < self.minimumSpeechGap {
-                    NSLog("[GW-IN] companionSpeech SKIPPED: too soon (%.1fs < %.1fs gap)", timeSinceLastSpeech, self.minimumSpeechGap)
+                if timeSinceLastSpeech < self.minimumSpeechGap {
+                    NSLog("[GW-IN] companionSpeech DROPPED: too soon (%.1fs < %.1fs gap)", timeSinceLastSpeech, self.minimumSpeechGap)
                     return
                 }
                 self.bubbleLockedByTTS = true
