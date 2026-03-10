@@ -6,6 +6,7 @@ DerivedData/
 
 # Go Build
 backend/realtime-gateway/realtime-gateway
+backend/realtime-gateway/videotest
 backend/adk-orchestrator/adk-orchestrator
 vendor/
 
