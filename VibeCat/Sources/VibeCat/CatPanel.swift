@@ -18,6 +18,8 @@ final class CatPanel: NSPanel {
     private var bubbleDuration: TimeInterval = 2.0
     private var currentBubbleText: String?
     private var turnActive = false
+    private var bubbleShownAt: Date?
+    private let maxBubbleDisplayTime: TimeInterval = 15.0
 
     init(catViewModel: CatViewModel, spriteAnimator: SpriteAnimator) {
         self.catViewModel = catViewModel
@@ -98,7 +100,10 @@ final class CatPanel: NSPanel {
         let displayText = text
         let wasVisible = !bubbleView.isHidden && bubbleView.alphaValue > 0
         currentBubbleText = displayText
+        bubbleShownAt = Date()
         bubbleDuration = min(10.0, max(3.0, Double(text.count) / 5.0))
+        hideCountdownTimer?.invalidate()
+        hideCountdownTimer = nil
         updateBubbleFrame(for: displayText)
         if wasVisible {
             bubbleView.updateText(displayText)
@@ -111,6 +116,7 @@ final class CatPanel: NSPanel {
     func hideBubble() {
         bubbleView.hide()
         currentBubbleText = nil
+        bubbleShownAt = nil
         hideCountdownTimer?.invalidate()
         hideCountdownTimer = nil
         smartHideTimer?.invalidate()
@@ -137,6 +143,13 @@ final class CatPanel: NSPanel {
 
     private func evaluateBubbleHide() {
         let audioActive = audioPlayer?.isPlaying ?? false
+        let exceededMax = bubbleShownAt.map { Date().timeIntervalSince($0) > maxBubbleDisplayTime } ?? false
+
+        if exceededMax {
+            NSLog("[BUBBLE] force-hide: exceeded %.0fs max", maxBubbleDisplayTime)
+            hideBubble()
+            return
+        }
 
         if turnActive || audioActive {
             hideCountdownTimer?.invalidate()
@@ -147,11 +160,7 @@ final class CatPanel: NSPanel {
         guard hideCountdownTimer == nil else { return }
         hideCountdownTimer = Timer.scheduledTimer(withTimeInterval: bubbleDuration, repeats: false) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.bubbleView.hide()
-                self?.currentBubbleText = nil
-                self?.smartHideTimer?.invalidate()
-                self?.smartHideTimer = nil
-                self?.hideCountdownTimer = nil
+                self?.hideBubble()
             }
         }
     }

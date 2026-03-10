@@ -70,6 +70,16 @@ final class AudioPlayer {
 
         guard let buffer = makeBuffer(from: data) else { return }
 
+        if !engine.isRunning {
+            do {
+                try engine.start()
+                NSLog("[AUDIO] engine restarted after interruption")
+            } catch {
+                NSLog("[AUDIO] engine restart failed: %@", error.localizedDescription)
+                return
+            }
+        }
+
         scheduledBufferCount += 1
         isPlaying = true
 

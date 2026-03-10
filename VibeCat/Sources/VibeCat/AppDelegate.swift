@@ -277,12 +277,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         panel?.showBubble(text: self.pendingTranscription)
                     }
                     if finished {
-                        let fullText = self.pendingTranscription
-                        NSLog("[GW-IN] transcription COMPLETE: %@", String(fullText.prefix(80)))
-                        self.recentSpeechStore.add(fullText)
+                        if !self.pendingTranscription.isEmpty {
+                            self.recentSpeechStore.add(self.pendingTranscription)
+                        }
+                        NSLog("[GW-IN] transcription COMPLETE: %@", String(self.pendingTranscription.prefix(80)))
                         self.statusBarController?.recordInteraction()
                         self.pendingTranscription = ""
-                        self.maybeActivateChatFromWakeWord(fullText)
+                        self.maybeActivateChatFromWakeWord(text)
                     }
                 }
             case .inputTranscription(let text, let finished):
@@ -322,6 +323,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.speechRecognizer?.setModelSpeaking(true)
                 self.catVoice?.stop()
                 if let text, !text.isEmpty {
+                    self.pendingTranscription = ""
                     panel?.showBubble(text: text)
                 }
                 panel?.setTurnActive(true)

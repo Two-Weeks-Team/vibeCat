@@ -95,8 +95,8 @@ final class SpeechAudioCapture: @unchecked Sendable {
         let inputNode = engine.inputNode
 
         do {
-            try inputNode.setVoiceProcessingEnabled(true)
-            isVoiceProcessingActive = true
+            try inputNode.setVoiceProcessingEnabled(false)
+            isVoiceProcessingActive = false
         } catch {
             isVoiceProcessingActive = false
         }
