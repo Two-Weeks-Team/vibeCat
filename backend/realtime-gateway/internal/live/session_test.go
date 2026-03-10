@@ -128,6 +128,9 @@ func TestBuildLiveConfig(t *testing.T) {
 				if !strings.Contains(got, "Respond in English.") {
 					t.Fatal("system prompt should include normalized language directive")
 				}
+				if !strings.Contains(got, "Keep responses to 1-2 short sentences") {
+					t.Fatal("system prompt should include concise speech guidance")
+				}
 			},
 		},
 		{
@@ -187,6 +190,36 @@ func TestBuildLiveConfig(t *testing.T) {
 				}
 				if !strings.Contains(got, "websocket search routing fix was in progress") {
 					t.Fatal("expected memory context content")
+				}
+			},
+		},
+		{
+			name: "google search guidance included in system prompt",
+			cfg:  Config{Language: "ko", GoogleSearch: true},
+			check: func(t *testing.T, lc *genai.LiveConnectConfig) {
+				t.Helper()
+				got := lc.SystemInstruction.Parts[0].Text
+				if !strings.Contains(got, "For grounded search answers, give the direct answer") {
+					t.Fatal("expected grounded search brevity guidance")
+				}
+			},
+		},
+		{
+			name: "context compression tuned for realtime sessions",
+			cfg:  Config{},
+			check: func(t *testing.T, lc *genai.LiveConnectConfig) {
+				t.Helper()
+				if lc.ContextWindowCompression == nil || lc.ContextWindowCompression.TriggerTokens == nil {
+					t.Fatal("expected context window compression config")
+				}
+				if *lc.ContextWindowCompression.TriggerTokens != 12000 {
+					t.Fatalf("TriggerTokens = %d, want 12000", *lc.ContextWindowCompression.TriggerTokens)
+				}
+				if lc.ContextWindowCompression.SlidingWindow == nil || lc.ContextWindowCompression.SlidingWindow.TargetTokens == nil {
+					t.Fatal("expected sliding window target tokens")
+				}
+				if *lc.ContextWindowCompression.SlidingWindow.TargetTokens != 6000 {
+					t.Fatalf("TargetTokens = %d, want 6000", *lc.ContextWindowCompression.SlidingWindow.TargetTokens)
 				}
 			},
 		},

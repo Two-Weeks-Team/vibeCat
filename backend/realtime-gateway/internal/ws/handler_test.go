@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"google.golang.org/genai"
 	"vibecat/realtime-gateway/internal/adk"
@@ -129,5 +130,47 @@ func TestDescribeGroundingMetadata(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("describeGroundingMetadata() missing %q: %s", want, got)
 		}
+	}
+}
+
+func TestMemoryContextCacheRoundTrip(t *testing.T) {
+	userID := "cache-user"
+	language := "Korean"
+	invalidateCachedMemoryContext(userID, language)
+
+	if _, ok := getCachedMemoryContext(userID, language); ok {
+		t.Fatal("expected empty cache")
+	}
+
+	putCachedMemoryContext(userID, language, "Recent developer context")
+
+	got, ok := getCachedMemoryContext(userID, language)
+	if !ok {
+		t.Fatal("expected cache hit")
+	}
+	if got != "Recent developer context" {
+		t.Fatalf("cache = %q", got)
+	}
+
+	invalidateCachedMemoryContext(userID, language)
+	if _, ok := getCachedMemoryContext(userID, language); ok {
+		t.Fatal("expected cache miss after invalidation")
+	}
+}
+
+func TestMemoryContextCacheExpires(t *testing.T) {
+	userID := "cache-expiry-user"
+	language := "Korean"
+	key := memoryContextCacheKey(userID, language)
+
+	memoryContextCache.mu.Lock()
+	memoryContextCache.entries[key] = memoryContextCacheEntry{
+		context:   "stale",
+		expiresAt: time.Now().Add(-time.Second),
+	}
+	memoryContextCache.mu.Unlock()
+
+	if _, ok := getCachedMemoryContext(userID, language); ok {
+		t.Fatal("expected expired cache miss")
 	}
 }

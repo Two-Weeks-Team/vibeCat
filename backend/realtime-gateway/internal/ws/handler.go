@@ -33,6 +33,20 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
+const memoryContextCacheTTL = 5 * time.Minute
+
+type memoryContextCacheEntry struct {
+	context   string
+	expiresAt time.Time
+}
+
+var memoryContextCache = struct {
+	mu      sync.RWMutex
+	entries map[string]memoryContextCacheEntry
+}{
+	entries: map[string]memoryContextCacheEntry{},
+}
+
 type Conn struct {
 	ID   string
 	conn *websocket.Conn
@@ -336,6 +350,53 @@ func useNativeLiveSearch(cfg live.Config) bool {
 	return cfg.GoogleSearch
 }
 
+func memoryContextCacheKey(userID, language string) string {
+	return strings.TrimSpace(userID) + "|" + strings.TrimSpace(language)
+}
+
+func getCachedMemoryContext(userID, language string) (string, bool) {
+	key := memoryContextCacheKey(userID, language)
+	if key == "|" {
+		return "", false
+	}
+	now := time.Now()
+	memoryContextCache.mu.RLock()
+	entry, ok := memoryContextCache.entries[key]
+	memoryContextCache.mu.RUnlock()
+	if !ok || now.After(entry.expiresAt) || strings.TrimSpace(entry.context) == "" {
+		if ok {
+			memoryContextCache.mu.Lock()
+			delete(memoryContextCache.entries, key)
+			memoryContextCache.mu.Unlock()
+		}
+		return "", false
+	}
+	return entry.context, true
+}
+
+func putCachedMemoryContext(userID, language, contextText string) {
+	key := memoryContextCacheKey(userID, language)
+	if key == "|" || strings.TrimSpace(contextText) == "" {
+		return
+	}
+	memoryContextCache.mu.Lock()
+	memoryContextCache.entries[key] = memoryContextCacheEntry{
+		context:   strings.TrimSpace(contextText),
+		expiresAt: time.Now().Add(memoryContextCacheTTL),
+	}
+	memoryContextCache.mu.Unlock()
+}
+
+func invalidateCachedMemoryContext(userID, language string) {
+	key := memoryContextCacheKey(userID, language)
+	if key == "|" {
+		return
+	}
+	memoryContextCache.mu.Lock()
+	delete(memoryContextCache.entries, key)
+	memoryContextCache.mu.Unlock()
+}
+
 func fetchMemoryContext(ctx context.Context, adkClient *adk.Client, cfg live.Config) string {
 	if adkClient == nil {
 		return ""
@@ -343,6 +404,10 @@ func fetchMemoryContext(ctx context.Context, adkClient *adk.Client, cfg live.Con
 	userID := strings.TrimSpace(cfg.DeviceID)
 	if userID == "" {
 		return ""
+	}
+	if cached, ok := getCachedMemoryContext(userID, cfg.Language); ok {
+		slog.Info("[HANDLER] memory context cache hit", "user_id", userID, "language", cfg.Language, "context_len", len(cached))
+		return cached
 	}
 
 	memoryCtx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
@@ -356,7 +421,11 @@ func fetchMemoryContext(ctx context.Context, adkClient *adk.Client, cfg live.Con
 		slog.Warn("[HANDLER] memory context lookup failed", "user_id", userID, "error", err)
 		return ""
 	}
-	return strings.TrimSpace(contextText)
+	contextText = strings.TrimSpace(contextText)
+	if contextText != "" {
+		putCachedMemoryContext(userID, cfg.Language, contextText)
+	}
+	return contextText
 }
 
 func extractGroundingSources(meta *genai.GroundingMetadata) []string {
@@ -538,6 +607,7 @@ func saveSessionMemory(ctx context.Context, adkClient *adk.Client, cfg live.Conf
 		return
 	}
 
+	invalidateCachedMemoryContext(userID, cfg.Language)
 	slog.Info("[HANDLER] session summary saved", "user_id", userID, "session_id", sessionID, "history_len", len(history))
 }
 

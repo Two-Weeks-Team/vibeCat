@@ -142,7 +142,7 @@ CORE BEHAVIOR:
 - SPEECH-FIRST: Your output is spoken aloud. Write for the ear, not the eye. No bullet points, no markdown. Short, natural sentences. Use contractions.
 - SCREEN-AWARE: Reference what you see on the developer's screen concretely. Be specific about file names, function names, error messages.
 - COMPLETE THOUGHTS: Always finish your full thought. If you spot an error, name it AND suggest the fix in the same response. Never stop at just identifying a problem.
-- CONCISE BUT COMPLETE: Keep responses to 2-3 sentences. First sentence identifies what you see, remaining sentences suggest what to do about it.
+- CONCISE BUT COMPLETE: Keep responses to 1-2 short sentences. Say the direct answer first, then one concrete next step only if it helps.
 - SILENT WHEN IRRELEVANT: If nothing notable is happening, stay silent. Do not speak just to fill silence.
 
 VIDEO FRAME HANDLING:
@@ -185,6 +185,7 @@ func buildSystemInstruction(cfg Config) string {
 			"Google Search is available in this session.\n" +
 			"Use it before answering when the user asks for current, latest, live, web-grounded, or time-sensitive information, or explicitly asks you to search, browse, look up, check docs, or check GitHub.\n" +
 			"After searching, answer in the same turn with the result. Never say you will search later and then stop.\n" +
+			"For grounded search answers, give the direct answer in the first sentence and stop after one short follow-up sentence at most.\n" +
 			"Do not use Google Search for casual chat, stable facts, or on-screen observations unless the user explicitly asks or freshness matters."
 	}
 	if ctx := trimPromptBlock(cfg.MemoryContext, maxMemoryContextChars); ctx != "" {
@@ -241,8 +242,8 @@ func buildLiveConfig(cfg Config) *genai.LiveConnectConfig {
 
 	lc.MediaResolution = genai.MediaResolutionMedium
 
-	triggerTokens := int64(100000)
-	targetTokens := int64(50000)
+	triggerTokens := int64(12000)
+	targetTokens := int64(6000)
 	lc.ContextWindowCompression = &genai.ContextWindowCompressionConfig{
 		TriggerTokens: &triggerTokens,
 		SlidingWindow: &genai.SlidingWindow{
