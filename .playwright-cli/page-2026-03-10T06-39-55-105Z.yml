@@ -1,0 +1,233 @@
+- generic [ref=e1]:
+  - generic:
+    - generic:
+      - img
+      - progressbar
+      - generic: Google Play Console 로드 중
+  - generic [ref=e3]:
+    - banner [ref=e4]:
+      - generic [ref=e5]:
+        - generic [ref=e8]:
+          - img "오류" [ref=e11]: error
+          - generic [ref=e12]:
+            - generic [ref=e13]: 개발자 프로필과 모든 앱이 Google Play에서 삭제되었습니다. 변경사항이 게시되지 않습니다.
+            - link "세부정보 보기" [ref=e397] [cursor=pointer]:
+              - /url: /console/u/0/developers/6406461807014996516/app-list
+              - generic [ref=e400]: 세부정보 보기
+        - generic [ref=e14]:
+          - link "Google Play Console 로고" [ref=e15] [cursor=pointer]:
+            - /url: /console/u/0/developers/6406461807014996516/app-list
+            - button "Google Play Console 로고" [ref=e16]
+          - generic [ref=e17]:
+            - button "알림 알림 센터 열기" [ref=e23]:
+              - img [ref=e27]: notifications
+              - generic [ref=e29]: 알림
+            - button "개발자 계정 전환" [ref=e34] [cursor=pointer]:
+              - img "개발자 계정 전환" [ref=e36]
+    - navigation [ref=e42]:
+      - list [ref=e43]:
+        - listitem "홈" [ref=e46]:
+          - button "홈" [ref=e47] [cursor=pointer]:
+            - img [ref=e50]: features
+            - generic [ref=e51]: 홈
+        - listitem "정책 상태" [ref=e54]:
+          - button "정책 상태" [ref=e55] [cursor=pointer]:
+            - img [ref=e58]: android_security_privacy_safe
+            - generic [ref=e59]: 정책 상태
+        - listitem "사용자 및 권한" [ref=e62]:
+          - button "사용자 및 권한" [ref=e63] [cursor=pointer]:
+            - img [ref=e66]: user_attributes
+            - generic [ref=e67]: 사용자 및 권한
+        - listitem "주문 관리" [ref=e70]:
+          - button "주문 관리" [ref=e71] [cursor=pointer]:
+            - img [ref=e74]: credit_card
+            - generic [ref=e75]: 주문 관리
+        - listitem "보고서 다운로드" [ref=e78]:
+          - button "보고서 다운로드" [ref=e79] [cursor=pointer]:
+            - img [ref=e81]: arrow_right
+            - img [ref=e84]: download
+            - generic [ref=e85]: 보고서 다운로드
+        - listitem "개발자 계정" [ref=e88]:
+          - button "개발자 계정" [ref=e89] [cursor=pointer]:
+            - img [ref=e92]: badge
+            - generic [ref=e93]: 개발자 계정
+        - listitem "활동 로그" [ref=e96]:
+          - button "활동 로그" [ref=e97] [cursor=pointer]:
+            - img [ref=e100]: description
+            - generic [ref=e101]: 활동 로그
+        - listitem "설정" [ref=e104]:
+          - button "설정" [ref=e105] [cursor=pointer]:
+            - img [ref=e108]: settings
+            - generic [ref=e109]: 설정
+        - listitem "도움말" [ref=e112]:
+          - button "도움말" [ref=e113] [cursor=pointer]:
+            - img [ref=e116]: contact_support
+            - generic [ref=e117]: 도움말
+        - listitem "Android 개발자 인증" [ref=e120]:
+          - button "Android 개발자 인증" [ref=e121] [cursor=pointer]:
+            - img [ref=e124]: app_promotion
+            - generic [ref=e125]: Android 개발자 인증
+    - generic [ref=e127]:
+      - generic [ref=e640]:
+        - generic [ref=e644]:
+          - link "개발자 계정 페이지로 돌아가기" [ref=e647] [cursor=pointer]:
+            - /url: /console/u/0/developers/6406461807014996516/account
+            - img [ref=e651]: keyboard_backspace
+            - generic [ref=e652]: 개발자 계정
+          - heading "계정 세부정보" [level=1] [ref=e661]
+        - tablist [ref=e668]:
+          - tab "내 정보" [selected] [ref=e669] [cursor=pointer]:
+            - generic [ref=e670]: 내 정보
+          - tab "연락처 세부정보" [ref=e672] [cursor=pointer]:
+            - generic [ref=e673]: 연락처 세부정보
+        - generic [ref=e677]:
+          - generic [ref=e683]:
+            - heading "내 정보" [level=2] [ref=e689]
+            - generic [ref=e693]:
+              - text: 계정, 개발자 이름, 조직 세부정보를 관리하세요. 이 정보 중 Google Play에 공개적으로 표시되는 정보를 확인하려면
+              - link "개발자 프로필로 이동" [ref=e694] [cursor=pointer]:
+                - /url: /console/u/0/developers/6406461807014996516/account/public-details
+                - text: 개발자 프로필
+              - text: 로 이동하세요.
+          - generic [ref=e698]:
+            - group "계정 유형" [ref=e700]:
+              - generic [ref=e703]: 계정 유형
+              - generic [ref=e707]:
+                - img [ref=e710]: domain
+                - generic [ref=e711]: 조직
+            - group "개발자 계정 ID" [ref=e713]:
+              - generic [ref=e716]:
+                - text: 개발자 계정 ID
+                - button "'개발자 계정 ID' 팁:" [ref=e719] [cursor=pointer]:
+                  - img [ref=e720]: help
+              - generic [ref=e723]: "6406461807014996516"
+            - group "개발자 이름" [ref=e725]:
+              - generic [ref=e728]: 개발자 이름
+              - generic [ref=e730]:
+                - generic [ref=e731]: Google Play에서 개발자 프로필과 앱을 나타내기 위해 사용자에게 표시되는 이름입니다. 조직의 법적 명칭과 다를 수 있습니다.
+                - generic [ref=e732]:
+                  - textbox "개발자 이름" [ref=e734]: 2 weeks
+                  - generic [ref=e735]:
+                    - paragraph [ref=e736]
+                    - generic [ref=e737]:
+                      - generic [ref=e738]: 7/50
+                      - generic [ref=e739]: 7자(영문 기준)로 구성된 텍스트입니다. /50
+            - group "조직 세부정보" [ref=e742]:
+              - generic [ref=e745]: 조직 세부정보
+              - generic [ref=e747]:
+                - generic [ref=e748]: 조직 이름, 주소, DUNS 번호는 Google 결제 프로필에서 가져옵니다.
+                - generic [ref=e749]:
+                  - generic [ref=e750]:
+                    - generic [ref=e751]:
+                      - strong [ref=e752]: 등록처
+                      - generic [ref=e753]: Dun & Bradstreet
+                    - generic [ref=e754]:
+                      - strong [ref=e755]: D-U-N-S 번호
+                      - generic [ref=e756]: "695979231"
+                    - generic [ref=e757]:
+                      - strong [ref=e758]: 조직 이름
+                      - generic [ref=e759]: E Corp.
+                    - generic [ref=e760]:
+                      - strong [ref=e761]: 조직 주소
+                      - generic [ref=e762]: 61 Dongbu-ro, Cheoin-gu
+                      - generic [ref=e763]: 용인시 - 17145
+                      - generic [ref=e764]: 대한민국(KR)
+                  - generic [ref=e766]:
+                    - link "결제 프로필 보기" [ref=e767] [cursor=pointer]:
+                      - /url: https://pay.google.com/gp/w/home/redirect?epcp=AIHI9QmriYdA7F6gJ9h8rB0clCYUczj3qr2BGWii2zuTl9NKGpjKeMfVvvVhmvS%2BvYGwXFlU
+                      - generic [ref=e770]: 결제 프로필 보기
+                      - img [ref=e772]: open_in_new
+                    - button "조직 세부정보 업데이트" [active] [ref=e774]:
+                      - generic [ref=e777]: 조직 세부정보 업데이트
+            - group "조직 유형" [ref=e779]:
+              - generic [ref=e782]: 조직 유형
+              - generic [ref=e784]:
+                - generic [ref=e785]: Google에서 조직을 인증하는 방법을 조정하는 데 사용됩니다. Google Play에는 표시되지 않습니다.
+                - listbox "조직 유형" [ref=e788] [cursor=pointer]:
+                  - generic [ref=e789]: 회사 또는 비즈니스
+                  - img [ref=e791]: arrow_drop_down
+            - group "조직 규모" [ref=e793]:
+              - generic [ref=e796]: 조직 규모
+              - generic [ref=e798]:
+                - generic [ref=e799]: 조직의 직원 수를 선택하세요. Google Play에는 표시되지 않습니다.
+                - listbox "조직 규모" [ref=e802] [cursor=pointer]:
+                  - generic [ref=e803]: 1~10
+                  - img [ref=e805]: arrow_drop_down
+            - group "조직 전화번호" [ref=e807]:
+              - generic [ref=e810]: 조직 전화번호
+              - generic [ref=e812]:
+                - generic [ref=e813]: 조직과 연결된 기본 전화번호입니다. Google Play에는 표시되지 않습니다.
+                - generic [ref=e814]:
+                  - textbox [ref=e816]: "+821067642231"
+                  - paragraph [ref=e818]: + 기호, 국가 코드, 지역 번호를 포함하세요.
+            - group "조직 웹사이트" [ref=e821]:
+              - generic [ref=e824]: 조직 웹사이트
+              - generic [ref=e826]:
+                - generic [ref=e827]: 조직의 기본 웹사이트 URL입니다. Google Play에 표시되지 않습니다.
+                - generic [ref=e828]:
+                  - textbox "조직 웹사이트" [ref=e830]: https://2weeks.co
+                  - paragraph [ref=e832]
+                - generic [ref=e833]: Google Search Console에 등록된 소유자에게 인증 요청을 전송하여 조직 소유의 웹사이트임을 입증하세요. 웹사이트를 확인하려면 Search Console에서 이 웹사이트의 소유권을 등록해야 합니다.
+                - generic [ref=e835]:
+                  - button "확인 요청 보내기" [ref=e836]: 확인 요청 보내기
+                  - link "웹사이트 인증 자세히 알아보기(새 탭에서 열기)" [ref=e839] [cursor=pointer]:
+                    - /url: https://support.google.com/googleplay/android-developer/answer/13205715
+                    - text: 자세히 알아보기
+                - generic [ref=e842] [cursor=pointer]:
+                  - generic [ref=e843]:
+                    - checkbox "웹사이트가 없음" [ref=e844]
+                    - generic:
+                      - img
+                  - generic [ref=e845]: 웹사이트가 없음
+            - group "앱 정보" [ref=e847]:
+              - generic [ref=e850]: 앱 정보
+              - generic [ref=e853]:
+                - text: 이 개발자 계정이 생성되었을 때 제공된 앱에 관한 정보입니다.
+                - paragraph [ref=e854]:
+                  - link "앱 관련 정보 보기 및 수정" [ref=e855] [cursor=pointer]:
+                    - /url: "#"
+                    - text: 보기 및 수정
+          - generic [ref=e863]:
+            - button "변경사항 취소" [disabled] [ref=e864]:
+              - generic [ref=e867]: 변경사항 취소
+            - button "변경사항 저장" [disabled] [ref=e868]:
+              - generic [ref=e871]: 변경사항 저장
+      - generic [ref=e384]:
+        - generic [ref=e385]:
+          - link "제품 업데이트" [ref=e386] [cursor=pointer]:
+            - /url: https://play.google.com/console/about/whats-new/
+          - link "상태 대시보드" [ref=e387] [cursor=pointer]:
+            - /url: https://status.play.google.com/
+          - link "도움말" [ref=e388] [cursor=pointer]:
+            - /url: /console/u/0/developers/6406461807014996516/help-and-support
+        - generic [ref=e389]:
+          - generic [ref=e390]: © 2026 Google
+          - link "개인 정보 보호" [ref=e391] [cursor=pointer]:
+            - /url: https://www.google.com/policies/privacy/
+          - link "개발자 배포 계약" [ref=e392] [cursor=pointer]:
+            - /url: https://play.google.com/about/developer-distribution-agreement.html
+          - link "서비스 약관" [ref=e393] [cursor=pointer]:
+            - /url: https://play.google.com/about/console/terms-of-service/
+  - dialog "무엇을 업데이트하시겠어요?" [ref=e877]:
+    - generic [ref=e879]:
+      - heading "무엇을 업데이트하시겠어요?" [level=2] [ref=e880]
+      - button "닫기" [ref=e881] [cursor=pointer]:
+        - img [ref=e884]: close
+    - region [ref=e888]:
+      - generic [ref=e890]:
+        - generic [ref=e893]:
+          - generic [ref=e896]:
+            - heading "DUNS 번호 또는 조직 국가" [level=3] [ref=e902]
+            - generic [ref=e904]: 조직과 연결된 DUNS 번호 또는 국가를 업데이트하려면 이 개발자 계정에 연결할 새 결제 프로필을 만들거나 선택해야 합니다. 기존 결제 프로필에서는 이 정보를 수정할 수 없기 때문입니다.
+          - button "결제 프로필 만들기 또는 선택" [ref=e907]:
+            - generic [ref=e910]: 결제 프로필 만들기 또는 선택
+          - generic [ref=e913]:
+            - heading "대한민국 내 조직 이름 또는 주소" [level=3] [ref=e919]
+            - generic [ref=e921]:
+              - text: 대한민국 내 조직 이름 또는 주소를 업데이트하려면 개발자 계정에 연결된 결제 프로필에서 이 정보를 수정하세요. Google 결제 센터에서 이 작업을 수행할 수 있습니다.
+              - paragraph [ref=e922]: 결제 프로필에서는 조직 국가를 변경할 수 없습니다. 조직 국가를 변경하려면 'DUNS 번호 또는 조직 국가' 옵션을 선택하고 단계를 따르세요.
+          - link "Google 결제 센터로 이동(새 페이지가 열림)" [ref=e925] [cursor=pointer]:
+            - /url: https://pay.google.com/gp/w/home/redirect?epcp=AIHI9QmriYdA7F6gJ9h8rB0clCYUczj3qr2BGWii2zuTl9NKGpjKeMfVvvVhmvS%2BvYGwXFlU
+            - generic [ref=e928]: Google 결제 센터로 이동
+            - img [ref=e930]: open_in_new
+        - img [ref=e933]

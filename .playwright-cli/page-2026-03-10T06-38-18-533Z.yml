@@ -1,0 +1,58 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - progressbar [ref=e6]
+      - main [ref=e186]:
+        - generic [ref=e187]:
+          - img [ref=e190]
+          - generic [ref=e195]:
+            - heading "2단계 인증" [level=1] [ref=e196]
+            - generic [ref=e197]: 계정 보호를 위해 Google에서 본인 확인을 진행합니다.
+            - link "app.2weeks@gmail.com 항목이 선택되었습니다. 계정 전환" [ref=e199] [cursor=pointer]:
+              - img [ref=e202]
+              - generic [ref=e204]: app.2weeks@gmail.com
+              - img [ref=e206]
+        - generic [ref=e215]:
+          - generic [ref=e216]:
+            - figure [ref=e218]:
+              - img [ref=e219]
+            - generic [ref=e243]:
+              - heading "Galaxy S23 Ultra 기기 확인" [level=2] [ref=e245]:
+                - generic [ref=e246]: Galaxy S23 Ultra 기기 확인
+              - generic [ref=e249]:
+                - text: Google에서 Galaxy S23 Ultra(으)로 알림을 보냈습니다. 알림에서
+                - strong [ref=e250]: 예
+                - text: 를 탭하여 본인임을 인증합니다.
+                - generic [ref=e251]: 아니면 iPhone에서 Gmail 앱을 열고 본인임을 인증합니다.
+          - generic [ref=e255]:
+            - generic [ref=e258] [cursor=pointer]:
+              - checkbox "이 기기에서 다시 요청하지 않음" [checked] [ref=e259]
+              - generic:
+                - img
+            - generic [ref=e262] [cursor=pointer]: 이 기기에서 다시 요청하지 않음
+        - generic [ref=e263]:
+          - timer [ref=e265]:
+            - generic [ref=e266]:
+              - button "다시 전송하기" [disabled]:
+                - generic: 다시 전송하기
+          - button "다른 방법 시도" [ref=e272]:
+            - generic [ref=e275]: 다른 방법 시도
+    - contentinfo [ref=e69]:
+      - combobox "언어 변경 한국어" [ref=e73] [cursor=pointer]:
+        - generic:
+          - generic: 한국어
+        - generic:
+          - img
+      - list [ref=e75]:
+        - listitem [ref=e76]:
+          - link "도움말" [ref=e77] [cursor=pointer]:
+            - /url: https://support.google.com/accounts?hl=ko&p=account_iph
+        - listitem [ref=e78]:
+          - link "개인정보처리방침" [ref=e79] [cursor=pointer]:
+            - /url: https://accounts.google.com/TOS?loc=KR&hl=ko&privacy=true
+        - listitem [ref=e80]:
+          - link "약관" [ref=e81] [cursor=pointer]:
+            - /url: https://accounts.google.com/TOS?loc=KR&hl=ko
+  - iframe [ref=e82]:
+    
+  - generic [ref=e277]: 2단계 인증 계정 보호를 위해 Google에서 본인 확인을 진행합니다.

@@ -1,0 +1,33 @@
+- generic [ref=e2]:
+  - 'button "Google 계정: 2weeks (app.2weeks@gmail.com)" [ref=e9] [cursor=pointer]':
+    - img [ref=e11]
+  - generic [ref=e15]:
+    - banner [ref=e18]:
+      - generic [ref=e19]:
+        - link "홈페이지" [ref=e20] [cursor=pointer]:
+          - /url: https://payments.google.com
+          - generic [ref=e21]: 결제 센터
+        - button "메인 콘텐츠로 건너뛰기":
+          - generic [ref=e22]: 메인 콘텐츠로 건너뛰기
+      - button "2weeks" [ref=e27] [cursor=pointer]:
+        - generic [ref=e28]: 2weeks
+        - generic [ref=e29]: arrow_drop_down_black_24dp
+    - main [ref=e30]:
+      - generic [ref=e33]:
+        - img "a padlock and key illustration" [ref=e34]
+        - heading "인증하여 결제 정보 확인" [level=1] [ref=e35]
+        - heading "Google Payments 정보를 확인하려면 본인 확인이 필요합니다. 인증에 대해 자세히 알아보기" [level=2] [ref=e36]:
+          - text: Google Payments 정보를 확인하려면 본인 확인이 필요합니다.
+          - link "인증에 대해 자세히 알아보기" [ref=e37] [cursor=pointer]:
+            - /url: https://support.google.com/accounts?p=pay_verify
+        - button "본인 인증" [ref=e41]:
+          - generic [ref=e44]: 본인 인증
+      - generic [ref=e47]:
+        - link "서비스 약관" [ref=e48] [cursor=pointer]:
+          - /url: https://www.google.com/intl/ko/policies/terms/
+        - link "개인정보처리방침" [ref=e49] [cursor=pointer]:
+          - /url: https://www.google.com/intl/ko/policies/privacy/
+        - link "주 라이선스" [ref=e50] [cursor=pointer]:
+          - /url: https://support.google.com/payments/answer/7160765
+        - link "전자 커뮤니케이션 정책" [ref=e51] [cursor=pointer]:
+          - /url: https://payments.google.com/legaldocument?family=0.electroniccommunications&gl=ZZ

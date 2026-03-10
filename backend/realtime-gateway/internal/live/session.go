@@ -192,7 +192,7 @@ func buildLiveConfig(cfg Config) *genai.LiveConnectConfig {
 	silenceDuration := int32(200)
 	lc.RealtimeInputConfig = &genai.RealtimeInputConfig{
 		AutomaticActivityDetection: &genai.AutomaticActivityDetection{
-			StartOfSpeechSensitivity: genai.StartSensitivityHigh,
+			StartOfSpeechSensitivity: genai.StartSensitivityLow,
 			EndOfSpeechSensitivity:   genai.EndSensitivityLow,
 			PrefixPaddingMs:          &prefixPadding,
 			SilenceDurationMs:        &silenceDuration,

@@ -1,0 +1,216 @@
+- generic [active] [ref=e1]:
+  - generic:
+    - generic:
+      - img
+      - progressbar
+      - generic: Google Play Console 로드 중
+  - generic [ref=e3]:
+    - banner [ref=e4]:
+      - generic [ref=e5]:
+        - generic [ref=e8]:
+          - img "오류" [ref=e11]: error
+          - generic [ref=e13]: 개발자 프로필과 모든 앱이 Google Play에서 삭제되었습니다. 변경사항이 게시되지 않습니다.
+        - generic [ref=e14]:
+          - link "Google Play Console 로고" [ref=e15] [cursor=pointer]:
+            - /url: /console/u/0/developers/6406461807014996516/app-list
+            - button "Google Play Console 로고" [ref=e16]
+          - generic [ref=e17]:
+            - button "알림 알림 센터 열기" [ref=e23]:
+              - img [ref=e27]: notifications
+              - generic [ref=e29]: 알림
+            - button "개발자 계정 전환" [ref=e34] [cursor=pointer]:
+              - img "개발자 계정 전환" [ref=e36]
+    - navigation [ref=e42]:
+      - list [ref=e43]:
+        - listitem "홈" [ref=e46]:
+          - button "홈" [ref=e47] [cursor=pointer]:
+            - img [ref=e50]: features
+            - generic [ref=e51]: 홈
+        - listitem "정책 상태" [ref=e54]:
+          - button "정책 상태" [ref=e55] [cursor=pointer]:
+            - img [ref=e58]: android_security_privacy_safe
+            - generic [ref=e59]: 정책 상태
+        - listitem "사용자 및 권한" [ref=e62]:
+          - button "사용자 및 권한" [ref=e63] [cursor=pointer]:
+            - img [ref=e66]: user_attributes
+            - generic [ref=e67]: 사용자 및 권한
+        - listitem "주문 관리" [ref=e70]:
+          - button "주문 관리" [ref=e71] [cursor=pointer]:
+            - img [ref=e74]: credit_card
+            - generic [ref=e75]: 주문 관리
+        - listitem "보고서 다운로드" [ref=e78]:
+          - button "보고서 다운로드" [ref=e79] [cursor=pointer]:
+            - img [ref=e81]: arrow_right
+            - img [ref=e84]: download
+            - generic [ref=e85]: 보고서 다운로드
+        - listitem "개발자 계정" [ref=e88]:
+          - button "개발자 계정" [ref=e89] [cursor=pointer]:
+            - img [ref=e92]: badge
+            - generic [ref=e93]: 개발자 계정
+        - listitem "활동 로그" [ref=e96]:
+          - button "활동 로그" [ref=e97] [cursor=pointer]:
+            - img [ref=e100]: description
+            - generic [ref=e101]: 활동 로그
+        - listitem "설정" [ref=e104]:
+          - button "설정" [ref=e105] [cursor=pointer]:
+            - img [ref=e108]: settings
+            - generic [ref=e109]: 설정
+        - listitem "도움말" [ref=e112]:
+          - button "도움말" [ref=e113] [cursor=pointer]:
+            - img [ref=e116]: contact_support
+            - generic [ref=e117]: 도움말
+        - listitem "Android 개발자 인증" [ref=e120]:
+          - button "Android 개발자 인증" [ref=e121] [cursor=pointer]:
+            - img [ref=e124]: app_promotion
+            - generic [ref=e125]: Android 개발자 인증
+    - generic [ref=e127]:
+      - generic [ref=e134]:
+        - generic [ref=e140]:
+          - img [ref=e142]
+          - generic [ref=e143]:
+            - heading "2 weeks" [level=1] [ref=e149]
+            - generic [ref=e156]:
+              - generic [ref=e157]: 조직 계정
+              - img [ref=e159]: brightness_1
+              - generic [ref=e160]: "계정 ID: 6406461807014996516"
+        - generic [ref=e166]:
+          - generic [ref=e167]: 개발자 프로필과 모든 앱이 Google Play에서 삭제되었습니다.
+          - generic [ref=e168]:
+            - paragraph [ref=e169]: 다음 문제로 인해 2025년 10월 7일에 Google Play에서 개발자 프로필과 모든 앱이 삭제되었습니다. 앱 또는 스토어 등록정보의 모든 변경사항이 게시되지 않습니다.
+            - paragraph [ref=e170]: 내 계정이나 내가 제공한 정보에 문제가 있는 경우 Google에서 사용자의 안전을 위해 개발자 프로필과 앱을 삭제합니다.
+          - generic [ref=e172]:
+            - generic [ref=e174]:
+              - generic [ref=e176]:
+                - img "오류" [ref=e179]: error
+                - generic [ref=e180]: 조직 이름 또는 주소가 더 이상 인증되지 않습니다
+              - link "이 문제의 세부정보 보기" [ref=e183] [cursor=pointer]:
+                - /url: /console/u/0/developers/6406461807014996516/account/issues/4987359889790598999/details
+                - generic [ref=e186]: 세부정보 보기
+            - strong
+        - generic [ref=e191]:
+          - generic [ref=e193]:
+            - heading "고정된 앱" [level=2] [ref=e197]
+            - button "'고정된 앱' 팁:" [ref=e200] [cursor=pointer]:
+              - img [ref=e201]: help
+          - generic [ref=e204]: 앱을 여기에 고정하면 앱에 빠르게 액세스하고 주요 측정항목을 확인할 수 있습니다.
+        - generic [ref=e206]:
+          - generic [ref=e210]:
+            - heading "앱 2개" [level=2] [ref=e215]
+            - link "앱 만들기" [ref=e221] [cursor=pointer]:
+              - /url: /console/u/0/developers/6406461807014996516/create-new-app
+              - generic [ref=e224]: 앱 만들기
+          - generic [ref=e225]:
+            - generic [ref=e226]:
+              - generic [ref=e229]:
+                - generic [ref=e230]: 필터링 기준
+                - button "필터링 기준 전체" [ref=e233] [cursor=pointer]:
+                  - generic [ref=e236]: 전체
+                  - img [ref=e238]: arrow_drop_down
+              - search "앱 또는 패키지 이름으로 검색" [ref=e243]:
+                - generic [ref=e245]:
+                  - generic:
+                    - img: search
+                  - generic: 앱 또는 패키지 이름으로 검색
+                  - textbox "앱 또는 패키지 이름으로 검색" [ref=e246]
+            - generic [ref=e251]:
+              - grid "모든 앱" [ref=e256]:
+                - row "앱 설치한 사용자 수 앱 상태 업데이트 상태 최근 업데이트 날짜" [ref=e257]:
+                  - columnheader "앱" [ref=e258] [cursor=pointer]
+                  - columnheader "설치한 사용자 수" [ref=e259] [cursor=pointer]:
+                    - text: 설치한 사용자 수
+                    - img [ref=e261]: help_outline
+                  - columnheader "앱 상태" [ref=e262] [cursor=pointer]
+                  - columnheader "업데이트 상태" [ref=e263] [cursor=pointer]
+                  - columnheader "최근 업데이트 날짜" [ref=e264] [cursor=pointer]
+                  - cell [ref=e265]
+                  - cell [ref=e266]
+                  - cell [ref=e267]
+                - row "DanTalk com.ecorp.dajoongee 0 임시 내부 테스트 2025년 2월 28일 DanTalk 고정 DanTalk 보기" [ref=e268]:
+                  - gridcell "DanTalk com.ecorp.dajoongee" [ref=e269]:
+                    - generic [ref=e273]:
+                      - img [ref=e275]
+                      - generic [ref=e276]:
+                        - generic [ref=e279]: DanTalk
+                        - generic [ref=e283]: com.ecorp.dajoongee
+                  - gridcell "0" [ref=e284]:
+                    - generic [ref=e288]: "0"
+                  - gridcell "임시 내부 테스트" [ref=e289]:
+                    - generic [ref=e291]:
+                      - generic [ref=e293]: 임시
+                      - generic [ref=e294]: 내부 테스트
+                  - gridcell [ref=e295]
+                  - gridcell "2025년 2월 28일" [ref=e296]:
+                    - generic [ref=e297]: 2025년 2월 28일
+                  - gridcell [ref=e298]
+                  - gridcell "DanTalk 고정" [ref=e299]:
+                    - button "DanTalk 고정" [ref=e302] [cursor=pointer]:
+                      - img [ref=e306]: keep
+                  - gridcell "DanTalk 보기" [ref=e307]:
+                    - link "DanTalk 보기" [ref=e309] [cursor=pointer]:
+                      - /url: /console/u/0/developers/6406461807014996516/app/4976343728736889368/app-dashboard
+                      - generic [ref=e312]: 앱 보기
+                      - img [ref=e314]: arrow_right_alt
+                - row "반팡 - 쇼핑몰 반품상품 검색 반팡 - 쇼핑몰 반품상품 검색 com.ecorp.banpang 147 Google에서 삭제 2025년 5월 28일 반팡 - 쇼핑몰 반품상품 검색 고정 반팡 - 쇼핑몰 반품상품 검색 보기" [ref=e315]:
+                  - gridcell "반팡 - 쇼핑몰 반품상품 검색 반팡 - 쇼핑몰 반품상품 검색 com.ecorp.banpang" [ref=e316]:
+                    - generic [ref=e320]:
+                      - img "반팡 - 쇼핑몰 반품상품 검색" [ref=e322]
+                      - generic [ref=e323]:
+                        - generic [ref=e326]: 반팡 - 쇼핑몰 반품상품 검색
+                        - generic [ref=e330]: com.ecorp.banpang
+                  - gridcell "147" [ref=e331]:
+                    - generic [ref=e335]: "147"
+                  - gridcell "Google에서 삭제" [ref=e336]:
+                    - generic [ref=e340]: Google에서 삭제
+                  - gridcell [ref=e341]
+                  - gridcell "2025년 5월 28일" [ref=e342]:
+                    - generic [ref=e343]: 2025년 5월 28일
+                  - gridcell [ref=e344]
+                  - gridcell "반팡 - 쇼핑몰 반품상품 검색 고정" [ref=e345]:
+                    - button "반팡 - 쇼핑몰 반품상품 검색 고정" [ref=e348] [cursor=pointer]:
+                      - img [ref=e352]: keep
+                  - gridcell "반팡 - 쇼핑몰 반품상품 검색 보기" [ref=e353]:
+                    - link "반팡 - 쇼핑몰 반품상품 검색 보기" [ref=e355] [cursor=pointer]:
+                      - /url: /console/u/0/developers/6406461807014996516/app/4974730420331594064/app-dashboard
+                      - generic [ref=e358]: 앱 보기
+                      - img [ref=e360]: arrow_right_alt
+              - generic [ref=e363]:
+                - generic [ref=e364]:
+                  - generic [ref=e365]: "표시할 행 수:"
+                  - 'button "표시할 행 수: 10 선택됨" [ref=e368] [cursor=pointer]':
+                    - generic [ref=e369]: "10"
+                    - img [ref=e371]: arrow_drop_down
+                - generic [ref=e372]:
+                  - generic [ref=e374]: 총 2개 중 1~2개
+                  - generic [ref=e375]:
+                    - button "첫 페이지로 이동" [disabled] [ref=e376]:
+                      - generic:
+                        - generic:
+                          - img: first_page
+                    - button "이전 페이지로 이동" [disabled] [ref=e377]:
+                      - generic:
+                        - generic:
+                          - img: chevron_left
+                    - button "다음 페이지로 이동" [disabled] [ref=e378]:
+                      - generic:
+                        - generic:
+                          - img: chevron_right
+                    - button "마지막 페이지로 이동" [disabled] [ref=e379]:
+                      - generic:
+                        - generic:
+                          - img: last_page
+      - generic [ref=e384]:
+        - generic [ref=e385]:
+          - link "제품 업데이트" [ref=e386] [cursor=pointer]:
+            - /url: https://play.google.com/console/about/whats-new/
+          - link "상태 대시보드" [ref=e387] [cursor=pointer]:
+            - /url: https://status.play.google.com/
+          - link "도움말" [ref=e388] [cursor=pointer]:
+            - /url: /console/u/0/developers/6406461807014996516/help-and-support
+        - generic [ref=e389]:
+          - generic [ref=e390]: © 2026 Google
+          - link "개인 정보 보호" [ref=e391] [cursor=pointer]:
+            - /url: https://www.google.com/policies/privacy/
+          - link "개발자 배포 계약" [ref=e392] [cursor=pointer]:
+            - /url: https://play.google.com/about/developer-distribution-agreement.html
+          - link "서비스 약관" [ref=e393] [cursor=pointer]:
+            - /url: https://play.google.com/about/console/terms-of-service/

@@ -1,0 +1,181 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - generic [ref=e4]:
+        - button "기본 메뉴" [ref=e5] [cursor=pointer]:
+          - img [ref=e6]
+        - link "Google 월렛" [ref=e10] [cursor=pointer]:
+          - /url: https://wallet.google.com/wallet/home?utm_medium=website&utm_campaign=x-link&utm_source=paymentscenter
+          - img [ref=e11]
+      - generic [ref=e12]:
+        - generic [ref=e16]:
+          - button "메인 콘텐츠로 건너뛰기":
+            - generic: 메인 콘텐츠로 건너뛰기
+        - generic [ref=e21] [cursor=pointer]:
+          - generic [ref=e23]: search
+          - link "검색" [ref=e24]:
+            - /url: ./search
+      - generic [ref=e26]:
+        - button "Google 앱" [ref=e30] [cursor=pointer]:
+          - img [ref=e31]
+        - 'button "Google 계정: 2weeks (app.2weeks@gmail.com)" [ref=e36] [cursor=pointer]':
+          - img [ref=e38]
+  - generic [ref=e42]:
+    - menu [ref=e44]:
+      - dialog "navigational drawer" [ref=e49]:
+        - menu [ref=e52]:
+          - menuitem "홈" [ref=e53] [cursor=pointer]:
+            - generic:
+              - generic: home
+            - generic: 홈
+          - menuitem "결제 수단" [ref=e54] [cursor=pointer]:
+            - generic:
+              - generic: credit_card
+            - generic: 결제 수단
+          - menuitem "패스" [ref=e55] [cursor=pointer]:
+            - generic:
+              - generic: confirmation_number
+            - generic: 패스
+          - menuitem "거래" [ref=e56] [cursor=pointer]:
+            - generic:
+              - generic: receipt
+            - generic: 거래
+          - menuitem "설정" [ref=e57] [cursor=pointer]:
+            - generic:
+              - generic: settings
+            - generic: 설정
+          - menuitem "도움말" [ref=e58] [cursor=pointer]:
+            - generic:
+              - generic: help_outline
+            - generic: 도움말
+          - menuitem "의견" [ref=e59] [cursor=pointer]:
+            - generic:
+              - generic: sms_failed
+            - generic: 의견
+    - generic [ref=e60]:
+      - main [ref=e61]:
+        - generic [ref=e62]:
+          - generic [ref=e66]:
+            - heading "설정" [level=1] [ref=e67]
+            - generic [ref=e68]: Google 월렛 및 Google Pay 설정을 관리하세요. 언제든지 환경설정을 변경할 수 있습니다.
+          - generic [ref=e69]:
+            - generic [ref=e70]:
+              - link "결제 프로필 Google 결제 센터에서 이름, 국가, 기타 계정 정보, 환경설정을 업데이트합니다" [ref=e76] [cursor=pointer]:
+                - /url: https://payments.google.com/payments/home?utm_source=walletweb#settings
+                - generic [ref=e77]:
+                  - generic [ref=e78]:
+                    - paragraph [ref=e80]: 결제 프로필
+                    - generic [ref=e82]: Google 결제 센터에서 이름, 국가, 기타 계정 정보, 환경설정을 업데이트합니다
+                  - generic [ref=e84]: open_in_new
+              - generic [ref=e89]:
+                - paragraph [ref=e91]: Gmail에서 패스 추가
+                - generic [ref=e93]:
+                  - text: Gmail 설정에서 '다른 Google 제품의 스마트 기능'을 사용 설정한 경우 Gmail의 패스가 자동으로 추가됩니다.
+                  - button "Google 제품의 스마트 기능 및 제어 자세히 알아보기" [ref=e94] [cursor=pointer]
+              - generic [ref=e96]:
+                - heading "가족" [level=2] [ref=e98]
+                - link "아동용 월렛 이제 부모가 월렛에서 결제 수단을 설정해 주면 자녀가 매장에서 비접촉 결제를 할 수 있습니다" [ref=e102] [cursor=pointer]:
+                  - /url: ./family/onboarding
+                  - generic [ref=e103]:
+                    - generic [ref=e104]:
+                      - paragraph [ref=e106]: 아동용 월렛
+                      - generic [ref=e108]: 이제 부모가 월렛에서 결제 수단을 설정해 주면 자녀가 매장에서 비접촉 결제를 할 수 있습니다
+                    - generic [ref=e110]: chevron_right
+              - generic [ref=e113]:
+                - heading "데이터 및 개인 정보 보호" [level=2] [ref=e115]
+                - link "결제 데이터 관리 Google Pay의 맞춤설정과 내 정보가 다른 Google 회사 및 Google 외의 회사와 공유되는 방식을 관리하고 제어하세요." [ref=e119] [cursor=pointer]:
+                  - /url: ./settings/managepaymentsdata
+                  - generic [ref=e120]:
+                    - generic [ref=e121]:
+                      - paragraph [ref=e123]: 결제 데이터 관리
+                      - generic [ref=e125]: Google Pay의 맞춤설정과 내 정보가 다른 Google 회사 및 Google 외의 회사와 공유되는 방식을 관리하고 제어하세요.
+                    - generic [ref=e127]: chevron_right
+                - link "패스 데이터 관리 패스 및 패스 사용 방식을 기반으로 월렛에서 Google 전반의 경험을 관리하고 맞춤설정할 수 있습니다." [ref=e131] [cursor=pointer]:
+                  - /url: ./settings/managepassesdata
+                  - generic [ref=e132]:
+                    - generic [ref=e133]:
+                      - paragraph [ref=e135]: 패스 데이터 관리
+                      - generic [ref=e137]: 패스 및 패스 사용 방식을 기반으로 월렛에서 Google 전반의 경험을 관리하고 맞춤설정할 수 있습니다.
+                    - generic [ref=e139]: chevron_right
+                - generic [ref=e142]:
+                  - paragraph [ref=e144]: 비공개 패스 데이터 정보
+                  - generic [ref=e146]:
+                    - text: 비공개 패스는 민감한 정보를 포함하므로 Google 전체에서 사용되지 않습니다. 이러한 패스를 보고 사용하려면 휴대전화를 잠금 해제해야 합니다.
+                    - button "비공개 패스 자세히 알아보기" [ref=e147] [cursor=pointer]
+              - generic [ref=e151]:
+                - heading "이메일" [level=2] [ref=e153]
+                - generic [ref=e154]:
+                  - generic [ref=e156]:
+                    - generic [ref=e157]:
+                      - paragraph [ref=e159]: Google Pay 도움말 및 문제 해결
+                      - paragraph [ref=e160]: 빠르고 안전하게 온라인 결제하는 방법 등 Google Pay 사용과 관련된 문제 해결 도움말과 유용한 정보를 받습니다.
+                    - switch "Google Pay 도움말 및 문제 해결 설정" [checked] [ref=e165] [cursor=pointer]
+                  - generic [ref=e171]:
+                    - generic [ref=e172]:
+                      - paragraph [ref=e174]: Google Pay 업데이트 및 프로모션
+                      - paragraph [ref=e175]: Google Pay 활동을 기반으로 프로모션 콘텐츠, 추천, 업데이트를 받습니다.
+                    - switch "Google Pay 업데이트 및 프로모션 설정" [ref=e180] [cursor=pointer]
+                  - generic [ref=e186]:
+                    - generic [ref=e187]:
+                      - generic [ref=e188]:
+                        - paragraph [ref=e189]:
+                          - text: 월렛 도움말 및 문제 해결
+                          - button "추가 정보 도움말 버튼" [ref=e191] [cursor=pointer]:
+                            - generic [ref=e193]: info
+                        - paragraph
+                      - paragraph [ref=e195]: 월렛 사용과 관련된 문제 해결 도움말과 유용한 정보를 받습니다.
+                    - switch "Google 월렛 도움말 및 문제 해결 이메일 설정" [checked] [ref=e200] [cursor=pointer]
+                  - generic [ref=e206]:
+                    - generic [ref=e207]:
+                      - generic [ref=e208]:
+                        - paragraph [ref=e209]:
+                          - text: 월렛 업데이트 및 혜택
+                          - button "추가 정보 도움말 버튼" [ref=e211] [cursor=pointer]:
+                            - generic [ref=e213]: info
+                        - paragraph
+                      - paragraph [ref=e215]: 독점 혜택, 프로모션, 월렛 기능 관련 업데이트를 받습니다.
+                    - switch "Google 월렛 프로모션 이메일 설정" [ref=e220] [cursor=pointer]
+              - generic [ref=e226]:
+                - heading "주소" [level=2] [ref=e228]
+                - generic [ref=e231]:
+                  - paragraph [ref=e233]: Chrome 자동 완성
+                  - button "Chrome의 자동 완성에서 주소를 관리하는 방법을 자세히 알아봅니다." [ref=e236] [cursor=pointer]
+                - link "Google 계정 Google 계정에서 주소 관리" [ref=e240] [cursor=pointer]:
+                  - /url: https://payments.google.com/payments/home?utm_source=walletweb#addressBook
+                  - generic [ref=e241]:
+                    - generic [ref=e242]:
+                      - paragraph [ref=e244]: Google 계정
+                      - generic [ref=e246]: Google 계정에서 주소 관리
+                    - generic [ref=e248]: open_in_new
+              - generic [ref=e250]:
+                - heading "내 활동" [level=2] [ref=e252]
+                - link "내 활동에서 Google Pay 데이터 관리 내 활동에서 Google Pay 활동, 거래, 기타 데이터의 삭제 환경설정을 확인하고 관리하세요." [ref=e256] [cursor=pointer]:
+                  - /url: https://myactivity.google.com/product/gpay?utm_source=walletweb&hl=ko
+                  - generic [ref=e257]:
+                    - generic [ref=e258]:
+                      - paragraph [ref=e260]: 내 활동에서 Google Pay 데이터 관리
+                      - generic [ref=e262]: 내 활동에서 Google Pay 활동, 거래, 기타 데이터의 삭제 환경설정을 확인하고 관리하세요.
+                    - generic [ref=e264]: open_in_new
+                - button "내 활동의 Google Pay 활동 자세히 알아보기" [ref=e266] [cursor=pointer]
+            - generic [ref=e268]:
+              - generic [ref=e270]: tips_and_updates
+              - generic [ref=e271]:
+                - text: 알림 및 애니메이션과 같은 일부 월렛 설정은 월렛 앱에서만 사용할 수 있습니다. 이러한 설정을 확인하고 관리하려면
+                - link "월렛 앱으로 이동" [ref=e272] [cursor=pointer]:
+                  - /url: https://wallet.google
+                - text: 하세요.
+      - contentinfo [ref=e274]:
+        - menu [ref=e276]:
+          - menuitem "약관" [ref=e277] [cursor=pointer]:
+            - generic: 약관
+          - menuitem "Google Pay 약관" [ref=e278] [cursor=pointer]:
+            - generic: Google Pay 약관
+          - menuitem "개인 정보 보호" [ref=e279] [cursor=pointer]:
+            - generic: 개인 정보 보호
+          - menuitem "결제 개인 정보 보호" [ref=e280] [cursor=pointer]:
+            - generic: 결제 개인 정보 보호
+          - menuitem "주 라이선스" [ref=e281] [cursor=pointer]:
+            - generic: 주 라이선스
+          - menuitem "전자 커뮤니케이션 정책" [ref=e282] [cursor=pointer]:
+            - generic: 전자 커뮤니케이션 정책
+        - generic [ref=e283]: "송금서비스업체로 인가를 받은 Google Payment Corp.(NMLS ID: 911607)에서 Google Pay 잔액을 발급합니다."

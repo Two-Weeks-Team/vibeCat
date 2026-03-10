@@ -1,0 +1,208 @@
+- generic [ref=e2]:
+  - 'button "Google 계정: 2weeks (app.2weeks@gmail.com)" [ref=e9] [cursor=pointer]':
+    - img [ref=e11]
+  - generic [ref=e15]:
+    - generic [ref=e17]:
+      - banner [ref=e18]:
+        - generic [ref=e19]:
+          - link "홈페이지" [ref=e20] [cursor=pointer]:
+            - /url: https://payments.google.com
+            - generic [ref=e21]: 결제 센터
+          - button "메인 콘텐츠로 건너뛰기":
+            - generic [ref=e22]: 메인 콘텐츠로 건너뛰기
+        - generic [ref=e24]:
+          - button "중요한 알림 1개" [ref=e29]:
+            - generic [ref=e32]:
+              - generic [ref=e33]: warning_amber
+              - text: 중요한 알림 1개
+              - generic [ref=e34]: notifications_on
+          - button "2weeks" [ref=e37] [cursor=pointer]:
+            - generic [ref=e38]: 2weeks
+            - generic [ref=e39]: arrow_drop_down_black_24dp
+          - button "도움말" [ref=e42] [cursor=pointer]:
+            - generic [ref=e43]: help
+      - navigation [ref=e46]:
+        - link "거래내역" [ref=e47] [cursor=pointer]:
+          - /url: ./home/activity
+          - generic [ref=e49]: 거래내역
+        - link "결제 수단" [ref=e51] [cursor=pointer]:
+          - /url: ./home/paymentmethods
+          - generic [ref=e53]: 결제 수단
+        - link "구독 및 서비스" [ref=e55] [cursor=pointer]:
+          - /url: ./home/subscriptionsandservices
+          - generic [ref=e57]: 구독 및 서비스
+        - link "주소" [ref=e59] [cursor=pointer]:
+          - /url: ./home/addressbook
+          - generic [ref=e61]: 주소
+        - link "설정" [ref=e63] [cursor=pointer]:
+          - /url: ./home/settings
+          - generic [ref=e65]: 설정
+    - main [ref=e67]:
+      - generic [ref=e70]:
+        - iframe [ref=e75]:
+          - generic [ref=f9e2]:
+            - heading "설정" [level=1] [ref=f9e6]
+            - generic [ref=f9e7]:
+              - generic [ref=f9e9]:
+                - generic [ref=f9e12]:
+                  - generic [ref=f9e14]:
+                    - text: Google Pay 결제 프로필
+                    - button "대개 거주 국가와 연결된 프로필을 사용하는 것이 좋습니다. Google Pay 자세히 알아보기" [ref=f9e16]
+                  - generic [ref=f9e17]: 선택한 프로필이 Google Pay 거래에 사용됩니다
+                - listbox [ref=f9e20]:
+                  - 'option "2weeks 미국 Chrome Web Store, Play 및 도서용 개인 프로필 결제 프로필 ID: 6209-8990-9780" [selected] [ref=f9e22] [cursor=pointer]':
+                    - generic [ref=f9e23]:
+                      - generic [ref=f9e24]:
+                        - radio [checked] [ref=f9e25]
+                        - img [ref=f9e29]
+                      - generic [ref=f9e33]:
+                        - generic [ref=f9e34]: 2weeks
+                        - generic: 미국
+                        - generic: Chrome Web Store, Play 및 도서용 개인 프로필
+                        - generic [ref=f9e35]: "결제 프로필 ID: 6209-8990-9780"
+                      - img [ref=f9e39]
+              - generic [ref=f9e43]:
+                - generic [ref=f9e46]:
+                  - heading "일반 설정" [level=2] [ref=f9e48]
+                  - generic [ref=f9e49]: Google Pay에만 적용되는 설정
+                - generic [ref=f9e56]:
+                  - generic [ref=f9e58] [cursor=pointer]:
+                    - checkbox "이메일 업데이트" [checked] [ref=f9e61]
+                    - generic [ref=f9e62]: 이메일 업데이트
+                  - generic [ref=f9e63]: Google Pay로부터 의견 요청, 독점 이벤트, 팁을 받습니다.
+        - iframe [ref=e80]:
+          - generic [ref=f11e4]:
+            - heading "결제 프로필" [level=2] [ref=f11e6]
+            - generic [ref=f11e7]:
+              - generic [ref=f11e10]:
+                - generic [ref=f11e12]:
+                  - heading "결제 프로필 ID" [level=3] [ref=f11e13]
+                  - button "결제 프로필 ID(기존의 결제 ID)는 이 결제 계정과 관련된 결제에 대한 책임이 있는 법인을 식별하는 데 사용되는 고유 번호입니다. 법인은 이 결제 계정이 등록된 조직 또는 개인입니다." [ref=f11e15]
+                - generic [ref=f11e24]: 6209-8990-9780
+              - generic [ref=f11e27] [cursor=pointer]:
+                - generic [ref=f11e29]:
+                  - heading "국가/지역" [level=3] [ref=f11e30]
+                  - button "양식 수정" [ref=f11e32]:
+                    - img [ref=f11e33]
+                - generic [ref=f11e36]: 미국 (US)
+              - generic [ref=f11e39] [cursor=pointer]:
+                - generic [ref=f11e41]:
+                  - heading "계좌 유형" [level=3] [ref=f11e42]
+                  - button "이 설정은 영구적이며 세무 및 신원 확인에 사용될 수 있습니다. 비즈니스, 조직, 파트너십, 교육기관용인 경우 조직을 선택하세요. 그 외의 경우에는 개인을 선택하세요. 자세히 알아보기" [ref=f11e44]
+                  - button "양식 수정" [ref=f11e46]:
+                    - img [ref=f11e47]
+                - generic [ref=f11e57]: 개인
+              - generic [ref=f11e62] [cursor=pointer]:
+                - heading "미국 면세 정보" [level=3] [ref=f11e63]
+                - button "양식 수정" [ref=f11e65]:
+                  - img [ref=f11e66]
+              - generic [ref=f11e70] [cursor=pointer]:
+                - generic [ref=f11e72]:
+                  - heading "이름" [level=3] [ref=f11e73]
+                  - button "이 이름이 인보이스와 세금 서류에 표시됩니다." [ref=f11e75]
+                  - button "양식 수정" [ref=f11e77]:
+                    - img [ref=f11e78]
+                - generic [ref=f11e88]: 2weeks
+              - generic [ref=f11e91] [cursor=pointer]:
+                - generic [ref=f11e93]:
+                  - heading "주소" [level=3] [ref=f11e94]
+                  - button "비즈니스 또는 집의 법적 주소입니다." [ref=f11e96]
+                  - button "양식 수정" [ref=f11e98]:
+                    - img [ref=f11e99]
+                - generic [ref=f11e107]:
+                  - term
+                  - definition [ref=f11e108]:
+                    - generic [ref=f11e111]:
+                      - generic [ref=f11e112]: 미국
+                      - generic [ref=f11e113]: 90010 CA LOS ANGELES
+              - generic [ref=f11e118] [cursor=pointer]:
+                - heading "전화번호" [level=3] [ref=f11e119]
+                - button "이 프로필과 연결된 전화번호입니다." [ref=f11e121]
+                - button "양식 수정" [ref=f11e123]:
+                  - img [ref=f11e124]
+              - generic [ref=f11e128] [cursor=pointer]:
+                - generic [ref=f11e130]:
+                  - heading "문서 언어 환경설정" [level=3] [ref=f11e131]
+                  - button "양식 수정" [ref=f11e133]:
+                    - img [ref=f11e134]
+                - generic [ref=f11e144]: 영어(미국) - ‪English (United States)‬
+        - generic [ref=e83]:
+          - generic [ref=e84]:
+            - generic [ref=e85]:
+              - heading "결제 서비스 사용자" [level=2] [ref=e86]
+              - button "도움말" [ref=e89]: info_outline
+            - generic [ref=e90]:
+              - img "프로필 사진" [ref=e91]
+              - generic [ref=e92]:
+                - text: 기본 연락처
+                - generic [ref=e93]: 모든 결제 이메일 수신
+                - generic [ref=e94]: app.2weeks@gmail.com
+              - generic [ref=e95]:
+                - generic [ref=e96]: 사용자
+                - generic [ref=e97]: "1"
+          - button "결제 서비스 사용자 관리" [ref=e99] [cursor=pointer]
+        - generic [ref=e103]:
+          - heading "개인 정보 보호 설정" [level=2] [ref=e104]
+          - generic [ref=e105]:
+            - link "Google Payments 개인정보처리방침" [ref=e106] [cursor=pointer]:
+              - /url: https://payments.google.com/payments/apis-secure/u/0/get_legal_document?ldo=0&ldt=privacynotice
+            - text: 및
+            - link "Google Pay/Google Payments 서비스 약관" [ref=e107] [cursor=pointer]:
+              - /url: https://payments.google.com/payments/apis-secure/u/0/get_legal_document?ldo=0&ldt=buyertos&ldr=US
+            - text: 에서 Google에서 공유하는 정보 및 해당 정보를 공유하는 이유를 자세히 알아보세요. 이 페이지로 돌아와서 환경설정을 변경하면 언제든지 아래의 공유를 사용 중지할 수 있습니다.
+          - generic [ref=e108]:
+            - generic [ref=e109]: web
+            - text: Google 외의 회사에 Google Pay 사용 여부 공유
+          - generic [ref=e111]:
+            - generic [ref=e112]:
+              - generic [ref=e113]: 방문한 비즈니스에서 구매할 상품의 결제 옵션으로 Google Pay를 제공할 수 있도록 Google에서 내 결제 프로필 설정 여부를 공유하도록 허용합니다.
+              - switch "공유 사용 중" [checked] [ref=e116] [cursor=pointer]:
+                - generic [ref=e121]:
+                  - img [ref=e122]
+                  - img [ref=e124]
+            - generic [ref=e127]:
+              - generic [ref=e128]: 예를 들어 방문한 사이트 또는 앱에서 결제할 때 Google Pay 버튼이 표시될 수 있습니다.
+              - generic [ref=e129]: 공유 사용 중
+          - generic [ref=e130]:
+            - generic [ref=e131]: google
+            - generic [ref=e132]:
+              - text: Google 회사 간에 아래 정보 공유
+              - button "상세보기" [ref=e133] [cursor=pointer]:
+                - generic [ref=e135]: info
+          - generic [ref=e137]:
+            - generic [ref=e138]:
+              - generic [ref=e139]: 내 신용도에 대한 정보를 다른 Google 회사와 공유하도록 허용합니다.
+              - switch "공유 사용 안함" [ref=e142] [cursor=pointer]:
+                - generic [ref=e147]:
+                  - img [ref=e148]
+                  - img [ref=e150]
+            - generic [ref=e153]:
+              - generic [ref=e154]: 예를 들어 Google 스토어에서 기기 구매를 위한 파이낸싱을 제공할 수 있습니다.
+              - generic [ref=e155]: 공유 사용 안함
+          - generic [ref=e157]:
+            - generic [ref=e158]:
+              - generic [ref=e159]: 마케팅 용도로 내 개인정보를 다른 Google 회사와 공유하도록 허용합니다.
+              - switch "공유 사용 안함" [ref=e162] [cursor=pointer]:
+                - generic [ref=e167]:
+                  - img [ref=e168]
+                  - img [ref=e170]
+            - generic [ref=e174]: 공유 사용 안함
+        - generic [ref=e178]:
+          - heading "결제 프로필 상태" [level=2] [ref=e179]
+          - link "결제 프로필 삭제" [ref=e181] [cursor=pointer]:
+            - /url: ""
+      - generic [ref=e183]:
+        - generic [ref=e185]: info_filled
+        - generic [ref=e186]:
+          - text: Google Pay 환경 맞춤설정과 같은 일부 결제 설정은 이 웹사이트에서 사용할 수 없습니다.
+          - link "wallet.google.com에서 확인" [ref=e187] [cursor=pointer]:
+            - /url: https://wallet.google.com/wallet?p=settings&utm_source=paymentscenter&utm_medium=website&utm_campaign=x-link
+      - generic [ref=e190]:
+        - link "서비스 약관" [ref=e191] [cursor=pointer]:
+          - /url: https://www.google.com/intl/ko/policies/terms/
+        - link "개인정보처리방침" [ref=e192] [cursor=pointer]:
+          - /url: https://www.google.com/intl/ko/policies/privacy/
+        - link "주 라이선스" [ref=e193] [cursor=pointer]:
+          - /url: https://support.google.com/payments/answer/7160765
+        - link "전자 커뮤니케이션 정책" [ref=e194] [cursor=pointer]:
+          - /url: https://payments.google.com/legaldocument?family=0.electroniccommunications&gl=ZZ

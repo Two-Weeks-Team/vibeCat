@@ -1,0 +1,309 @@
+- generic [ref=e2]:
+  - 'button "Google 계정: 2weeks (app.2weeks@gmail.com)" [ref=e9] [cursor=pointer]':
+    - img [ref=e11]
+  - generic [ref=e15]:
+    - generic [ref=e17]:
+      - banner [ref=e18]:
+        - generic [ref=e19]:
+          - link "홈페이지" [ref=e20] [cursor=pointer]:
+            - /url: https://payments.google.com
+            - generic [ref=e21]: 결제 센터
+          - button "메인 콘텐츠로 건너뛰기":
+            - generic [ref=e22]: 메인 콘텐츠로 건너뛰기
+        - generic [ref=e24]:
+          - button "알림 없음" [ref=e28] [cursor=pointer]:
+            - generic [ref=e29]: notifications_none
+          - button "E Corp." [ref=e32] [cursor=pointer]:
+            - generic [ref=e33]: E Corp.
+            - generic [ref=e34]: arrow_drop_down_black_24dp
+          - button "도움말" [ref=e37] [cursor=pointer]:
+            - generic [ref=e38]: help
+      - navigation [ref=e41]:
+        - link "거래내역" [ref=e42] [cursor=pointer]:
+          - /url: ./home/activity
+          - generic [ref=e44]: 거래내역
+        - link "결제 수단" [ref=e46] [cursor=pointer]:
+          - /url: ./home/paymentmethods
+          - generic [ref=e48]: 결제 수단
+        - link "구독 및 서비스" [ref=e50] [cursor=pointer]:
+          - /url: ./home/subscriptionsandservices
+          - generic [ref=e52]: 구독 및 서비스
+        - link "주소" [ref=e54] [cursor=pointer]:
+          - /url: ./home/addressbook
+          - generic [ref=e56]: 주소
+        - link "설정" [ref=e58] [cursor=pointer]:
+          - /url: ./home/settings
+          - generic [ref=e60]: 설정
+        - link "고객 주문" [ref=e62] [cursor=pointer]:
+          - /url: ./home/customerorders
+          - generic [ref=e64]: 고객 주문
+    - main [ref=e66]:
+      - generic [ref=e69]:
+        - iframe [ref=e74]:
+          - generic [ref=f2e2]:
+            - heading "설정" [level=1] [ref=f2e6]
+            - generic [ref=f2e7]:
+              - generic [ref=f2e9]:
+                - generic [ref=f2e12]:
+                  - generic [ref=f2e14]:
+                    - text: Google Pay 결제 프로필
+                    - button "대개 거주 국가와 연결된 프로필을 사용하는 것이 좋습니다. Google Pay 자세히 알아보기" [ref=f2e16]
+                  - generic [ref=f2e17]: 선택한 프로필이 Google Pay 거래에 사용됩니다
+                - listbox [ref=f2e20]:
+                  - 'option "2weeks 미국 Chrome Web Store, Play 및 도서용 개인 프로필 결제 프로필 ID: 6209-8990-9780" [selected] [ref=f2e22] [cursor=pointer]':
+                    - generic [ref=f2e23]:
+                      - generic [ref=f2e24]:
+                        - radio [checked] [ref=f2e25]
+                        - img [ref=f2e29]
+                      - generic [ref=f2e33]:
+                        - generic [ref=f2e34]: 2weeks
+                        - generic: 미국
+                        - generic: Chrome Web Store, Play 및 도서용 개인 프로필
+                        - generic [ref=f2e35]: "결제 프로필 ID: 6209-8990-9780"
+                      - img [ref=f2e39]
+              - generic [ref=f2e43]:
+                - generic [ref=f2e46]:
+                  - heading "일반 설정" [level=2] [ref=f2e48]
+                  - generic [ref=f2e49]: Google Pay에만 적용되는 설정
+                - generic [ref=f2e56]:
+                  - generic [ref=f2e58] [cursor=pointer]:
+                    - checkbox "이메일 업데이트" [checked] [ref=f2e61]
+                    - generic [ref=f2e62]: 이메일 업데이트
+                  - generic [ref=f2e63]: Google Pay로부터 의견 요청, 독점 이벤트, 팁을 받습니다.
+        - iframe [ref=e79]:
+          - generic [ref=f4e4]:
+            - heading "결제 프로필" [level=2] [ref=f4e6]
+            - generic [ref=f4e7]:
+              - generic [ref=f4e10]:
+                - generic [ref=f4e12]:
+                  - heading "결제 프로필 ID" [level=3] [ref=f4e13]
+                  - button "결제 프로필 ID(기존의 결제 ID)는 이 결제 계정과 관련된 결제에 대한 책임이 있는 법인을 식별하는 데 사용되는 고유 번호입니다. 법인은 이 결제 계정이 등록된 조직 또는 개인입니다." [ref=f4e15]
+                - generic [ref=f4e24]: 7988-7686-9845
+              - generic [ref=f4e27] [cursor=pointer]:
+                - generic [ref=f4e29]:
+                  - heading "국가/지역" [level=3] [ref=f4e30]
+                  - button "양식 수정" [ref=f4e32]:
+                    - img [ref=f4e33]
+                - generic [ref=f4e36]: 대한민국 (KR)
+              - generic [ref=f4e39]:
+                - generic [ref=f4e41]:
+                  - heading "계좌 유형" [level=3] [ref=f4e42]
+                  - button "이 설정은 영구적이며 세무 및 신원 확인에 사용될 수 있습니다. 비즈니스, 조직, 파트너십, 교육기관용인 경우 조직을 선택하세요. 그 외의 경우에는 개인을 선택하세요. 자세히 알아보기" [ref=f4e44]
+                - generic [ref=f4e48]:
+                  - generic [ref=f4e54]: 회사명
+                  - generic [ref=f4e59]:
+                    - text: 특정 세법 및 기타 규정이 적용되므로 계정 유형을 변경할 수 없습니다. 새 계정 유형을 만들려면
+                    - link "지원팀에 문의" [ref=f4e60] [cursor=pointer]:
+                      - /url: https://support.google.com/paymentscenter/answer/11543916
+                    - text: 하세요.
+              - generic [ref=f4e63]:
+                - generic [ref=f4e65]:
+                  - heading "조직 이름" [level=3] [ref=f4e66]
+                  - button "이 이름이 인보이스와 세금 서류에 표시됩니다." [ref=f4e68]
+                - generic [ref=f4e71]:
+                  - generic [ref=f4e75]:
+                    - generic [ref=f4e78]: E Corp.
+                    - generic [ref=f4e81]: 필요한 작업
+                  - generic [ref=f4e86]:
+                    - link "문의하기" [ref=f4e87] [cursor=pointer]:
+                      - /url: https://support.google.com/payments/contactflow?hl=ko
+                    - text: 에서 읽기 전용 정보를 업데이트하세요.
+              - generic [ref=f4e90] [cursor=pointer]:
+                - generic [ref=f4e92]:
+                  - heading "조직 주소" [level=3] [ref=f4e93]
+                  - button "조직의 인보이스에 인쇄되는 주소입니다. 이 주소는 인보이스의 우편 주소와 다를 수 있습니다. 결제 계정의 인보이스 우편 발송 섹션에서 우편 주소를 업데이트할 수 있습니다." [ref=f4e95]
+                  - button "양식 수정" [ref=f4e97]:
+                    - img [ref=f4e98]
+                - generic [ref=f4e106]:
+                  - generic [ref=f4e109]:
+                    - term
+                    - definition [ref=f4e110]:
+                      - generic [ref=f4e113]:
+                        - generic [ref=f4e114]: 대한민국 17145 경기도 용인시
+                        - generic [ref=f4e115]: 61 Dongbu-ro, Cheoin-gu
+                  - generic [ref=f4e118]: 필요한 작업
+              - generic [ref=f4e123] [cursor=pointer]:
+                - heading "전화번호" [level=3] [ref=f4e124]
+                - button "이 프로필과 연결된 전화번호입니다." [ref=f4e126]
+                - button "양식 수정" [ref=f4e128]:
+                  - img [ref=f4e129]
+              - generic [ref=f4e133] [cursor=pointer]:
+                - generic [ref=f4e135]:
+                  - heading "이름" [level=3] [ref=f4e136]
+                  - button "인보이스가 올바르게 발송되도록 이 이름이 인보이스에 표시됩니다." [ref=f4e138]
+                  - button "양식 수정" [ref=f4e140]:
+                    - img [ref=f4e141]
+                - generic [ref=f4e151]: Shin Dong Ho
+              - generic [ref=f4e156] [cursor=pointer]:
+                - heading "대한민국 세금 정보" [level=1] [ref=f4e157]
+                - button "다음과 같은 이유로 세금 정보가 필요할 수 있습니다. 이 국가에서 Google 서비스 구매 세금 정보 자세히 알아보기" [ref=f4e159]
+                - button "양식 수정" [ref=f4e161]:
+                  - img [ref=f4e162]
+              - generic [ref=f4e168] [cursor=pointer]:
+                - heading "싱가포르 세금 정보" [level=1] [ref=f4e169]
+                - button "다음과 같은 이유로 세금 정보가 필요할 수 있습니다. 계약한 Google 법인이 이 국가에 있습니다. 세금 정보 자세히 알아보기" [ref=f4e171]
+                - button "양식 수정" [ref=f4e173]:
+                  - img [ref=f4e174]
+              - generic [ref=f4e180] [cursor=pointer]:
+                - heading "대만 세금 정보" [level=1] [ref=f4e181]
+                - button "다음과 같은 이유로 세금 정보가 필요할 수 있습니다. 하나 이상의 Google 서비스를 통해 이 국가에서 소득이 발생했습니다. 세금 정보 자세히 알아보기" [ref=f4e183]
+                - button "양식 수정" [ref=f4e185]:
+                  - img [ref=f4e186]
+              - generic [ref=f4e192] [cursor=pointer]:
+                - heading "미국 세금 정보" [level=1] [ref=f4e193]
+                - button "Google은 세금 규정을 준수하기 위해 이 정보를 수집해야 합니다. 미국 세금 정보 자세히 알아보기" [ref=f4e195]
+                - button "양식 수정" [ref=f4e197]:
+                  - img [ref=f4e198]
+              - generic [ref=f4e202] [cursor=pointer]:
+                - generic [ref=f4e204]:
+                  - heading "문서 언어 환경설정" [level=3] [ref=f4e205]
+                  - button "양식 수정" [ref=f4e207]:
+                    - img [ref=f4e208]
+                - generic [ref=f4e218]: 한국어
+        - iframe [active] [ref=e84]:
+          - generic [ref=f6e5]:
+            - generic [ref=f6e10]: 공개 판매자 프로필
+            - generic [ref=f6e13]:
+              - heading "판매자 ID" [level=1] [ref=f6e16]
+              - generic [ref=f6e25]: "588538367881536401"
+            - generic [ref=f6e28]:
+              - heading "비즈니스 정보" [level=1] [ref=f6e31]
+              - generic [ref=f6e38]:
+                - generic [ref=f6e42]:
+                  - term
+                  - definition [ref=f6e43]:
+                    - generic [ref=f6e103]:
+                      - generic [ref=f6e105] [cursor=pointer]:
+                        - generic [ref=f6e106]: 도/시
+                        - textbox [ref=f6e107]
+                        - listbox "도/시" [ref=f6e108]:
+                          - option "경기" [selected] [ref=f6e109]:
+                            - generic [ref=f6e110]: 경기
+                      - generic [ref=f6e115] [cursor=pointer]:
+                        - generic [ref=f6e116]: 시/군/구
+                        - textbox [ref=f6e117]
+                        - listbox "시/군/구" [ref=f6e118]:
+                          - option "용인시" [selected] [ref=f6e119]:
+                            - generic [ref=f6e120]: 용인시
+                      - generic [ref=f6e124] [cursor=pointer]:
+                        - generic [ref=f6e125]: 주소
+                        - textbox [ref=f6e126]
+                        - listbox "주소" [ref=f6e127]:
+                          - option "처인구" [selected] [ref=f6e128]:
+                            - generic [ref=f6e129]: 처인구
+                      - generic [ref=f6e134]:
+                        - generic [ref=f6e135]: 주소 입력란 1
+                        - textbox "주소 입력란 1" [ref=f6e137]: Creation Center-506, 61, Dongbu-ro
+                      - generic [ref=f6e141]:
+                        - generic [ref=f6e142]: 주소 입력란 2
+                        - textbox "주소 입력란 2" [ref=f6e144]
+                      - generic [ref=f6e148]:
+                        - generic [ref=f6e149]: 업체명
+                        - textbox "업체명" [ref=f6e151]: E Corp.
+                      - generic [ref=f6e155]:
+                        - generic [ref=f6e156]: 이름
+                        - textbox "이름" [ref=f6e158]: Shin Dong Ho
+                      - generic [ref=f6e162]:
+                        - generic [ref=f6e163]: 우편번호
+                        - generic [ref=f6e164]:
+                          - textbox "우편번호" [ref=f6e165]: "17145"
+                          - button "우편번호를 모르시나요? 여기에서 확인하세요." [ref=f6e168]
+                - generic [ref=f6e173]:
+                  - generic [ref=f6e174]: 전화번호 (선택사항)
+                  - generic [ref=f6e176]:
+                    - textbox "전화번호 (선택사항)" [ref=f6e177]: 010-6764-2231
+                    - 'listbox "국가 코드: 대한민국(‪+82‬)" [ref=f6e179] [cursor=pointer]'
+            - generic [ref=f6e59] [cursor=pointer]:
+              - generic [ref=f6e61]:
+                - heading "신용카드 명세서 이름" [level=1] [ref=f6e62]
+                - button "양식 수정" [ref=f6e64]:
+                  - img [ref=f6e65]
+              - generic [ref=f6e75]: E Corp
+            - generic [ref=f6e78] [cursor=pointer]:
+              - generic [ref=f6e80]:
+                - heading "회사 연락처" [level=1] [ref=f6e81]
+                - button "양식 수정" [ref=f6e83]:
+                  - img [ref=f6e84]
+              - generic [ref=f6e93]:
+                - generic [ref=f6e95]: 고객지원 이메일
+                - generic [ref=f6e96]: ":"
+                - generic [ref=f6e97]: app.2weeks@gmail.com
+        - generic [ref=e87]:
+          - generic [ref=e88]:
+            - generic [ref=e89]:
+              - heading "결제 서비스 사용자" [level=2] [ref=e90]
+              - button "도움말" [ref=e93]: info_outline
+            - generic [ref=e94]:
+              - img "프로필 사진" [ref=e95]
+              - generic [ref=e96]:
+                - text: 기본 연락처
+                - generic [ref=e97]: Sang Guen Chang
+                - generic [ref=e98]: 모든 결제 이메일 수신
+                - generic [ref=e99]: app.2weeks@gmail.com
+              - generic [ref=e100]:
+                - generic [ref=e101]: 사용자
+                - generic [ref=e102]: "1"
+          - button "결제 서비스 사용자 관리" [ref=e104] [cursor=pointer]
+        - generic [ref=e108]:
+          - heading "개인 정보 보호 설정" [level=2] [ref=e109]
+          - generic [ref=e110]:
+            - link "Google Payments 개인정보처리방침" [ref=e111] [cursor=pointer]:
+              - /url: https://payments.google.com/payments/apis-secure/u/0/get_legal_document?ldo=0&ldt=privacynotice
+            - text: 및
+            - link "Google Pay/Google Payments 서비스 약관" [ref=e112] [cursor=pointer]:
+              - /url: https://payments.google.com/payments/apis-secure/u/0/get_legal_document?ldo=0&ldt=buyertos&ldr=US
+            - text: 에서 Google에서 공유하는 정보 및 해당 정보를 공유하는 이유를 자세히 알아보세요. 이 페이지로 돌아와서 환경설정을 변경하면 언제든지 아래의 공유를 사용 중지할 수 있습니다.
+          - generic [ref=e113]:
+            - generic [ref=e114]: web
+            - text: Google 외의 회사에 Google Pay 사용 여부 공유
+          - generic [ref=e116]:
+            - generic [ref=e117]:
+              - generic [ref=e118]: 방문한 비즈니스에서 구매할 상품의 결제 옵션으로 Google Pay를 제공할 수 있도록 Google에서 내 결제 프로필 설정 여부를 공유하도록 허용합니다.
+              - switch "공유 사용 중" [checked] [ref=e121] [cursor=pointer]:
+                - generic [ref=e126]:
+                  - img [ref=e127]
+                  - img [ref=e129]
+            - generic [ref=e132]:
+              - generic [ref=e133]: 예를 들어 방문한 사이트 또는 앱에서 결제할 때 Google Pay 버튼이 표시될 수 있습니다.
+              - generic [ref=e134]: 공유 사용 중
+          - generic [ref=e135]:
+            - generic [ref=e136]: google
+            - generic [ref=e137]:
+              - text: Google 회사 간에 아래 정보 공유
+              - button "상세보기" [ref=e138] [cursor=pointer]:
+                - generic [ref=e140]: info
+          - generic [ref=e142]:
+            - generic [ref=e143]:
+              - generic [ref=e144]: 내 신용도에 대한 정보를 다른 Google 회사와 공유하도록 허용합니다.
+              - switch "공유 사용 안함" [ref=e147] [cursor=pointer]:
+                - generic [ref=e152]:
+                  - img [ref=e153]
+                  - img [ref=e155]
+            - generic [ref=e158]:
+              - generic [ref=e159]: 예를 들어 Google 스토어에서 기기 구매를 위한 파이낸싱을 제공할 수 있습니다.
+              - generic [ref=e160]: 공유 사용 안함
+          - generic [ref=e162]:
+            - generic [ref=e163]:
+              - generic [ref=e164]: 마케팅 용도로 내 개인정보를 다른 Google 회사와 공유하도록 허용합니다.
+              - switch "공유 사용 안함" [ref=e167] [cursor=pointer]:
+                - generic [ref=e172]:
+                  - img [ref=e173]
+                  - img [ref=e175]
+            - generic [ref=e179]: 공유 사용 안함
+        - generic [ref=e183]:
+          - heading "결제 프로필 상태" [level=2] [ref=e184]
+          - link "결제 프로필 삭제" [ref=e186] [cursor=pointer]:
+            - /url: ""
+      - generic [ref=e188]:
+        - generic [ref=e190]: info_filled
+        - generic [ref=e191]:
+          - text: Google Pay 환경 맞춤설정과 같은 일부 결제 설정은 이 웹사이트에서 사용할 수 없습니다.
+          - link "Google 월렛 웹사이트에서 확인하기" [ref=e192] [cursor=pointer]:
+            - /url: https://wallet.google.com/wallet?p=settings&utm_source=paymentscenter&utm_medium=website&utm_campaign=x-link
+      - generic [ref=e195]:
+        - link "서비스 약관" [ref=e196] [cursor=pointer]:
+          - /url: https://www.google.com/intl/ko/policies/terms/
+        - link "개인정보처리방침" [ref=e197] [cursor=pointer]:
+          - /url: https://www.google.com/intl/ko/policies/privacy/
+        - link "선불충전금 운영 현황" [ref=e198] [cursor=pointer]:
+          - /url: https://support.google.com/paymentscenter/answer/11053365

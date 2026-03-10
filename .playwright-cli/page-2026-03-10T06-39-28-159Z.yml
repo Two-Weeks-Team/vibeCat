@@ -1,0 +1,164 @@
+- generic [ref=e1]:
+  - generic:
+    - generic:
+      - img
+      - progressbar
+      - generic: Google Play Console 로드 중
+  - generic [ref=e3]:
+    - banner [ref=e4]:
+      - generic [ref=e5]:
+        - generic [ref=e8]:
+          - img "오류" [ref=e11]: error
+          - generic [ref=e12]:
+            - generic [ref=e13]: 개발자 프로필과 모든 앱이 Google Play에서 삭제되었습니다. 변경사항이 게시되지 않습니다.
+            - link "세부정보 보기" [ref=e397] [cursor=pointer]:
+              - /url: /console/u/0/developers/6406461807014996516/app-list
+              - generic [ref=e400]: 세부정보 보기
+        - generic [ref=e14]:
+          - link "Google Play Console 로고" [ref=e15] [cursor=pointer]:
+            - /url: /console/u/0/developers/6406461807014996516/app-list
+            - button "Google Play Console 로고" [ref=e16]
+          - generic [ref=e17]:
+            - button "알림 알림 센터 열기" [ref=e23]:
+              - img [ref=e27]: notifications
+              - generic [ref=e29]: 알림
+            - button "개발자 계정 전환" [ref=e34] [cursor=pointer]:
+              - img "개발자 계정 전환" [ref=e36]
+    - navigation [ref=e42]:
+      - list [ref=e43]:
+        - listitem "홈" [ref=e46]:
+          - button "홈" [ref=e47] [cursor=pointer]:
+            - img [ref=e50]: features
+            - generic [ref=e51]: 홈
+        - listitem "정책 상태" [ref=e54]:
+          - button "정책 상태" [ref=e55] [cursor=pointer]:
+            - img [ref=e58]: android_security_privacy_safe
+            - generic [ref=e59]: 정책 상태
+        - listitem "사용자 및 권한" [ref=e62]:
+          - button "사용자 및 권한" [ref=e63] [cursor=pointer]:
+            - img [ref=e66]: user_attributes
+            - generic [ref=e67]: 사용자 및 권한
+        - listitem "주문 관리" [ref=e70]:
+          - button "주문 관리" [ref=e71] [cursor=pointer]:
+            - img [ref=e74]: credit_card
+            - generic [ref=e75]: 주문 관리
+        - listitem "보고서 다운로드" [ref=e78]:
+          - button "보고서 다운로드" [ref=e79] [cursor=pointer]:
+            - img [ref=e81]: arrow_right
+            - img [ref=e84]: download
+            - generic [ref=e85]: 보고서 다운로드
+        - listitem "개발자 계정" [ref=e88]:
+          - button "개발자 계정" [active] [ref=e89] [cursor=pointer]:
+            - img [ref=e92]: badge
+            - generic [ref=e93]: 개발자 계정
+        - listitem "활동 로그" [ref=e96]:
+          - button "활동 로그" [ref=e97] [cursor=pointer]:
+            - img [ref=e100]: description
+            - generic [ref=e101]: 활동 로그
+        - listitem "설정" [ref=e104]:
+          - button "설정" [ref=e105] [cursor=pointer]:
+            - img [ref=e108]: settings
+            - generic [ref=e109]: 설정
+        - listitem "도움말" [ref=e112]:
+          - button "도움말" [ref=e113] [cursor=pointer]:
+            - img [ref=e116]: contact_support
+            - generic [ref=e117]: 도움말
+        - listitem "Android 개발자 인증" [ref=e120]:
+          - button "Android 개발자 인증" [ref=e121] [cursor=pointer]:
+            - img [ref=e124]: app_promotion
+            - generic [ref=e125]: Android 개발자 인증
+    - generic [ref=e127]:
+      - generic [ref=e403]:
+        - generic [ref=e410]:
+          - heading "개발자 계정" [level=1] [ref=e416]
+          - generic [ref=e423]: 나와 이 개발자 계정에 관한 정보 관리
+        - generic [ref=e430]:
+          - generic [ref=e432]:
+            - heading "내 정보" [level=2] [ref=e441]
+            - button "내 정보로 이동" [ref=e442] [cursor=pointer]:
+              - img [ref=e446]: arrow_forward_ios
+          - generic [ref=e447]:
+            - generic [ref=e449]:
+              - generic [ref=e451]: 계정 유형
+              - generic [ref=e454]:
+                - img [ref=e457]: domain
+                - generic [ref=e458]: 조직
+            - generic [ref=e460]:
+              - generic [ref=e462]: 개발자 계정 ID
+              - generic [ref=e464]: "6406461807014996516"
+            - generic [ref=e466]:
+              - generic [ref=e468]: 개발자 이름
+              - generic [ref=e470]: 2 weeks
+            - generic [ref=e472]:
+              - generic [ref=e474]: 조직 세부정보
+              - generic [ref=e476]:
+                - generic [ref=e477]: E Corp.
+                - generic [ref=e478]: 61 Dongbu-ro, Cheoin-gu
+                - generic [ref=e479]: 용인시 - 17145
+                - generic [ref=e480]: 대한민국(KR)
+            - generic [ref=e482]:
+              - generic [ref=e484]: 웹사이트
+              - generic [ref=e486]: https://2weeks.co
+        - generic [ref=e493]:
+          - generic [ref=e495]:
+            - heading "연락처 세부정보" [level=2] [ref=e504]
+            - button "연락처 세부정보로 이동" [ref=e505] [cursor=pointer]:
+              - img [ref=e509]: arrow_forward_ios
+          - generic [ref=e510]:
+            - generic [ref=e515]:
+              - heading "Google에서 연락하는 방법" [level=3] [ref=e521]
+              - generic [ref=e526]: 이 정보는 Google에서 개발자에게 연락하는 데만 사용되며 Google Play에 표시되지 않습니다.
+            - generic [ref=e528]:
+              - generic [ref=e530]: 담당자 이름
+              - generic [ref=e532]: sangguen chang
+            - generic [ref=e534]:
+              - generic [ref=e536]: 연락처 이메일 주소
+              - generic [ref=e537]:
+                - generic [ref=e538]: sangguen@2weeks.co
+                - img "연락처 이메일 주소 인증됨" [ref=e542]: check_circle
+            - generic [ref=e544]:
+              - generic [ref=e546]: 연락처 전화번호
+              - generic [ref=e547]:
+                - generic [ref=e548]: "+821067642231"
+                - img "연락처 전화번호 인증됨" [ref=e552]: check_circle
+            - heading "개발자 프로필에 포함된 세부정보" [level=3] [ref=e565]
+            - generic [ref=e567]:
+              - generic [ref=e569]: 개발자 이메일 주소
+              - generic [ref=e570]:
+                - generic [ref=e571]: sangguen@2weeks.co
+                - img "개발자 이메일 주소 인증됨" [ref=e575]: check_circle
+            - generic [ref=e577]:
+              - generic [ref=e579]: 개발자 전화번호
+              - generic [ref=e580]:
+                - generic [ref=e581]: "+821067642231"
+                - img "개발자 전화번호 인증됨" [ref=e585]: check_circle
+        - generic [ref=e594]:
+          - generic [ref=e597]:
+            - heading "개발자 프로필" [level=2] [ref=e603]
+            - generic [ref=e605]: Google Play의 공개 프로필을 구성하는 정보를 확인하고 공개 개발자 페이지를 구성하세요.
+          - button "공개 개발자 프로필로 이동" [ref=e606] [cursor=pointer]:
+            - img [ref=e610]: arrow_forward_ios
+        - generic [ref=e617]:
+          - generic [ref=e619]:
+            - generic [ref=e622]:
+              - heading "연결된 개발자 계정" [level=2] [ref=e628]
+              - generic [ref=e630]: 나와 연결된 다른 개발자 계정이 있다면 알려주세요
+            - button "연결된 개발자 계정으로 이동" [ref=e631] [cursor=pointer]:
+              - img [ref=e635]: arrow_forward_ios
+          - generic [ref=e637]: 이 계정을 다른 계정과 연결하지 않았습니다.
+      - generic [ref=e384]:
+        - generic [ref=e385]:
+          - link "제품 업데이트" [ref=e386] [cursor=pointer]:
+            - /url: https://play.google.com/console/about/whats-new/
+          - link "상태 대시보드" [ref=e387] [cursor=pointer]:
+            - /url: https://status.play.google.com/
+          - link "도움말" [ref=e388] [cursor=pointer]:
+            - /url: /console/u/0/developers/6406461807014996516/help-and-support
+        - generic [ref=e389]:
+          - generic [ref=e390]: © 2026 Google
+          - link "개인 정보 보호" [ref=e391] [cursor=pointer]:
+            - /url: https://www.google.com/policies/privacy/
+          - link "개발자 배포 계약" [ref=e392] [cursor=pointer]:
+            - /url: https://play.google.com/about/developer-distribution-agreement.html
+          - link "서비스 약관" [ref=e393] [cursor=pointer]:
+            - /url: https://play.google.com/about/console/terms-of-service/

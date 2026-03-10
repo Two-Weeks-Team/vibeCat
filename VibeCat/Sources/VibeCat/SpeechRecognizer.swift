@@ -79,14 +79,14 @@ final class SpeechAudioCapture: @unchecked Sendable {
     private var streamingCallback: (@Sendable (AVAudioPCMBuffer) -> Void)?
 
     private let rmsThreshold: Float = 0.03
-    private let bargeInThreshold: Float = 0.04
+    private let bargeInThreshold: Float = 0.06
     private let _speakingLock = NSLock()
     private var _modelSpeaking: Bool = false
     var modelSpeaking: Bool {
         get { _speakingLock.withLock { _modelSpeaking } }
         set { _speakingLock.withLock { _modelSpeaking = newValue } }
     }
-    private let consecutiveThreshold: Int = 2
+    private let consecutiveThreshold: Int = 4
     private var consecutiveAboveCount: Int = 0
     private var bargeInNotified = false
     private var bargeInCallback: (@Sendable () -> Void)?
