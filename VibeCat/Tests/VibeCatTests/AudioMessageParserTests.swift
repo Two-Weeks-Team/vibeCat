@@ -60,6 +60,50 @@ final class AudioMessageParserTests: XCTestCase {
         XCTAssertEqual(detail, "target=frontmost_window")
     }
 
+    func testParseProcessingStateAndToolResult() throws {
+        let processingPayload = try makeJSON([
+            "type": "processingState",
+            "flow": "text",
+            "traceId": "text_123",
+            "stage": "searching",
+            "label": "검색 중...",
+            "detail": "Google Search 확인 중",
+            "tool": "google_search",
+            "sourceCount": 3,
+            "active": true
+        ])
+        let processingMessage = AudioMessageParser.parse(processingPayload)
+        guard case .processingState(let flow, let traceId, let stage, let label, let detail, let tool, let sourceCount, let active) = processingMessage else {
+            XCTFail("Expected .processingState")
+            return
+        }
+        XCTAssertEqual(flow, "text")
+        XCTAssertEqual(traceId, "text_123")
+        XCTAssertEqual(stage, "searching")
+        XCTAssertEqual(label, "검색 중...")
+        XCTAssertEqual(detail, "Google Search 확인 중")
+        XCTAssertEqual(tool, "google_search")
+        XCTAssertEqual(sourceCount, 3)
+        XCTAssertTrue(active)
+
+        let toolPayload = try makeJSON([
+            "type": "toolResult",
+            "tool": "url_context",
+            "query": "이 링크 요약해줘",
+            "summary": "핵심 요약",
+            "sources": ["https://ai.google.dev/gemini-api/docs/url-context"]
+        ])
+        let toolMessage = AudioMessageParser.parse(toolPayload)
+        guard case .toolResult(let toolName, let query, let summary, let sources) = toolMessage else {
+            XCTFail("Expected .toolResult")
+            return
+        }
+        XCTAssertEqual(toolName, "url_context")
+        XCTAssertEqual(query, "이 링크 요약해줘")
+        XCTAssertEqual(summary, "핵심 요약")
+        XCTAssertEqual(sources, ["https://ai.google.dev/gemini-api/docs/url-context"])
+    }
+
     func testParseCompanionSpeechUsesDefaultEmotionAndUrgency() throws {
         let payload = try makeJSON(["type": "companionSpeech", "text": "great job"])
         let message = AudioMessageParser.parse(payload)
@@ -90,6 +134,21 @@ final class AudioMessageParserTests: XCTestCase {
         }
         XCTAssertEqual(code, "UNKNOWN")
         XCTAssertEqual(message, "boom")
+    }
+
+    func testParseGoAway() throws {
+        let payload = try makeJSON([
+            "type": "goAway",
+            "reason": "session_timeout",
+            "timeLeftMs": 1500
+        ])
+        let message = AudioMessageParser.parse(payload)
+        guard case .goAway(let reason, let timeLeftMs) = message else {
+            XCTFail("Expected .goAway")
+            return
+        }
+        XCTAssertEqual(reason, "session_timeout")
+        XCTAssertEqual(timeLeftMs, 1500)
     }
 
     func testParseUnknownTypeReturnsUnknown() throws {

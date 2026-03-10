@@ -334,6 +334,7 @@ final class GatewayClient {
             "voice": settings.voice,
             "language": settings.language,
             "liveModel": settings.liveModel,
+            "chattiness": settings.chattiness,
             "proactiveAudio": settings.proactiveAudio,
             "searchEnabled": settings.searchEnabled,
             "affectiveDialog": true,
@@ -361,6 +362,13 @@ final class GatewayClient {
         let preview = String(text.prefix(100))
         NSLog("[GW-OUT] sendJSON: type=%@, preview=%@", type, preview)
         webSocketTask?.send(.string(text)) { _ in }
+    }
+
+    func applySessionHandleUpdate(_ handle: String) {
+        let trimmed = handle.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            sessionHandle = trimmed
+        }
     }
 
     private func startReceiveLoop() {
@@ -401,8 +409,7 @@ final class GatewayClient {
                 state = .connected(sessionId: sid)
             case .sessionResumptionUpdate(let handle):
                 NSLog("[GW-IN] message type=sessionResumptionUpdate")
-                let trimmed = handle.trimmingCharacters(in: .whitespacesAndNewlines)
-                sessionHandle = trimmed.isEmpty ? nil : trimmed
+                applySessionHandleUpdate(handle)
                 onMessage?(parsed)
             case .ttsStart(let ttsText):
                 NSLog("[GW-IN] message type=ttsStart, suppressing mic, hasText=%d", ttsText != nil ? 1 : 0)
@@ -448,8 +455,7 @@ final class GatewayClient {
                 state = .connected(sessionId: sid)
             case .sessionResumptionUpdate(let handle):
                 NSLog("[GW-IN] message type=sessionResumptionUpdate")
-                let trimmed = handle.trimmingCharacters(in: .whitespacesAndNewlines)
-                sessionHandle = trimmed.isEmpty ? nil : trimmed
+                applySessionHandleUpdate(handle)
                 onMessage?(parsed)
             case .ttsStart(let ttsText):
                 NSLog("[GW-IN] message type=ttsStart, suppressing mic, hasText=%d", ttsText != nil ? 1 : 0)

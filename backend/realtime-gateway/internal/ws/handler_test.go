@@ -174,3 +174,52 @@ func TestMemoryContextCacheExpires(t *testing.T) {
 		t.Fatal("expected expired cache miss")
 	}
 }
+
+func TestResolveQueryRoute(t *testing.T) {
+	tests := []struct {
+		name  string
+		cfg   live.Config
+		query string
+		want  queryRoute
+	}{
+		{
+			name:  "plain live fallback",
+			cfg:   live.Config{GoogleSearch: true},
+			query: "이 함수 이름 더 좋게 바꿔줄래",
+			want:  queryRoute{Kind: queryRoutePlainLive},
+		},
+		{
+			name:  "live native search",
+			cfg:   live.Config{GoogleSearch: true},
+			query: "최신 Gemini Live API 문서 찾아줘",
+			want:  queryRoute{Kind: queryRouteLiveSearch},
+		},
+		{
+			name:  "url context goes to adk tool",
+			cfg:   live.Config{GoogleSearch: true},
+			query: "이 페이지 핵심만 요약해줘 https://ai.google.dev/gemini-api/docs/google-search",
+			want:  queryRoute{Kind: queryRouteADKTool, Tool: adk.ToolKindURLContext},
+		},
+		{
+			name:  "maps goes to adk tool",
+			cfg:   live.Config{GoogleSearch: true},
+			query: "강남역 근처 카페 추천해줘",
+			want:  queryRoute{Kind: queryRouteADKTool, Tool: adk.ToolKindMaps},
+		},
+		{
+			name:  "code execution goes to adk tool",
+			cfg:   live.Config{GoogleSearch: true},
+			query: "이 정규식 계산해서 검산해줘",
+			want:  queryRoute{Kind: queryRouteADKTool, Tool: adk.ToolKindCodeExecution},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveQueryRoute(tt.cfg, tt.query)
+			if got != tt.want {
+				t.Fatalf("resolveQueryRoute(%q) = %#v, want %#v", tt.query, got, tt.want)
+			}
+		})
+	}
+}

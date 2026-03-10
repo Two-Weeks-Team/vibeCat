@@ -79,7 +79,54 @@ type traceEventMsg struct {
 	Detail    string `json:"detail,omitempty"`
 }
 
+type processingStateMsg struct {
+	Type        string `json:"type"`
+	Flow        string `json:"flow"`
+	TraceID     string `json:"traceId"`
+	Stage       string `json:"stage"`
+	Label       string `json:"label"`
+	Detail      string `json:"detail,omitempty"`
+	Tool        string `json:"tool,omitempty"`
+	SourceCount *int   `json:"sourceCount,omitempty"`
+	Active      bool   `json:"active"`
+}
+
 var errLiveSessionGoAway = errors.New("gemini live goAway")
+
+var (
+	routeMapsKeywords = []string{
+		"nearby", "route", "directions", "distance", "travel time", "commute", "restaurant",
+		"coffee", "cafe", "place", "places", "map", "maps", "where is", "near me",
+		"근처", "길찾기", "거리", "소요시간", "카페", "맛집", "지도", "어디야",
+	}
+	routeCodeExecutionKeywords = []string{
+		"calculate", "compute", "convert", "regex", "json", "csv", "sort", "transform",
+		"simulate", "evaluate", "run this code", "check this math", "계산", "변환", "정규식", "실행", "검산", "코드로 확인",
+	}
+	routeFileSearchKeywords = []string{
+		"uploaded file", "uploaded files", "knowledge base", "knowledge-base", "attached file",
+		"our docs", "our documentation", "company docs", "internal docs", "file store",
+		"업로드한 파일", "첨부 파일", "지식베이스", "사내 문서", "내 문서",
+	}
+	routeSearchKeywords = []string{
+		"search", "look up", "find", "browse", "check docs", "check the docs",
+		"official docs", "latest", "release notes", "version", "error", "exception",
+		"docs", "documentation", "github", "git hub", "검색", "찾아", "알아봐", "공식 문서", "최신", "버전", "문서", "깃허브",
+	}
+)
+
+type queryRouteKind string
+
+const (
+	queryRoutePlainLive  queryRouteKind = "plain_live"
+	queryRouteLiveSearch queryRouteKind = "live_search"
+	queryRouteADKTool    queryRouteKind = "adk_tool"
+)
+
+type queryRoute struct {
+	Kind queryRouteKind
+	Tool adk.ToolKind
+}
 
 type liveSessionState struct {
 	mu           sync.RWMutex
@@ -321,6 +368,26 @@ func sendTraceEvent(c *Conn, flow, traceID, phase string, rootAt time.Time, deta
 	lockedSendJSON(c, msg)
 }
 
+func sendProcessingState(c *Conn, flow, traceID, stage, label, detail, tool string, sourceCount int, active bool) {
+	if strings.TrimSpace(traceID) == "" {
+		return
+	}
+	msg := processingStateMsg{
+		Type:    "processingState",
+		Flow:    flow,
+		TraceID: traceID,
+		Stage:   stage,
+		Label:   label,
+		Detail:  strings.TrimSpace(detail),
+		Tool:    strings.TrimSpace(tool),
+		Active:  active,
+	}
+	if sourceCount > 0 {
+		msg.SourceCount = &sourceCount
+	}
+	lockedSendJSON(c, msg)
+}
+
 func handleBargeIn(c *Conn, ls *liveSessionState) {
 	shouldInterrupt := ls.markBargeInPending()
 	if shouldInterrupt {
@@ -348,6 +415,75 @@ func truncateText(s string, max int) string {
 
 func useNativeLiveSearch(cfg live.Config) bool {
 	return cfg.GoogleSearch
+}
+
+func containsAny(lower string, keywords []string) bool {
+	for _, keyword := range keywords {
+		if strings.Contains(lower, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
+func resolveQueryRoute(cfg live.Config, query string) queryRoute {
+	lower := strings.ToLower(strings.TrimSpace(query))
+	switch {
+	case strings.Contains(lower, "http://") || strings.Contains(lower, "https://"):
+		return queryRoute{Kind: queryRouteADKTool, Tool: adk.ToolKindURLContext}
+	case containsAny(lower, routeFileSearchKeywords):
+		return queryRoute{Kind: queryRouteADKTool, Tool: adk.ToolKindFileSearch}
+	case containsAny(lower, routeMapsKeywords):
+		return queryRoute{Kind: queryRouteADKTool, Tool: adk.ToolKindMaps}
+	case containsAny(lower, routeCodeExecutionKeywords):
+		return queryRoute{Kind: queryRouteADKTool, Tool: adk.ToolKindCodeExecution}
+	case useNativeLiveSearch(cfg) && containsAny(lower, routeSearchKeywords):
+		return queryRoute{Kind: queryRouteLiveSearch}
+	default:
+		return queryRoute{Kind: queryRoutePlainLive}
+	}
+}
+
+func toolDisplayName(tool adk.ToolKind) string {
+	switch tool {
+	case adk.ToolKindSearch:
+		return "Google Search"
+	case adk.ToolKindMaps:
+		return "Google Maps"
+	case adk.ToolKindURLContext:
+		return "URL Context"
+	case adk.ToolKindCodeExecution:
+		return "Code Execution"
+	case adk.ToolKindFileSearch:
+		return "File Search"
+	default:
+		return ""
+	}
+}
+
+func toolStatusDetail(tool adk.ToolKind) string {
+	switch tool {
+	case adk.ToolKindMaps:
+		return "Google Maps 확인 중"
+	case adk.ToolKindURLContext:
+		return "URL 내용 읽는 중"
+	case adk.ToolKindCodeExecution:
+		return "Code Execution 확인 중"
+	case adk.ToolKindFileSearch:
+		return "File Search 확인 중"
+	case adk.ToolKindSearch:
+		return "Google Search 확인 중"
+	default:
+		return ""
+	}
+}
+
+func toolPreparingDetail(tool adk.ToolKind) string {
+	name := toolDisplayName(tool)
+	if name == "" {
+		return "도구 결과 정리 중"
+	}
+	return name + " 결과 정리 중"
 }
 
 func memoryContextCacheKey(userID, language string) string {
@@ -520,7 +656,7 @@ func buildToolPrompt(cfg live.Config, result *adk.ToolResult) string {
 	return b.String()
 }
 
-func maybeResolveTool(ctx context.Context, c *Conn, ls *liveSessionState, adkClient *adk.Client, runtime *sessionRuntime, query string, traceID string, rootAt time.Time) bool {
+func maybeResolveTool(ctx context.Context, c *Conn, ls *liveSessionState, adkClient *adk.Client, runtime *sessionRuntime, requestedTool adk.ToolKind, query string, traceID string, rootAt time.Time) bool {
 	query = strings.TrimSpace(query)
 	if query == "" || adkClient == nil {
 		return false
@@ -534,6 +670,7 @@ func maybeResolveTool(ctx context.Context, c *Conn, ls *liveSessionState, adkCli
 
 	userID, sessionID, _ := runtime.snapshot()
 	sendTraceEvent(c, "tool", traceID, "tool_lookup_start", rootAt, fmt.Sprintf("query_len=%d", len(query)))
+	sendProcessingState(c, "tool", traceID, "tool_running", "도구 실행 중...", toolStatusDetail(requestedTool), string(requestedTool), 0, true)
 	toolCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
 	result, err := adkClient.Tool(toolCtx, adk.ToolRequest{
@@ -546,10 +683,12 @@ func maybeResolveTool(ctx context.Context, c *Conn, ls *liveSessionState, adkCli
 	if err != nil {
 		slog.Warn("[HANDLER] tool request failed", "conn_id", c.ID, "query", truncateText(query, 80), "error", err)
 		sendTraceEvent(c, "tool", traceID, "tool_lookup_failed", rootAt, err.Error())
+		sendProcessingState(c, "tool", traceID, "tool_running", "도구 실행 중...", toolStatusDetail(requestedTool), string(requestedTool), 0, false)
 		return false
 	}
 	if result == nil || strings.TrimSpace(result.Summary) == "" {
 		sendTraceEvent(c, "tool", traceID, "tool_lookup_empty", rootAt, "")
+		sendProcessingState(c, "tool", traceID, "tool_running", "도구 실행 중...", toolStatusDetail(requestedTool), string(requestedTool), 0, false)
 		return false
 	}
 	sendTraceEvent(c, "tool", traceID, "tool_lookup_done", rootAt, fmt.Sprintf("tool=%s summary_len=%d", result.Tool, len(result.Summary)))
@@ -571,12 +710,15 @@ func maybeResolveTool(ctx context.Context, c *Conn, ls *liveSessionState, adkCli
 	if liveSess == nil {
 		slog.Warn("[HANDLER] grounded tool prompt dropped: no live session", "conn_id", c.ID)
 		sendTraceEvent(c, "tool", traceID, "tool_prompt_dropped", rootAt, "no_live_session")
+		sendProcessingState(c, "tool", traceID, "response_preparing", "답변 정리 중...", toolPreparingDetail(result.Tool), string(result.Tool), len(result.Sources), false)
 		return true
 	}
 	ls.queueTurnTrace(traceID, "tool", rootAt)
+	sendProcessingState(c, "tool", traceID, "response_preparing", "답변 정리 중...", toolPreparingDetail(result.Tool), string(result.Tool), len(result.Sources), true)
 	if err := liveSess.SendText(buildToolPrompt(ls.getConfig(), result)); err != nil {
 		slog.Warn("[HANDLER] grounded tool prompt injection failed", "conn_id", c.ID, "error", err)
 		sendTraceEvent(c, "tool", traceID, "tool_prompt_injection_failed", rootAt, err.Error())
+		sendProcessingState(c, "tool", traceID, "response_preparing", "답변 정리 중...", toolPreparingDetail(result.Tool), string(result.Tool), len(result.Sources), false)
 		return false
 	}
 
@@ -894,6 +1036,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client) http.H
 							"has_soul", captureMsg.Soul != "",
 						)
 						sendTraceEvent(c, "proactive", traceID, "adk_analyze_start", rootAt, "")
+						sendProcessingState(c, "proactive", traceID, "screen_analyzing", "화면 읽는 중...", "현재 창 분석 중", "", 0, true)
 						analyzeCtx, analyzeCancel := context.WithTimeout(ctx, 30*time.Second)
 						defer analyzeCancel()
 						tracer := otel.Tracer("vibecat/gateway")
@@ -918,6 +1061,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client) http.H
 						if analyzeErr != nil {
 							slog.Warn("[HANDLER] <<< ADK analyze FAILED", "conn_id", c.ID, "error", analyzeErr, "elapsed", elapsed.String())
 							sendTraceEvent(c, "proactive", traceID, "adk_analyze_failed", rootAt, analyzeErr.Error())
+							sendProcessingState(c, "proactive", traceID, "screen_analyzing", "화면 읽는 중...", "현재 창 분석 중", "", 0, false)
 							return
 						}
 
@@ -965,20 +1109,24 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client) http.H
 						allowProactiveSpeech := captureMsg.Type == "forceCapture" || ls.getConfig().ProactiveAudio
 
 						if shouldSpeak && result.SpeechText != "" && allowProactiveSpeech {
+							sendProcessingState(c, "proactive", traceID, "response_preparing", "답변 정리 중...", "현재 창 기준으로 정리 중", "", 0, true)
 							sess := ls.getSession()
 							switch {
 							case sess == nil:
 								slog.Warn("[HANDLER] proactive prompt dropped: no live session", "conn_id", c.ID)
 								sendTraceEvent(c, "proactive", traceID, "live_prompt_dropped", rootAt, "no_live_session")
+								sendProcessingState(c, "proactive", traceID, "response_preparing", "답변 정리 중...", "현재 창 기준으로 정리 중", "", 0, false)
 							case ls.isModelSpeaking():
 								slog.Info("[HANDLER] proactive prompt dropped: model already speaking", "conn_id", c.ID)
 								sendTraceEvent(c, "proactive", traceID, "live_prompt_dropped", rootAt, "model_already_speaking")
+								sendProcessingState(c, "proactive", traceID, "response_preparing", "답변 정리 중...", "현재 창 기준으로 정리 중", "", 0, false)
 							default:
 								prompt := buildProactivePrompt(ls.getConfig(), result)
 								ls.queueTurnTrace(traceID, "proactive", rootAt)
 								if sendErr := sess.SendText(prompt); sendErr != nil {
 									slog.Warn("[HANDLER] proactive prompt injection failed", "conn_id", c.ID, "error", sendErr)
 									sendTraceEvent(c, "proactive", traceID, "live_prompt_injection_failed", rootAt, sendErr.Error())
+									sendProcessingState(c, "proactive", traceID, "response_preparing", "답변 정리 중...", "현재 창 기준으로 정리 중", "", 0, false)
 								} else {
 									slog.Info("[HANDLER] proactive prompt injected into live session",
 										"conn_id", c.ID,
@@ -996,11 +1144,15 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client) http.H
 								if sendErr := sess.SendText(contextMsg); sendErr != nil {
 									slog.Debug("inject screen context failed", "conn_id", c.ID, "error", sendErr)
 									sendTraceEvent(c, "context", traceID, "context_injection_failed", rootAt, sendErr.Error())
+									sendProcessingState(c, "context", traceID, "screen_analyzing", "화면 읽는 중...", "현재 창 분석 중", "", 0, false)
 								} else {
 									slog.Info("[HANDLER] injected screen context into live session (no ADK speech)", "conn_id", c.ID, "content_len", len(result.Vision.Content))
 									sendTraceEvent(c, "context", traceID, "context_injected", rootAt, fmt.Sprintf("content_len=%d", len(result.Vision.Content)))
+									sendProcessingState(c, "context", traceID, "screen_analyzing", "화면 읽는 중...", "현재 창 분석 중", "", 0, false)
 								}
 							}
+						} else {
+							sendProcessingState(c, "proactive", traceID, "screen_analyzing", "화면 읽는 중...", "현재 창 분석 중", "", 0, false)
 						}
 					}()
 
@@ -1035,9 +1187,16 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client) http.H
 								rootAt := time.Now()
 								runtime.append("user: " + truncateText(part.Text, 240))
 								sendTraceEvent(c, "text", traceID, "text_received", rootAt, fmt.Sprintf("text_len=%d", len(part.Text)))
-								if ls.getConfig().GoogleSearch && maybeResolveTool(ctx, c, ls, adkClient, runtime, part.Text, traceID, rootAt) {
-									slog.Info("[HANDLER] clientContent handled via grounded tool", "conn_id", c.ID)
-									continue
+								route := resolveQueryRoute(ls.getConfig(), part.Text)
+								switch route.Kind {
+								case queryRouteADKTool:
+									if maybeResolveTool(ctx, c, ls, adkClient, runtime, route.Tool, part.Text, traceID, rootAt) {
+										slog.Info("[HANDLER] clientContent handled via grounded tool", "conn_id", c.ID, "tool", route.Tool)
+										continue
+									}
+								case queryRouteLiveSearch:
+									sendTraceEvent(c, "text", traceID, "live_native_search_enabled", rootAt, "google_search")
+									sendProcessingState(c, "text", traceID, "searching", "검색 중...", "Google Search 확인 중", "google_search", 0, true)
 								}
 								slog.Info("[HANDLER] >>> forwarding clientContent to Gemini",
 									"conn_id", c.ID,
@@ -1086,16 +1245,18 @@ func receiveFromGemini(ctx context.Context, c *Conn, sess *live.Session, ls *liv
 		ls.queueTurnTrace(traceID, flow, rootAt)
 		if triggerTool {
 			cfg := ls.getConfig()
-			if useNativeLiveSearch(cfg) {
+			route := resolveQueryRoute(cfg, query)
+			switch route.Kind {
+			case queryRouteLiveSearch:
 				sendTraceEvent(c, flow, traceID, "live_native_search_enabled", rootAt, "google_search")
-			} else if !cfg.GoogleSearch {
-				slog.Info("[HANDLER] grounded tool lookup skipped: disabled in session config", "conn_id", c.ID)
-				sendTraceEvent(c, flow, traceID, "tool_lookup_skipped", rootAt, "disabled_in_session_config")
-			} else if adkClient == nil {
-				slog.Warn("[HANDLER] grounded tool lookup skipped: no adk client", "conn_id", c.ID)
-				sendTraceEvent(c, flow, traceID, "tool_lookup_skipped", rootAt, "no_adk_client")
-			} else {
-				go maybeResolveTool(ctx, c, ls, adkClient, runtime, query, traceID, rootAt)
+				sendProcessingState(c, flow, traceID, "searching", "검색 중...", "Google Search 확인 중", "google_search", 0, true)
+			case queryRouteADKTool:
+				if adkClient == nil {
+					slog.Warn("[HANDLER] grounded tool lookup skipped: no adk client", "conn_id", c.ID)
+					sendTraceEvent(c, flow, traceID, "tool_lookup_skipped", rootAt, "no_adk_client")
+				} else {
+					go maybeResolveTool(ctx, c, ls, adkClient, runtime, route.Tool, query, traceID, rootAt)
+				}
 			}
 		}
 		inputTranscript = ""
@@ -1124,6 +1285,7 @@ func receiveFromGemini(ctx context.Context, c *Conn, sess *live.Session, ls *liv
 				ls.setModelSpeaking(false)
 				if traceID, flow, rootAt, ok := ls.finishCurrentTurnTrace(); ok {
 					sendTraceEvent(c, flow, traceID, "turn_failed", rootAt, err.Error())
+					sendProcessingState(c, flow, traceID, "response_preparing", "답변 정리 중...", "", "", 0, false)
 				}
 				sendTurnState(c, "idle", "live")
 			}
@@ -1238,7 +1400,13 @@ func receiveFromGemini(ctx context.Context, c *Conn, sess *live.Session, ls *liv
 			if sc.GroundingMetadata != nil {
 				traceID, flow, rootAt := ls.ensureCurrentTurnTrace("voice")
 				detail := describeGroundingMetadata(sc.GroundingMetadata)
+				sourceCount := len(extractGroundingSources(sc.GroundingMetadata))
 				sendTraceEvent(c, flow, traceID, "grounding_metadata", rootAt, detail)
+				groundingDetail := "Google Search 확인 중"
+				if sourceCount > 0 {
+					groundingDetail = fmt.Sprintf("Google Search · 근거 %d개 확인", sourceCount)
+				}
+				sendProcessingState(c, flow, traceID, "grounding", "근거 확인 중...", groundingDetail, "google_search", sourceCount, true)
 				if detail != "" {
 					runtime.append("grounding: " + truncateText(detail, 240))
 				}
@@ -1258,6 +1426,7 @@ func receiveFromGemini(ctx context.Context, c *Conn, sess *live.Session, ls *liv
 				}
 				if traceID, flow, rootAt, ok := ls.finishCurrentTurnTrace(); ok {
 					sendTraceEvent(c, flow, traceID, "turn_complete", rootAt, "")
+					sendProcessingState(c, flow, traceID, "response_preparing", "답변 정리 중...", "", "", 0, false)
 				}
 				lockedSendJSON(c, map[string]string{"type": "turnComplete"})
 				firstOutputEventSent = false
@@ -1273,6 +1442,7 @@ func receiveFromGemini(ctx context.Context, c *Conn, sess *live.Session, ls *liv
 				}
 				if traceID, flow, rootAt, ok := ls.finishCurrentTurnTrace(); ok {
 					sendTraceEvent(c, flow, traceID, "turn_interrupted", rootAt, "")
+					sendProcessingState(c, flow, traceID, "response_preparing", "답변 정리 중...", "", "", 0, false)
 				}
 				lockedSendJSON(c, map[string]string{"type": "interrupted"})
 				firstOutputEventSent = false
@@ -1280,7 +1450,9 @@ func receiveFromGemini(ctx context.Context, c *Conn, sess *live.Session, ls *liv
 		}
 
 		if msg.SessionResumptionUpdate != nil {
-			ls.setResumeHandle(msg.SessionResumptionUpdate.NewHandle)
+			if strings.TrimSpace(msg.SessionResumptionUpdate.NewHandle) != "" {
+				ls.setResumeHandle(msg.SessionResumptionUpdate.NewHandle)
+			}
 			lockedSendJSON(c, map[string]any{
 				"type":          "sessionResumptionUpdate",
 				"sessionHandle": msg.SessionResumptionUpdate.NewHandle,

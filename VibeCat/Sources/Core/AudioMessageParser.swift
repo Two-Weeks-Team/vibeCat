@@ -6,6 +6,8 @@ public enum ServerMessage: Sendable {
     case inputTranscription(text: String, finished: Bool)
     case turnState(state: String, source: String)
     case traceEvent(flow: String, traceId: String, phase: String, elapsedMs: Int?, detail: String)
+    case processingState(flow: String, traceId: String, stage: String, label: String, detail: String, tool: String, sourceCount: Int?, active: Bool)
+    case toolResult(tool: String, query: String, summary: String, sources: [String])
     case turnComplete
     case interrupted
     case companionSpeech(text: String, emotion: String, urgency: String)
@@ -13,6 +15,7 @@ public enum ServerMessage: Sendable {
     case sessionResumptionUpdate(handle: String)
     case liveSessionReconnecting(attempt: Int, max: Int)
     case liveSessionReconnected
+    case goAway(reason: String, timeLeftMs: Int)
     case ttsStart(text: String?)
     case ttsEnd
     case pong
@@ -73,6 +76,22 @@ public enum AudioMessageParser {
             let elapsedMs = json["elapsedMs"] as? Int
             let detail = json["detail"] as? String ?? ""
             return .traceEvent(flow: flow, traceId: traceId, phase: phase, elapsedMs: elapsedMs, detail: detail)
+        case "processingState":
+            let flow = json["flow"] as? String ?? "unknown"
+            let traceId = json["traceId"] as? String ?? ""
+            let stage = json["stage"] as? String ?? "unknown"
+            let label = json["label"] as? String ?? ""
+            let detail = json["detail"] as? String ?? ""
+            let tool = json["tool"] as? String ?? ""
+            let sourceCount = json["sourceCount"] as? Int
+            let active = json["active"] as? Bool ?? false
+            return .processingState(flow: flow, traceId: traceId, stage: stage, label: label, detail: detail, tool: tool, sourceCount: sourceCount, active: active)
+        case "toolResult":
+            let tool = json["tool"] as? String ?? ""
+            let query = json["query"] as? String ?? ""
+            let summary = json["summary"] as? String ?? ""
+            let sources = json["sources"] as? [String] ?? []
+            return .toolResult(tool: tool, query: query, summary: summary, sources: sources)
         case "turnComplete":
             return .turnComplete
         case "interrupted":
@@ -94,6 +113,10 @@ public enum AudioMessageParser {
             return .liveSessionReconnecting(attempt: attempt, max: max)
         case "liveSessionReconnected":
             return .liveSessionReconnected
+        case "goAway":
+            let reason = json["reason"] as? String ?? "unknown"
+            let timeLeftMs = json["timeLeftMs"] as? Int ?? 0
+            return .goAway(reason: reason, timeLeftMs: timeLeftMs)
         case "ttsStart":
             let text = json["text"] as? String
             return .ttsStart(text: text)

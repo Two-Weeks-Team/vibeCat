@@ -77,7 +77,7 @@ func (m *Manager) Connect(ctx context.Context, cfg Config, resumptionHandle stri
 		return nil, fmt.Errorf("gemini live connect: %w", err)
 	}
 
-	slog.Info("gemini live session established", "model", model, "voice", cfg.Voice, "resumed", resumptionHandle != "")
+	slog.Info("gemini live session established", "model", model, "voice", cfg.Voice, "resumed", resumptionHandle != "", "tuning_profile", activeTuningProfile.Name)
 	return &Session{
 		gemini: geminiSession,
 		cancel: cancel,
@@ -163,8 +163,41 @@ RULES:
 
 Start each response with an emotion tag: [happy], [surprised], [thinking], [concerned], or [idle].`
 
-const (
-	maxMemoryContextChars = 1200
+type tuningProfile struct {
+	Name              string
+	MaxMemoryChars    int
+	PrefixPaddingMs   int32
+	SilenceDurationMs int32
+	TriggerTokens     int64
+	TargetTokens      int64
+}
+
+var (
+	baselineTuningProfile = tuningProfile{
+		Name:              "baseline",
+		MaxMemoryChars:    1200,
+		PrefixPaddingMs:   20,
+		SilenceDurationMs: 200,
+		TriggerTokens:     12000,
+		TargetTokens:      6000,
+	}
+	memoryLightTuningProfile = tuningProfile{
+		Name:              "memory_light",
+		MaxMemoryChars:    900,
+		PrefixPaddingMs:   20,
+		SilenceDurationMs: 200,
+		TriggerTokens:     10000,
+		TargetTokens:      5000,
+	}
+	vadRelaxedTuningProfile = tuningProfile{
+		Name:              "vad_relaxed",
+		MaxMemoryChars:    1200,
+		PrefixPaddingMs:   40,
+		SilenceDurationMs: 250,
+		TriggerTokens:     12000,
+		TargetTokens:      6000,
+	}
+	activeTuningProfile = baselineTuningProfile
 )
 
 func trimPromptBlock(s string, max int) string {
@@ -188,7 +221,18 @@ func buildSystemInstruction(cfg Config) string {
 			"For grounded search answers, give the direct answer in the first sentence and stop after one short follow-up sentence at most.\n" +
 			"Do not use Google Search for casual chat, stable facts, or on-screen observations unless the user explicitly asks or freshness matters."
 	}
-	if ctx := trimPromptBlock(cfg.MemoryContext, maxMemoryContextChars); ctx != "" {
+	switch strings.ToLower(strings.TrimSpace(cfg.Chattiness)) {
+	case "quiet":
+		instruction += "\n\n=== RESPONSE LENGTH ===\n" +
+			"Keep responses to exactly one short spoken sentence whenever possible. Do not add a second sentence unless it is required to make the answer correct."
+	case "chatty":
+		instruction += "\n\n=== RESPONSE LENGTH ===\n" +
+			"You may use up to two short spoken sentences and one concrete next step when it materially helps. Stay concise."
+	default:
+		instruction += "\n\n=== RESPONSE LENGTH ===\n" +
+			"Prefer one short spoken sentence. A second short sentence is allowed only when it adds one concrete next step."
+	}
+	if ctx := trimPromptBlock(cfg.MemoryContext, activeTuningProfile.MaxMemoryChars); ctx != "" {
 		instruction += "\n\n=== RECENT ESSENTIAL CONTEXT ===\n" +
 			ctx + "\n" +
 			"Use this as compressed recent memory. Prefer the latest user speech and current screen state when they conflict."
@@ -227,8 +271,8 @@ func buildLiveConfig(cfg Config) *genai.LiveConnectConfig {
 	lc.OutputAudioTranscription = &genai.AudioTranscriptionConfig{}
 	lc.InputAudioTranscription = &genai.AudioTranscriptionConfig{}
 
-	prefixPadding := int32(20)
-	silenceDuration := int32(200)
+	prefixPadding := activeTuningProfile.PrefixPaddingMs
+	silenceDuration := activeTuningProfile.SilenceDurationMs
 	lc.RealtimeInputConfig = &genai.RealtimeInputConfig{
 		AutomaticActivityDetection: &genai.AutomaticActivityDetection{
 			StartOfSpeechSensitivity: genai.StartSensitivityLow,
@@ -242,8 +286,8 @@ func buildLiveConfig(cfg Config) *genai.LiveConnectConfig {
 
 	lc.MediaResolution = genai.MediaResolutionMedium
 
-	triggerTokens := int64(12000)
-	targetTokens := int64(6000)
+	triggerTokens := activeTuningProfile.TriggerTokens
+	targetTokens := activeTuningProfile.TargetTokens
 	lc.ContextWindowCompression = &genai.ContextWindowCompressionConfig{
 		TriggerTokens: &triggerTokens,
 		SlidingWindow: &genai.SlidingWindow{

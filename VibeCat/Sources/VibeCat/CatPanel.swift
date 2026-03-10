@@ -17,6 +17,8 @@ final class CatPanel: NSPanel {
     private var hideCountdownTimer: Timer?
     private var bubbleDuration: TimeInterval = 2.0
     private var currentBubbleText: String?
+    private var currentBubbleMeta: String?
+    private var bubbleShowsSpinner = false
     private var turnActive = false
     private var bubbleShownAt: Date?
     private let maxBubbleDisplayTime: TimeInterval = 15.0
@@ -98,6 +100,10 @@ final class CatPanel: NSPanel {
     }
 
     func showBubble(text: String) {
+        showSpeechBubble(text: text, meta: nil)
+    }
+
+    func showSpeechBubble(text: String, meta: String?) {
         let preview = String(text.prefix(50))
         NSLog("[BUBBLE] showBubble: %@", preview)
         let displayText = text
@@ -106,17 +112,46 @@ final class CatPanel: NSPanel {
             NSLog("[TRACE] %@ phase=%@ text_len=%d", traceContext, wasVisible ? "bubble_update" : "bubble_show", displayText.count)
         }
         currentBubbleText = displayText
+        currentBubbleMeta = meta
+        bubbleShowsSpinner = false
         bubbleShownAt = Date()
         bubbleDuration = 2.0
         hideCountdownTimer?.invalidate()
         hideCountdownTimer = nil
-        updateBubbleFrame(for: displayText)
-        if wasVisible {
-            bubbleView.updateText(displayText)
+        updateBubbleFrame()
+        if wasVisible && !bubbleView.isShowingStatus {
+            bubbleView.updateSpeech(text: displayText, meta: meta)
         } else {
-            bubbleView.show(text: displayText)
+            bubbleView.showSpeech(text: displayText, meta: meta)
         }
         ensureSmartHidePolling()
+    }
+
+    func showStatusBubble(text: String, detail: String?) {
+        NSLog("[BUBBLE] showStatusBubble: %@ / %@", text, detail ?? "")
+        currentBubbleText = text
+        currentBubbleMeta = detail
+        bubbleShowsSpinner = true
+        bubbleShownAt = Date()
+        bubbleDuration = 2.0
+        hideCountdownTimer?.invalidate()
+        hideCountdownTimer = nil
+        updateBubbleFrame()
+        if !spinnerView.isHidden {
+            spinnerView.stopAnimation(nil)
+            spinnerView.isHidden = true
+        }
+        if bubbleView.isHidden || bubbleView.alphaValue == 0 || !bubbleView.isShowingStatus {
+            bubbleView.showStatus(text: text, detail: detail)
+        } else {
+            bubbleView.updateStatus(text: text, detail: detail)
+        }
+        ensureSmartHidePolling()
+    }
+
+    func hideStatusBubbleIfShowing() {
+        guard bubbleView.isShowingStatus else { return }
+        hideBubble()
     }
 
     func hideBubble() {
@@ -125,6 +160,8 @@ final class CatPanel: NSPanel {
         }
         bubbleView.hide()
         currentBubbleText = nil
+        currentBubbleMeta = nil
+        bubbleShowsSpinner = false
         bubbleShownAt = nil
         hideCountdownTimer?.invalidate()
         hideCountdownTimer = nil
@@ -303,8 +340,8 @@ final class CatPanel: NSPanel {
             y: localPoint.y - imageView.frame.height / 2
         )
         emotionIndicator.frame.origin = NSPoint(x: imageView.frame.maxX - 4, y: imageView.frame.maxY - 4)
-        if !bubbleView.isHidden, let text = currentBubbleText {
-            updateBubbleFrame(for: text)
+        if !bubbleView.isHidden, currentBubbleText != nil {
+            updateBubbleFrame()
         }
     }
 
@@ -312,8 +349,8 @@ final class CatPanel: NSPanel {
         let catFrame = imageView.frame
         emotionIndicator.frame.origin = NSPoint(x: catFrame.maxX - 4, y: catFrame.maxY - 4)
         layoutSpinner()
-        if let text = currentBubbleText {
-            updateBubbleFrame(for: text)
+        if currentBubbleText != nil {
+            updateBubbleFrame()
         }
     }
 
@@ -325,11 +362,12 @@ final class CatPanel: NSPanel {
         )
     }
 
-    private func updateBubbleFrame(for text: String) {
+    private func updateBubbleFrame() {
+        guard let text = currentBubbleText else { return }
         guard let screenFrame = screen?.visibleFrame ?? NSScreen.main?.visibleFrame,
               let _ = contentView else { return }
 
-        let size = bubbleView.preferredSize(for: text)
+        let size = bubbleView.preferredSize(primary: text, meta: currentBubbleMeta, showsSpinner: bubbleShowsSpinner)
         let catFrame = imageView.frame
 
         var bubbleX = catFrame.midX - size.width / 2

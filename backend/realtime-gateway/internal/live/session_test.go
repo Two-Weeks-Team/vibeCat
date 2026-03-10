@@ -223,6 +223,28 @@ func TestBuildLiveConfig(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "quiet chattiness tightens response length guidance",
+			cfg:  Config{Language: "ko", Chattiness: "quiet"},
+			check: func(t *testing.T, lc *genai.LiveConnectConfig) {
+				t.Helper()
+				got := lc.SystemInstruction.Parts[0].Text
+				if !strings.Contains(got, "exactly one short spoken sentence") {
+					t.Fatal("expected quiet chattiness guidance")
+				}
+			},
+		},
+		{
+			name: "chatty chattiness allows two sentences",
+			cfg:  Config{Language: "ko", Chattiness: "chatty"},
+			check: func(t *testing.T, lc *genai.LiveConnectConfig) {
+				t.Helper()
+				got := lc.SystemInstruction.Parts[0].Text
+				if !strings.Contains(got, "up to two short spoken sentences") {
+					t.Fatal("expected chatty chattiness guidance")
+				}
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -238,5 +260,17 @@ func TestBuildLiveConfig(t *testing.T) {
 
 			tc.check(t, lc)
 		})
+	}
+}
+
+func TestTuningProfilesMatchPlan(t *testing.T) {
+	if baselineTuningProfile.Name != "baseline" {
+		t.Fatalf("baseline name = %q", baselineTuningProfile.Name)
+	}
+	if memoryLightTuningProfile.TriggerTokens != 10000 || memoryLightTuningProfile.TargetTokens != 5000 || memoryLightTuningProfile.MaxMemoryChars != 900 {
+		t.Fatalf("memory_light profile mismatch: %#v", memoryLightTuningProfile)
+	}
+	if vadRelaxedTuningProfile.PrefixPaddingMs != 40 || vadRelaxedTuningProfile.SilenceDurationMs != 250 {
+		t.Fatalf("vad_relaxed profile mismatch: %#v", vadRelaxedTuningProfile)
 	}
 }

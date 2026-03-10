@@ -16,7 +16,7 @@ let package = Package(
         ),
         .testTarget(
             name: "VibeCatTests",
-            dependencies: ["VibeCatCore"],
+            dependencies: ["VibeCatCore", "VibeCat"],
             path: "Tests/VibeCatTests"
         )
     ]

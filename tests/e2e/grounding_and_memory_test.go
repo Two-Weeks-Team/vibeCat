@@ -205,7 +205,7 @@ func TestGatewayToolAutoResponseRealAPI(t *testing.T) {
 				{
 					"role": "user",
 					"parts": []map[string]string{
-						{"text": "Go websocket close code 1006 공식 문서 찾아서 요약해줘"},
+						{"text": "이 페이지 핵심만 요약해줘 https://ai.google.dev/gemini-api/docs/google-search"},
 					},
 				},
 			},
@@ -216,14 +216,16 @@ func TestGatewayToolAutoResponseRealAPI(t *testing.T) {
 
 	deadline := time.Now().Add(35 * time.Second)
 	sawTool := false
+	sawProcessingState := false
+	sawResponsePreparing := false
 	sawAssistantResponse := false
 
+	_ = conn.SetReadDeadline(deadline)
 	for time.Now().Before(deadline) {
-		_ = conn.SetReadDeadline(time.Now().Add(12 * time.Second))
 		msgType, payload, err := conn.ReadMessage()
 		if err != nil {
 			if ne, ok := err.(interface{ Timeout() bool }); ok && ne.Timeout() {
-				continue
+				break
 			}
 			t.Fatalf("read websocket message: %v", err)
 		}
@@ -242,8 +244,17 @@ func TestGatewayToolAutoResponseRealAPI(t *testing.T) {
 		}
 
 		switch msg["type"] {
+		case "processingState":
+			stage, _ := msg["stage"].(string)
+			active, _ := msg["active"].(bool)
+			if active && stage == "tool_running" {
+				sawProcessingState = true
+			}
+			if active && stage == "response_preparing" {
+				sawResponsePreparing = true
+			}
 		case "toolResult":
-			if msg["tool"] == "search" {
+			if msg["tool"] == "url_context" {
 				sawTool = true
 			}
 		case "turnState":
@@ -264,8 +275,217 @@ func TestGatewayToolAutoResponseRealAPI(t *testing.T) {
 	if !sawTool {
 		t.Fatal("did not observe toolResult for URL context query")
 	}
+	if !sawProcessingState {
+		t.Fatal("did not observe processingState tool_running before tool result")
+	}
+	if !sawResponsePreparing {
+		t.Fatal("did not observe processingState response_preparing before assistant response")
+	}
 	if !sawAssistantResponse {
 		t.Fatal("toolResult arrived but assistant did not automatically respond")
+	}
+}
+
+func TestGatewayLiveSearchProcessingStateRealAPI(t *testing.T) {
+	base := gatewayURL(t)
+	token := registerToken(t, base)
+
+	conn := dialWS(t, base, token)
+	defer conn.Close()
+
+	if err := conn.WriteJSON(map[string]any{
+		"type": "setup",
+		"config": map[string]any{
+			"voice":         "Zephyr",
+			"language":      "ko",
+			"searchEnabled": true,
+		},
+	}); err != nil {
+		t.Fatalf("send setup: %v", err)
+	}
+	waitForSetupComplete(t, conn)
+
+	if err := conn.WriteJSON(map[string]any{
+		"type": "clientContent",
+		"clientContent": map[string]any{
+			"turnComplete": true,
+			"turns": []map[string]any{
+				{
+					"role": "user",
+					"parts": []map[string]string{
+						{"text": "오늘 서울 날씨 검색해서 알려줘"},
+					},
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("send search clientContent: %v", err)
+	}
+
+	deadline := time.Now().Add(35 * time.Second)
+	sawSearching := false
+	sawGrounding := false
+	sawAssistantResponse := false
+	sawTurnComplete := false
+
+	_ = conn.SetReadDeadline(deadline)
+	for time.Now().Before(deadline) {
+		msgType, payload, err := conn.ReadMessage()
+		if err != nil {
+			if ne, ok := err.(interface{ Timeout() bool }); ok && ne.Timeout() {
+				break
+			}
+			t.Fatalf("read websocket message: %v", err)
+		}
+
+		if msgType == websocket.BinaryMessage && len(payload) > 0 && sawSearching {
+			sawAssistantResponse = true
+			continue
+		}
+		if msgType != websocket.TextMessage {
+			continue
+		}
+
+		var msg map[string]any
+		if err := json.Unmarshal(payload, &msg); err != nil {
+			continue
+		}
+
+		switch msg["type"] {
+		case "processingState":
+			stage, _ := msg["stage"].(string)
+			active, _ := msg["active"].(bool)
+			if active && stage == "searching" {
+				sawSearching = true
+			}
+			if active && stage == "grounding" {
+				sawGrounding = true
+			}
+		case "turnState":
+			if msg["state"] == "speaking" && sawSearching {
+				sawAssistantResponse = true
+			}
+		case "transcription":
+			if sawSearching {
+				if text, _ := msg["text"].(string); strings.TrimSpace(text) != "" {
+					sawAssistantResponse = true
+				}
+			}
+		case "turnComplete":
+			sawTurnComplete = true
+			if sawSearching && sawGrounding && sawAssistantResponse {
+				break
+			}
+		}
+		if sawSearching && sawGrounding && sawAssistantResponse && sawTurnComplete {
+			break
+		}
+	}
+
+	if !sawSearching {
+		t.Fatal("did not observe processingState searching for live native search")
+	}
+	if !sawGrounding {
+		t.Fatal("did not observe grounding processingState for live native search")
+	}
+	if !sawAssistantResponse {
+		t.Fatal("search processing states arrived but assistant did not respond")
+	}
+}
+
+func TestGatewaySessionResumptionRealAPI(t *testing.T) {
+	base := gatewayURL(t)
+	token := registerToken(t, base)
+
+	conn := dialWS(t, base, token)
+	if err := conn.WriteJSON(map[string]any{
+		"type": "setup",
+		"config": map[string]any{
+			"voice":    "Zephyr",
+			"language": "ko",
+		},
+	}); err != nil {
+		t.Fatalf("send initial setup: %v", err)
+	}
+	waitForSetupComplete(t, conn)
+
+	sendClientTextTurn(t, conn, "안녕, 세션 재개 테스트야.")
+	handle := waitForResumptionHandle(t, conn)
+	if err := conn.Close(); err != nil {
+		t.Fatalf("close initial websocket: %v", err)
+	}
+
+	resumed := dialWS(t, base, token)
+	defer resumed.Close()
+
+	if err := resumed.WriteJSON(map[string]any{
+		"type": "setup",
+		"config": map[string]any{
+			"voice":            "Zephyr",
+			"language":         "ko",
+			"resumptionHandle": handle,
+		},
+	}); err != nil {
+		t.Fatalf("send resumed setup: %v", err)
+	}
+	waitForSetupComplete(t, resumed)
+
+	sendClientTextTurn(t, resumed, "이전 대화가 이어지는지 확인해줘.")
+	nextHandle := waitForResumptionHandle(t, resumed)
+	if strings.TrimSpace(nextHandle) == "" {
+		t.Fatal("session resumed but did not receive a fresh resumption handle")
+	}
+}
+
+func waitForResumptionHandle(t *testing.T, conn *websocket.Conn) string {
+	t.Helper()
+
+	deadline := time.Now().Add(35 * time.Second)
+	_ = conn.SetReadDeadline(deadline)
+	for time.Now().Before(deadline) {
+		_, payload, err := conn.ReadMessage()
+		if err != nil {
+			if ne, ok := err.(interface{ Timeout() bool }); ok && ne.Timeout() {
+				break
+			}
+			t.Fatalf("read resumption handle: %v", err)
+		}
+
+		var msg map[string]any
+		if err := json.Unmarshal(payload, &msg); err != nil {
+			continue
+		}
+		if msg["type"] != "sessionResumptionUpdate" {
+			continue
+		}
+		handle, _ := msg["sessionHandle"].(string)
+		if strings.TrimSpace(handle) != "" {
+			return handle
+		}
+	}
+
+	t.Fatal("did not receive non-empty sessionResumptionUpdate")
+	return ""
+}
+
+func sendClientTextTurn(t *testing.T, conn *websocket.Conn, text string) {
+	t.Helper()
+
+	if err := conn.WriteJSON(map[string]any{
+		"type": "clientContent",
+		"clientContent": map[string]any{
+			"turnComplete": true,
+			"turns": []map[string]any{
+				{
+					"role": "user",
+					"parts": []map[string]string{
+						{"text": text},
+					},
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("send clientContent: %v", err)
 	}
 }
 
@@ -306,7 +526,7 @@ func TestMemorySessionSummaryRoundTripRealAPI(t *testing.T) {
 	if strings.TrimSpace(payload.Context) == "" {
 		t.Fatalf("memory context empty after save: %s", ctxBody)
 	}
-	for _, want := range []string{"Previous session", "Respond in Korean"} {
+	for _, want := range []string{"Recent developer context", "Respond in Korean"} {
 		if !strings.Contains(payload.Context, want) {
 			t.Fatalf("memory context missing %q: %s", want, payload.Context)
 		}

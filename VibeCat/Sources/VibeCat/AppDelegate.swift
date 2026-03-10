@@ -86,6 +86,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var spriteIdleTask: Task<Void, Never>?
     private var activeTraceContext: (flow: String, traceId: String)?
     private var traceReadyForClear = false
+    private var activeProcessingTraceID: String?
+    private var pendingBubbleMeta: String?
 
     private func activeTraceLogContext() -> String? {
         guard let activeTraceContext else { return nil }
@@ -96,6 +98,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard traceReadyForClear else { return }
         activeTraceContext = nil
         traceReadyForClear = false
+    }
+
+    private func normalizeToolName(_ raw: String) -> String {
+        switch raw.lowercased() {
+        case "google_search", "search":
+            return "Google Search"
+        case "maps":
+            return "Google Maps"
+        case "url_context":
+            return "URL Context"
+        case "code_execution":
+            return "Code Execution"
+        case "file_search":
+            return "File Search"
+        default:
+            return raw
+        }
+    }
+
+    private func makeBubbleMeta(tool: String, sourceCount: Int?) -> String? {
+        let normalizedTool = normalizeToolName(tool).trimmingCharacters(in: .whitespacesAndNewlines)
+        let parts = [
+            normalizedTool.isEmpty ? nil : normalizedTool,
+            sourceCount.map { "근거 \($0)개" }
+        ].compactMap { $0 }
+        guard !parts.isEmpty else { return nil }
+        return parts.joined(separator: " · ")
+    }
+
+    private func updatePendingBubbleMeta(tool: String, sourceCount: Int?) {
+        if let meta = makeBubbleMeta(tool: tool, sourceCount: sourceCount) {
+            pendingBubbleMeta = meta
+        }
+    }
+
+    private func clearPendingBubbleMeta() {
+        pendingBubbleMeta = nil
     }
 
     private func transitionSpeech(to newState: SpeechState) {
@@ -189,6 +228,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.activeTraceLogContext()
         }
         panel.onBubbleDidHide = { [weak self] in
+            self?.clearPendingBubbleMeta()
             self?.clearTraceIfReady()
         }
         panel.show()
@@ -197,7 +237,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         gateway.setSoul(initialPreset.soul)
 
         circleGestureDetector.onCircleGesture = { [weak self] in
-            self?.catPanel?.showBubble(text: "Analyzing...")
+            self?.catPanel?.showStatusBubble(text: "화면 읽는 중...", detail: "현재 창 분석 중")
             Task { @MainActor [weak self] in
                 await self?.screenAnalyzer?.forceAnalysis()
             }
@@ -207,6 +247,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         companionChatPanel.onTextSubmitted = { [weak self] text in
             guard let self else { return }
             self.chatModeActive = true
+            self.clearPendingBubbleMeta()
             self.companionChatPanel?.addUserMessage(text)
             self.companionChatPanel?.addLoadingPlaceholder()
             self.gatewayClient?.sendText(text)
@@ -217,7 +258,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         analyzer.onSpeechEvent = { [weak self, weak panel] event in
-            panel?.showBubble(text: event.text)
+            panel?.showSpeechBubble(text: event.text, meta: self?.pendingBubbleMeta)
             self?.recentSpeechStore.add(event.text, speaker: .assistant)
             self?.statusBarController?.recordInteraction()
         }
@@ -395,7 +436,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     if !displayText.isEmpty {
                         self.pendingTranscription += displayText
                         if !self.bubbleLockedByTTS {
-                            panel?.showBubble(text: self.pendingTranscription)
+                            panel?.showSpeechBubble(text: self.pendingTranscription, meta: self.pendingBubbleMeta)
                         }
                     }
                     if finished {
@@ -416,6 +457,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     if !self.speechState.isSpeaking {
                         self.transitionSpeech(to: .modelSpeaking(speechSource))
                     }
+                    self.activeProcessingTraceID = nil
                 default:
                     if self.speechState.isSpeaking {
                         self.beginSpeechCooldown()
@@ -428,16 +470,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 case "first_output_text", "turn_started":
                     self.activeTraceContext = (flow: flow, traceId: traceId)
                     self.traceReadyForClear = false
+                    if self.activeProcessingTraceID == traceId {
+                        self.activeProcessingTraceID = nil
+                    }
                 case "turn_complete", "turn_interrupted", "turn_failed":
                     if self.activeTraceContext?.traceId == traceId {
                         self.traceReadyForClear = true
                     }
+                    if self.activeProcessingTraceID == traceId {
+                        self.activeProcessingTraceID = nil
+                    }
                 default:
                     break
                 }
+            case .processingState(let flow, let traceId, let stage, let label, let detail, let tool, let sourceCount, let active):
+                NSLog("[GW-IN] onMessage: processingState, flow=%@, trace=%@, stage=%@, active=%d, detail=%@, tool=%@, sources=%@",
+                      flow, traceId, stage, active ? 1 : 0, detail, tool, sourceCount.map(String.init) ?? "-")
+                self.updatePendingBubbleMeta(tool: tool, sourceCount: sourceCount)
+                if active {
+                    self.activeProcessingTraceID = traceId
+                    if !self.chatModeActive && self.pendingTranscription.isEmpty && !self.speechState.isSpeaking {
+                        panel?.showStatusBubble(text: label, detail: detail.isEmpty ? self.makeBubbleMeta(tool: tool, sourceCount: sourceCount) : detail)
+                    }
+                } else if self.activeProcessingTraceID == traceId {
+                    self.activeProcessingTraceID = nil
+                    if self.pendingTranscription.isEmpty {
+                        panel?.hideStatusBubbleIfShowing()
+                    }
+                }
+            case .toolResult(let tool, _, _, let sources):
+                NSLog("[GW-IN] onMessage: toolResult, tool=%@, sources=%lu", tool, sources.count)
+                self.updatePendingBubbleMeta(tool: tool, sourceCount: sources.count)
             case .inputTranscription(let text, let finished):
                 NSLog("[GW-IN] onMessage: inputTranscription, text=%@, finished=%d", String(text.prefix(60)), finished)
                 if finished {
+                    self.activeProcessingTraceID = nil
+                    self.clearPendingBubbleMeta()
                     self.recentSpeechStore.add(text, speaker: .user)
                 }
             case .audio(let data):
@@ -451,11 +519,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if !self.pendingTranscription.isEmpty {
                     self.recentSpeechStore.add(self.pendingTranscription, speaker: .assistant)
                 }
+                self.activeProcessingTraceID = nil
                 self.pendingTranscription = ""
             case .interrupted:
                 NSLog("[GW-IN] onMessage: interrupted")
                 self.catVoice?.stop()
                 self.transitionSpeech(to: .idle)
+                self.activeProcessingTraceID = nil
+                self.clearPendingBubbleMeta()
                 self.pendingTranscription = ""
                 panel?.hideBubble()
             case .sessionResumptionUpdate(let handle):
@@ -463,11 +534,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .liveSessionReconnecting(let attempt, let max):
                 NSLog("[GW-IN] onMessage: liveSessionReconnecting, attempt=%d/%d", attempt, max)
                 self.statusBarController?.setLastErrorDescription("Live session reconnecting (\(attempt)/\(max))")
+                if !self.chatModeActive && self.pendingTranscription.isEmpty {
+                    panel?.showStatusBubble(text: "다시 연결 중...", detail: "Live 세션 복구 중")
+                }
             case .liveSessionReconnected:
                 NSLog("[GW-IN] onMessage: liveSessionReconnected")
                 self.statusBarController?.setLastErrorDescription(nil)
+                panel?.hideStatusBubbleIfShowing()
             case .setupComplete(let sessionId):
                 NSLog("[GW-IN] onMessage: setupComplete, sessionId=%@", sessionId)
+            case .goAway(let reason, let timeLeftMs):
+                NSLog("[GW-IN] onMessage: goAway, reason=%@, timeLeftMs=%d", reason, timeLeftMs)
+                if !self.chatModeActive && self.pendingTranscription.isEmpty {
+                    panel?.showStatusBubble(text: "다시 연결 중...", detail: "세션 재개 준비 중")
+                }
             case .pong:
                 NSLog("[GW-IN] onMessage: pong")
             case .ttsStart(let text):
@@ -568,7 +648,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             switch event.charactersIgnoringModifiers?.lowercased() {
             case "v":
-                catPanel?.showBubble(text: "Analyzing...")
+                catPanel?.showStatusBubble(text: "화면 읽는 중...", detail: "현재 창 분석 중")
                 Task { @MainActor [weak self] in
                     await self?.screenAnalyzer?.forceAnalysis()
                 }
