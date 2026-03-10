@@ -1,0 +1,713 @@
+- generic [ref=e3]:
+  - generic [ref=e5]:
+    - generic [ref=e7]:
+      - link "나이스디앤비" [ref=e8] [cursor=pointer]:
+        - /url: /
+        - img "나이스디앤비" [ref=e9]
+      - text: 
+      - list [ref=e11]:
+        - listitem [ref=e12]:
+          - link "회사소개" [ref=e13] [cursor=pointer]:
+            - /url: /cp/company02.do
+        - listitem [ref=e14]:
+          - link "투자정보" [ref=e15] [cursor=pointer]:
+            - /url: /im/investment08.do?cm_cd=9200
+        - listitem [ref=e16]:
+          - link "인재채용" [ref=e17] [cursor=pointer]:
+            - /url: /ep/employment04.do
+        - listitem [ref=e18]:
+          - link "고객센터" [ref=e19] [cursor=pointer]:
+            - /url: /cs/cs-center01-list.do?cm_cd=9100
+        - listitem [ref=e20]:
+          - link "QUICK LINK" [ref=e21] [cursor=pointer]:
+            - /url: "#"
+    - text:  
+  - generic [ref=e25]:
+    - generic [ref=e26]:
+      - img "글로벌 서비스 안내" [ref=e28]
+      - generic [ref=e31]:
+        - term [ref=e32]:
+          - paragraph [ref=e33]: 국내 유일의 Global Commercial Bureau
+          - heading "해외기업정보 서비스" [level=1] [ref=e34]
+        - definition [ref=e35]:
+          - strong [ref=e36]: 세계 최대 해외 기업 DB를 바탕으로
+          - text: 해외기업 신용조사(BIR), 국제사업자등록번호(D-U-N-S
+          - superscript [ref=e37]: ®
+          - text: Number),
+          - text: 기업정보 조회 솔루션(D&B Hoover’s, GRS), 금융컴플라이언스, API 서비스,
+          - text: 해외 협력사 평가(GSE), 국가분석(IPPR) 등의 서비스를 제공하고 있습니다.
+        - link "신청바로가기 " [ref=e38] [cursor=pointer]:
+          - /url: https://global.nicednb.com/
+          - text: 신청바로가기
+          - generic [ref=e39]: 
+      - link "" [ref=e40] [cursor=pointer]:
+        - /url: "${pageContext.request.contextPath}/sv/service08.do"
+        - generic [ref=e41]: 
+      - link "" [ref=e42] [cursor=pointer]:
+        - /url: "${pageContext.request.contextPath}/sv/service05.do"
+        - generic [ref=e43]: 
+    - generic [ref=e45]:
+      - generic:
+        - link "" [ref=e47] [cursor=pointer]:
+          - /url: /index_new.do
+          - generic [ref=e48]: 
+        - generic [ref=e50] [cursor=pointer]: 해외기업정보 서비스
+        - generic [ref=e52] [cursor=pointer]:
+          - text: 국제사업자등록번호 D-U-N-S
+          - superscript [ref=e53]: ®
+          - text: Number
+    - link "온라인 기업인증 서비스 안내 - D-U-N-S® Number (국제사업자번호, [던스넘버])" [ref=e56] [cursor=pointer]:
+      - /url: https://global.nicednb.com/servOtsInfo.do
+      - text: 온라인 기업인증 서비스 안내
+      - generic [ref=e57]:
+        - text: "- D-U-N-S"
+        - superscript [ref=e58]: ®
+        - text: Number (국제사업자번호, [던스넘버])
+    - generic [ref=e60]:
+      - generic [ref=e61]:
+        - strong [ref=e62]:
+          - text: D-U-N-S
+          - superscript [ref=e63]: ®
+          - text: Number
+        - text: (The Data Universal Numbering System)는 전 세계에서 통용되는 "국제사업자등록번호" 로서 외국정부기관 납품 또는 다국적 기업과의 거래 등 해외 진출을 추진하는 기업들에게 필수적인 글로벌 표준 기업식별코드입니다.
+        - text: NICE디앤비를 통해 발급받은 던스번호 및 그 인증서는 회사 홈페이지 및 이메일 등에 게시하실 수 있으며 미국연방정부, FDA, 글로벌 대기업 등에 기본 정보로 제출하는 등 온·오프라인에서 모두 활용하실 수 있습니다.
+      - heading "D-U-N-S® Number 절차" [level=3] [ref=e64]:
+        - text: D-U-N-S
+        - superscript [ref=e65]: ®
+        - text: Number 절차
+      - img "기술신용평가 안내" [ref=e67]
+      - heading "서비스 샘플" [level=3] [ref=e68]
+      - img "서비스 샘플" [ref=e71]
+    - 'link "자사 및 해외기업 신용조사 보고서 서비스 안내 - D&B BIR : Business Info. Report" [ref=e74] [cursor=pointer]':
+      - /url: https://global.nicednb.com/servBirInfo.do
+    - generic [ref=e76]:
+      - generic [ref=e77]:
+        - text: 전세계 200여개국에서 고객사의 의뢰기업을 조사하여 각종 기업정보 및 D&B신용평가등급과 함께 제공하는 기업조사보고서로 D&B보고서라고도 합니다. 세계에서 가장 많이 이용되는 기업평가보고서이며 180여년의 오랜 역사를 자랑합니다.
+        - text: D&B 글로벌 네트워크를 통해 세계 각국의 지사와 현지조사원이 의뢰기업을 조사하고 평가하며, 수집가능한 최신정보를 제공합니다.
+        - strong [ref=e78]: 기본형 보고서
+        - text: (Business Information Report)와
+        - strong [ref=e79]: 심화형 보고서
+        - text: (Comprehensive Report)의 두 가지 유형이 제공됩니다.
+      - heading "BIR 주요 제공 내용" [level=3] [ref=e80]
+      - table "BIR 주요 제공 내용" [ref=e82]:
+        - rowgroup [ref=e86]:
+          - row "제공정보 내용" [ref=e87]:
+            - columnheader "제공정보" [ref=e88]
+            - columnheader "내용" [ref=e89]
+        - rowgroup
+        - rowgroup [ref=e90]:
+          - row "Summary (요약) 사업정보, D-U-N-S® Number 등" [ref=e91]:
+            - rowheader "Summary (요약)" [ref=e92]:
+              - text: Summary
+              - text: (요약)
+            - cell "사업정보, D-U-N-S® Number 등" [ref=e93]:
+              - text: 사업정보, D-U-N-S
+              - superscript [ref=e94]: ®
+              - text: Number 등
+          - row "Rating Summary (등급) 신용등급 표기 및 해석" [ref=e95]:
+            - rowheader "Rating Summary (등급)" [ref=e96]:
+              - text: Rating Summary
+              - text: (등급)
+            - cell "신용등급 표기 및 해석" [ref=e97]
+          - row "Payment Summary (대금지불 성향 분석) - 지불성향,방법 등을 분석 - 대금결제 성향 파악" [ref=e98]:
+            - rowheader "Payment Summary (대금지불 성향 분석)" [ref=e99]:
+              - text: Payment Summary
+              - text: (대금지불 성향 분석)
+            - cell "- 지불성향,방법 등을 분석 - 대금결제 성향 파악" [ref=e100]:
+              - paragraph [ref=e101]: "- 지불성향,방법 등을 분석"
+              - paragraph [ref=e102]: "- 대금결제 성향 파악"
+          - row "Finance (재무제표) 재무관련자료" [ref=e103]:
+            - rowheader "Finance (재무제표)" [ref=e104]:
+              - text: Finance
+              - text: (재무제표)
+            - cell "재무관련자료" [ref=e105]
+          - row "Public Filing (공공기록) 소송, 재판, 파산신고 등" [ref=e106]:
+            - rowheader "Public Filing (공공기록)" [ref=e107]:
+              - text: Public Filing
+              - text: (공공기록)
+            - cell "소송, 재판, 파산신고 등" [ref=e108]
+          - row "Operation (운영) 지배구조, 영업상황 등" [ref=e109]:
+            - rowheader "Operation (운영)" [ref=e110]:
+              - text: Operation
+              - text: (운영)
+            - cell "지배구조, 영업상황 등" [ref=e111]
+      - img "자사 및 해외신용조사 보고서" [ref=e113]
+    - link "해외기업정보 실시간 조회 서비스 안내 - D&B Hoover's, GRS" [ref=e116] [cursor=pointer]:
+      - /url: https://global.nicednb.com/servHoovers.do
+    - generic [ref=e118]:
+      - heading "D&B Hoover's 안내 - 해외기업정보 실시간 조회" [level=1] [ref=e119]
+      - generic [ref=e120]:
+        - text: 세계 각국에서 현재 사업을 영위 중인
+        - strong [ref=e121]: 1억 7천만개 이상의 기업정보, 13백만명 이상의 인물정보, 각종 산업분석보고서, 경쟁사정보, 리스크지표, 주요뉴스 등
+        - text: 을 종합적으로 조회할 수 있는 기업정보 특화 검색 플랫폼입니다.
+        - text: Marketline을 포함한 글로벌 최고 수준의 연구보고서(Research Paper) 등을 추가 과금없이 무제한 열람할 수 있습니다. (*상위계정기준)
+      - generic [ref=e122]:
+        - generic [ref=e123]:
+          - heading "Company Records (기업정보)" [level=4] [ref=e124]
+          - table "Company Records 기업정보" [ref=e125]:
+            - rowgroup [ref=e129]:
+              - row "제공정보 평가서 목적" [ref=e130]:
+                - columnheader "제공정보" [ref=e131]
+                - columnheader "평가서 목적" [ref=e132]
+            - rowgroup
+            - rowgroup [ref=e133]:
+              - row "Full Overview 영위 업종, 시장상황, 기업현황, D-U-N-S® Number 등" [ref=e134]:
+                - rowheader "Full Overview" [ref=e135]
+                - cell "영위 업종, 시장상황, 기업현황, D-U-N-S® Number 등" [ref=e136]:
+                  - text: 영위 업종, 시장상황, 기업현황, D-U-N-S
+                  - superscript [ref=e137]: ®
+                  - text: Number 등
+              - row "History 기업 연혁" [ref=e138]:
+                - rowheader "History" [ref=e139]
+                - cell "기업 연혁" [ref=e140]
+              - row "Industry 산업분류표상 해당기업의 영역/전문가 산업전망" [ref=e141]:
+                - rowheader "Industry" [ref=e142]
+                - cell "산업분류표상 해당기업의 영역/전문가 산업전망" [ref=e143]
+              - row "Products Operation 상품별 매출/국가별 매출/취급 상품 리스트 등" [ref=e144]:
+                - rowheader "Products Operation" [ref=e145]
+                - cell "상품별 매출/국가별 매출/취급 상품 리스트 등" [ref=e146]
+              - row "Competitive Landscape 주요 경쟁사 재무제표 비교자료" [ref=e147]:
+                - rowheader "Competitive Landscape" [ref=e148]
+                - cell "주요 경쟁사 재무제표 비교자료" [ref=e149]
+              - row "People 대표자, 주요 임원의 인물 정보" [ref=e150]:
+                - rowheader "People" [ref=e151]
+                - cell "대표자, 주요 임원의 인물 정보" [ref=e152]
+              - row "News 해당 기업의 미디어자료" [ref=e153]:
+                - rowheader "News" [ref=e154]
+                - cell "해당 기업의 미디어자료" [ref=e155]
+              - row "Financial 재무자료/주가/재무분석/투자의견/기업, 산업, 시장비교 등" [ref=e156]:
+                - rowheader "Financial" [ref=e157]
+                - cell "재무자료/주가/재무분석/투자의견/기업, 산업, 시장비교 등" [ref=e158]
+        - generic [ref=e159]:
+          - heading "Industry Records (산업분석정보)" [level=4] [ref=e160]
+          - table "Industry Records 산업분석정보" [ref=e161]:
+            - rowgroup [ref=e165]:
+              - row "제공정보 평가서 목적" [ref=e166]:
+                - columnheader "제공정보" [ref=e167]
+                - columnheader "평가서 목적" [ref=e168]
+            - rowgroup
+            - rowgroup [ref=e169]:
+              - row "Overview 산업현황, 경쟁업체, 수익성 등 분석 자료" [ref=e170]:
+                - rowheader "Overview" [ref=e171]
+                - cell "산업현황, 경쟁업체, 수익성 등 분석 자료" [ref=e172]
+              - row "Selected Company 해당 산업 관련 주요 기업 리스트 정보 제공" [ref=e173]:
+                - rowheader "Selected Company" [ref=e174]
+                - cell "해당 산업 관련 주요 기업 리스트 정보 제공" [ref=e175]
+              - row "Industry Watch 전문가 산업 분석 자료 (인터뷰 동영상)" [ref=e176]:
+                - rowheader "Industry Watch" [ref=e177]
+                - cell "전문가 산업 분석 자료 (인터뷰 동영상)" [ref=e178]
+              - row "News / Web Resources 미디어와 웹 상에 나타난 관련 산업 기사 자료" [ref=e179]:
+                - rowheader "News / Web Resources" [ref=e180]
+                - cell "미디어와 웹 상에 나타난 관련 산업 기사 자료" [ref=e181]
+              - row "Related Industries 관련 산업 리스트" [ref=e182]:
+                - rowheader "Related Industries" [ref=e183]
+                - cell "관련 산업 리스트" [ref=e184]
+        - generic [ref=e185]:
+          - heading "Company Records (기업정보)" [level=4] [ref=e186]
+          - table "People 인물정보" [ref=e187]:
+            - rowgroup
+            - rowgroup
+            - rowgroup [ref=e188]:
+              - row "연봉, 소속 기업, 업력, Biography 관련 자료" [ref=e189]:
+                - cell "연봉, 소속 기업, 업력, Biography 관련 자료" [ref=e190]
+        - generic [ref=e191]:
+          - heading "News (미디어정보)" [level=4] [ref=e192]
+          - table "News 미디어정보" [ref=e193]:
+            - rowgroup
+            - rowgroup
+            - rowgroup [ref=e194]:
+              - row "대상 기업에 대한 전 세계 미디어 자료" [ref=e195]:
+                - cell "대상 기업에 대한 전 세계 미디어 자료" [ref=e196]
+    - generic [ref=e198]:
+      - heading "GRS 안내 - Global Reference Solution" [level=1] [ref=e199]
+      - generic [ref=e200]: D&B가 보유하고 있는 전 세계 4억여 개 이상의 기업정보를 국가, 산업, 대표자명, 전화번호 등 다양한 기준으로 검색 및 조회 할 수 있으며, 기업정보와 기업관계도 등을 확인할 수 있습니다.
+      - generic [ref=e201]:
+        - list [ref=e203]:
+          - listitem [ref=e204]:
+            - paragraph [ref=e205]: 1. 전 세계 4억여 개 기업정보 즉시 & 무제한 조회가능
+          - listitem [ref=e206]:
+            - paragraph [ref=e207]: 2. 개요정보를 통한 간편검색, 상세정보를 이용한 조건검색 가능
+          - listitem [ref=e208]:
+            - paragraph [ref=e209]: 3. Family Tree를 통해 해당기업의 전세계 모회사-자회사 관계 파악 가능
+        - img "유럽 내 종업원 수가 200명 이상이면서 매출 $100,000 이상인 자동차 부품 제조사" [ref=e212]
+        - img "구성도" [ref=e214]
+    - 'link "Compliance(AML : 자금세탁방지) 서비스 안내 - GBO·UBO, Onboard" [ref=e217] [cursor=pointer]':
+      - /url: https://global.nicednb.com/servCompliance.do
+    - generic [ref=e219]:
+      - heading "자금세탁방지제도(Anti-Money Laundering, AML)와 D&B 서비스" [level=1] [ref=e220]
+      - generic [ref=e221]:
+        - text: NICE D&B는 전세계 200여개국 4억개 이상 기업정보를 고유의 식별코드(DUNS Number)로 구분하여 관리하고 있으며,
+        - text: 기업의 개요정보(Company Profile), 실제소유자 정보(D&B Beneficial Ownership), 제재정보 (Sanction List) 등을 DATA 및 Solution의 형태로 제공하고 있습니다.
+        - text: NICE D&B는 이러한 서비스를 통해 고객이 다양한 규제준수(Compliance)를 이행하고 시스템적인 대응안을 마련할 수 있도록 돕고 있습니다.
+      - heading "Data 서비스 - 실제소유자정보(GBO·UBO)" [level=2] [ref=e222]
+      - generic [ref=e223]:
+        - text: NICE D&B는 D&B Beneficial Ownership을 바탕으로 한 실제 소유자 정보를 제공하고 있습니다.
+        - text: 이를 통해 거래대상 기업의 실체를 신속하게 확인 할 수 있고 심도있는 의사결정을 진행할 수 있습니다.
+      - heading "실제 소유자 정보의 파악은," [level=3] [ref=e224]
+      - generic [ref=e226]:
+        - list [ref=e228]:
+          - listitem [ref=e229]: 기업의 직/간접적 소유자 정보에 대해 명확하고 빠르게 이해하도록 합니다.
+          - listitem [ref=e230]: 거래 기업의 복잡한 지배구조를 이해할 수 있게 합니다.
+          - listitem [ref=e231]: 글로벌 비즈니스 환경에 정확하고 효율적으로 대처할 수 있도록 도와줍니다.
+          - listitem [ref=e232]: 뇌물 수수 / 부패 방지, 테러에 대한 자금 조달, AML, 제재 및 기타 규정 등
+          - listitem [ref=e233]: 컴플라이언스(Compliance) 관련 위험요인을 최소화 합니다.
+          - listitem [ref=e234]: 거래 기업을 선별하는데 있어 보다 빠르게 의사를 결정할 수 있습니다.
+        - generic [ref=e235]:
+          - generic [ref=e236]:
+            - term [ref=e237]:
+              - img "리스크 완화" [ref=e238]
+            - definition [ref=e239]: 리스크 완화
+          - generic [ref=e240]:
+            - term [ref=e241]:
+              - img "업무의 가속화" [ref=e242]
+            - definition [ref=e243]: 업무의 가속화
+      - heading "Solution 서비스 - D&B Onboard" [level=2] [ref=e244]
+      - generic [ref=e245]:
+        - text: 갈수록 까다로워지는 국제 금융·경제 제재 환경 속에서 규제준수 및 리스크관리를 위한 컴플라이언스(Compliance) 솔루션을 제공합니다.
+        - text: D&B WWN이 구축한 세계 최대 커버리지의 고품질 기업정보를 기반으로 만들어진 ‘온보드(Onboard)’는 실제소유주 및 지배구조 확인을 지원하고, 스크리닝(Sanction, PEP, Adverse Media)을 제공하여 보다 포괄적인 리스크 관리를 지원합니다.
+      - heading "D&B Onboard?" [level=3] [ref=e246]
+      - generic [ref=e248]:
+        - generic [ref=e249]:
+          - generic [ref=e250]: 한눈에 파악할 수 있는 소유자 현황
+          - list [ref=e251]:
+            - listitem [ref=e252]: 1억개 이상 주주정보를 기반으로 구성된 실제 소유자 수, 소유비율, 관계기업수, 소유자형태 등의 현황 제공
+          - generic [ref=e253]: OFAC 및 미국·유럽 등 대표 Sanction List 스크리닝
+          - list [ref=e254]:
+            - listitem [ref=e255]:
+              - text: 미국 정부, 영국 정부 및 유럽 국가들의 정부 지정 제재 리스트
+              - list [ref=e256]:
+                - listitem [ref=e257]: UN SECURITY COUNCIL SANCTIONS COMMITTEE (UN 안전보장이사회)
+                - listitem [ref=e258]: FOREIGN AFFAIRS AND INTERNATIONAL TRADE CANADA (캐나다 외교통상부)
+                - listitem [ref=e259]: UK FOREIGN & COMMONWEALTH OFFICE (영국 외무부)
+                - listitem [ref=e260]: AUSTRALIAN DEPARTMENT OF FOREIGN AFFAIRS AND TRADE (호주 외교통상부)
+                - listitem [ref=e261]: To EU CONSOLIDATED SANCTIONS (유럽 연합 통합)
+                - listitem [ref=e262]: HM TREASURY (영국 재무부)
+                - listitem [ref=e263]: US Department of State (미국 국무부)
+            - listitem [ref=e264]:
+              - text: PEP List (정치적 주요인물, Politically Exposed Persons)
+              - list [ref=e265]:
+                - listitem [ref=e266]: 범죄자 및 범죄자 특수관계인 등
+                - listitem [ref=e267]: 각 국가 고위 공무원, 군인, 사법부, 선출직 공무원, 정치인 포함 등
+          - generic [ref=e268]: 전세계 Sanction List 및 Adverse Media 통합 스크리닝
+          - list [ref=e269]:
+            - listitem [ref=e270]: 600백만개 글로벌 불량 미디어 정보 보유 (Adverse Media)
+            - listitem [ref=e271]: 50만개 이상의 제재 대상 기업 정보 및 10만개 이상 데이터 소스
+            - listitem [ref=e272]: 과거 15년 이상의 시계열 정보 보유
+            - listitem [ref=e273]: 총 240여개국 커버리지
+        - img "D&B Onboard" [ref=e276]
+    - link "API 서비스 안내 - Direct+" [ref=e279] [cursor=pointer]:
+      - /url: https://global.nicednb.com/servAPI.do
+    - generic [ref=e281]:
+      - heading "D&B API 서비스 - Direct+" [level=1] [ref=e282]
+      - generic [ref=e283]:
+        - text: NICE디앤비가 D&B WWN과 함께 구축한 세계 최대 규모의 기업정보를 Open API로 제공합니다.
+        - text: Open API상품인 Direct Plus를 통해 각 사업환경에 맞는 거래처정보관리, 공급망관리, 위험관리 시스템 구축이 가능합니다.
+        - text: 항시 일정주기로 업데이트 되는 최신정보를 기반으로 국제화, 선진화된 사업 환경에 필요한 위험관리, 고객확인, 금융규제대응 등의 솔루션을 자유롭게 설계할 수 있습니다.
+      - heading "Direct+?" [level=3] [ref=e284]
+      - generic [ref=e287]:
+        - generic [ref=e288]:
+          - paragraph [ref=e290]:
+            - img "MATCH" [ref=e291]
+          - term [ref=e292]: SEARCH & MATCH API
+          - definition [ref=e293]:
+            - list [ref=e294]:
+              - listitem [ref=e295]: DB정비 및 최적검색
+              - listitem [ref=e296]: 조건검색
+              - listitem [ref=e297]: 자동완성검색
+              - listitem [ref=e298]: 신규조사
+        - paragraph
+        - generic [ref=e299]:
+          - paragraph [ref=e301]:
+            - img "DATA Enrich" [ref=e302]
+          - term [ref=e303]: DATA API
+          - definition [ref=e304]:
+            - list [ref=e305]:
+              - listitem [ref=e306]: 200여개국 4억개 이상의 기업정보
+              - listitem [ref=e307]: 개요정보
+              - listitem [ref=e308]: 등급정보
+              - listitem [ref=e309]: 재무정보
+              - listitem [ref=e310]: 주주정보 외 다수
+        - paragraph
+        - generic [ref=e311]:
+          - paragraph [ref=e313]:
+            - img "Monitor" [ref=e314]
+          - term [ref=e315]: MONITORING
+          - definition [ref=e316]:
+            - list [ref=e317]:
+              - listitem [ref=e318]: 평균 500만개의 기업데이터 매일 업데이트
+              - listitem [ref=e319]: 업데이트 된 정보는 실시간으로 DB연동 가능
+      - heading "서비스 제공항목" [level=3] [ref=e320]
+      - table "서비스 제공항목" [ref=e321]:
+        - rowgroup [ref=e325]:
+          - row "주요 항목 설명" [ref=e326]:
+            - columnheader "주요 항목" [ref=e327]
+            - columnheader "설명" [ref=e328]
+        - rowgroup
+        - rowgroup [ref=e329]:
+          - row "기업개요 4억건 이상 해외기업 개요정보" [ref=e330]:
+            - rowheader "기업개요" [ref=e331]
+            - cell "4억건 이상 해외기업 개요정보" [ref=e332]
+          - row "재무정보 기업의 상세 재무정보" [ref=e333]:
+            - rowheader "재무정보" [ref=e334]
+            - cell "기업의 상세 재무정보" [ref=e335]
+          - row "패밀리트리 기업 가계도 정보" [ref=e336]:
+            - rowheader "패밀리트리" [ref=e337]
+            - cell "기업 가계도 정보" [ref=e338]
+          - row "실제소유자 지분, 경영지배권 등을 고려한 실제소유자정보" [ref=e339]:
+            - rowheader "실제소유자" [ref=e340]
+            - cell "지분, 경영지배권 등을 고려한 실제소유자정보" [ref=e341]
+          - row "등급정보 거래신용 판단을 지원하는 등급정보" [ref=e342]:
+            - rowheader "등급정보" [ref=e343]
+            - cell "거래신용 판단을 지원하는 등급정보" [ref=e344]
+          - row "HQ(구매결정권자) 구매결정권을 갖는 계열사 정보" [ref=e345]:
+            - rowheader "HQ(구매결정권자)" [ref=e346]
+            - cell "구매결정권을 갖는 계열사 정보" [ref=e347]
+          - row "실제소유자/소유관계도 실제소유자와의 관계 도식화" [ref=e348]:
+            - rowheader "실제소유자/소유관계도" [ref=e349]
+            - cell "실제소유자와의 관계 도식화" [ref=e350]
+          - row "소액주주정보 50% 미만 지분 소유권자 정보" [ref=e351]:
+            - rowheader "소액주주정보" [ref=e352]
+            - cell "50% 미만 지분 소유권자 정보" [ref=e353]
+          - row "다우존스 워치리스트 테러, 자금세탁방지 위한 스크리닝(Screening) 정보" [ref=e354]:
+            - rowheader "다우존스 워치리스트" [ref=e355]
+            - cell "테러, 자금세탁방지 위한 스크리닝(Screening) 정보" [ref=e356]
+          - row "상세정보 컴플라이언스(Compliance)를 위한 상세 정보" [ref=e357]:
+            - rowheader "상세정보" [ref=e358]
+            - cell "컴플라이언스(Compliance)를 위한 상세 정보" [ref=e359]
+          - row "지배기업정보 모회사 및 본사 정보" [ref=e360]:
+            - rowheader "지배기업정보" [ref=e361]
+            - cell "모회사 및 본사 정보" [ref=e362]
+          - row "데이터블록 원하는 정보만을 선택하여 API 구성" [ref=e363]:
+            - rowheader "데이터블록" [ref=e364]
+            - cell "원하는 정보만을 선택하여 API 구성" [ref=e365]
+    - link "정부지원 사업 안내 - 데이터 및 수출바우처" [ref=e368] [cursor=pointer]:
+      - /url: https://global.nicednb.com/servEtc.do
+    - generic [ref=e370]:
+      - generic [ref=e371]:
+        - text: 국내 다수의 정부부처는 중소벤처기업, 소기업, 1인창조기업, 수출기업 등 국내 기업에게 다양한 형태로 사업을 지원하고 있습니다.
+        - text: NICE D&B는 이러한 정부지원사업의 공식수행기관으로 등록되어 있으며, 고객이 정부지원사업을 통해 낮은 비용 부담으로 서비스를 이용 할 수 있도록 안내하고 있습니다.
+      - heading "수출 바우처" [level=3] [ref=e372]
+      - list [ref=e374]:
+        - listitem [ref=e375]: 기업이 자사의 수출역량에 맞는 수출지원사업을 자유롭게 선택하여 효과적으로 사업을 진행하도록 돕는 정부지원사업
+        - listitem [ref=e376]: 신청기업에 바우처를 부여하고, 바우처를 받은 기업은 다양한 수출 활동에서 필요한 서비스와 서비스 수행기간을 직접 선택하여 수출 마케팅을 진행하는 방식
+        - listitem [ref=e377]: 바우처 지원을 통해 크게 낮아진 비용 부담으로 나이스디앤비가 제공하는 서비스를 이용 가능
+        - listitem [ref=e378]:
+          - text: "나이스디앤비 지원 서비스 : D-U-N-S"
+          - superscript [ref=e379]: ®
+          - text: Number 발급/ 해외기업 신용조사/ 해외바이어 조회 솔루션/ 해외시장조사(일반)/ 해외시장조사(심층)/ 바이어 리스트 제공
+      - heading "데이터 바우처" [level=3] [ref=e380]
+      - list [ref=e382]:
+        - listitem [ref=e383]: 데이터 활용이 꼭 필요한 중소기업을 대상으로 기존 데이터 활용의 애로 사항이었던 데이터 구매, 가공에 소용되는 비용을 중소·벤처기업, 소상공인 및 1인 창조기업을 대상으로 지원하는 사업
+        - listitem [ref=e384]: 바우처 지원을 통해 낮아진 비용 부담으로 나이스디앤비가 제공하는 서비스를 이용 가능
+        - listitem [ref=e385]: "나이스디앤비 지원 서비스 : 데이터 정비서비스 (DR:Data Rationalization) /해외기업조회서비스 (D&B Hoovers)/ 해외기업 개요정보 제공"
+    - link "해외기업 DATA 서비스 안내 - DATA제공 및 DB구축, DB정비" [ref=e388] [cursor=pointer]:
+      - /url: https://global.nicednb.com/servData.do
+    - generic [ref=e390]:
+      - generic [ref=e391]:
+        - strong [ref=e392]: "해외기업 DATA제공 및 DB구축 :"
+        - text: D&B가 보유/관리하고 있는 4억 개 기업정보를 이용하여 귀사가 필요로 하는 정보를 제공하거나, DB구축을 지원합니다.
+      - generic [ref=e394]:
+        - img "DATA" [ref=e396]
+        - img "DATA" [ref=e398]
+        - img "DATA" [ref=e400]
+    - generic [ref=e402]:
+      - generic [ref=e403]:
+        - strong [ref=e404]: "해외기업 DB 정비 (DR : Data Rationalization) :"
+        - text: GRS는 D&B가 보유한 3.4억 개 기업정보를 조회할 수 있는 전세계 최대 기업정보 조회 서비스입니다.
+      - generic [ref=e405]:
+        - img "db" [ref=e408]
+        - generic [ref=e410]:
+          - text: "데이터 정비(DR : Data Rationalization)란 기업이 보유한 해외기업 Database에 D&B가 보유하고 있는 최신 기업정보를 부가하여"
+          - paragraph [ref=e411]: 1. 중복 등록된 업체정보를 합철하고
+          - paragraph [ref=e412]: 2. 잘못된 정보를 최신 정보로 업데이트하고
+          - paragraph [ref=e413]: 3. 기업이 속한 집단의 기업관계도를 구축하여
+          - text: 데이터베이스의 정확성과 활용성을 높이는 서비스를 말합니다.
+      - generic [ref=e414]:
+        - heading "DATA 중복 제거 및 합철" [level=3] [ref=e415]
+        - generic [ref=e416]:
+          - text: 귀사의 해외기업 DB에는 동일한 기업이 여러 번 중복 등록되어 있을 가능성이 높습니다.
+          - text: D-U-N-S
+          - superscript [ref=e417]: ®
+          - text: Number 매칭을 통해 중복 등록된 기업을 표준 기업정보로 합철하여 DB정확성, 활용성을 높일 수 있습니다.
+        - img "db" [ref=e419]
+      - generic [ref=e420]:
+        - heading "오래된 정보 및 잘못된 정보의 수정 & 정보 추가" [level=3] [ref=e421]
+        - generic [ref=e422]:
+          - text: DB구축 후 시간이 지남에 따라 다수의 기업정보의 정확도가 떨어질 수 있습니다.
+          - text: D&B가 보유/관리하고 있는 3.4억개 DB(매일 100만개 이상의 기업정보가 업데이트)를 활용한 정비를 통해 최신정보, 올바른 정보로의 업데이트가 가능합니다.
+        - img "db" [ref=e424]
+      - generic [ref=e425]:
+        - heading "계열관계 파악을 통한 통합 마케팅 및 통합 RISK 관리" [level=3] [ref=e426]
+        - generic [ref=e427]:
+          - text: 보유하고 계신 정보 내 기업별 계열관계 파악이 쉽지 않다면, DR을 통해 계열관계를 산출할 수 있습니다.
+          - text: D&B는 전세계 기업정보의 계열관계를 산출하여 관리하고 있으며, 귀사의 DB가 계열관계를 포함하게 된다면 통합 마케팅 활동을 수행할 수 있습니다.
+          - text: 또한 특정 거래처에 대한 위험 발생 시 해당 거래처가 속한 기업집단에 대해 선제적인 통합 RISK관리를 실현하실 수 있습니다.
+          - text: (e.g. 부실 해외거래처 발생 시, 해당기업의 모회사, 관계사에 대한 주의를 통해 리스크를 감소시킬 수 있습니다.)
+        - generic [ref=e428]:
+          - generic [ref=e429]:
+            - term [ref=e430]:
+              - img "GRS" [ref=e431]
+            - definition [ref=e432]:
+              - text: 각 기업의
+              - text: 관계파악이 어려움
+          - img "right arrow feat.GRS" [ref=e434]
+          - generic [ref=e435]:
+            - term [ref=e436]:
+              - img "GRS" [ref=e437]
+            - definition [ref=e438]: Family Tree 파악
+          - img "right arrow" [ref=e440]
+          - generic [ref=e441]:
+            - term [ref=e442]:
+              - img "GRS" [ref=e443]
+            - definition [ref=e444]:
+              - text: 계열사 위험발생시
+              - text: 빠른 조치 가능
+    - generic [ref=e446]: 수출 지원 서비스 안내 - 산업, 시장, 기업분석 수출지원 서비스
+    - generic [ref=e448]:
+      - heading "서비스 개요" [level=3] [ref=e449]
+      - generic [ref=e450]:
+        - term [ref=e452]: 국내기업의 해외시장 진출 및 수출 확대
+        - img "서비스 개요" [ref=e454]
+        - generic [ref=e455]:
+          - generic [ref=e456]:
+            - img [ref=e457]
+            - term [ref=e458]: 세계 최대의 글로벌 네트워크
+            - definition [ref=e459]: 200개국 4억 개 기업정보
+          - generic [ref=e460]:
+            - img [ref=e461]
+            - term [ref=e462]: 산업, 시장, 기업분석 역량
+            - definition [ref=e463]: 자체 글로벌 리서치 조직 보유
+          - generic [ref=e464]:
+            - img [ref=e465]
+            - term [ref=e466]: 중소기업 수출지원 노하우
+            - definition [ref=e467]: 수출유관기관 수출지원사업 수행
+      - heading "서비스 특징" [level=3] [ref=e468]
+      - generic [ref=e469]:
+        - generic [ref=e470]:
+          - term [ref=e471]: 글로벌 e-마켓플레이스 tradeKorea.com(무역협회), gobizKorea(중진공)를 통한 제품홍보
+          - definition [ref=e472]: 연 평균 812만 명 방문 및 64,000여 건의 인콰이어리가 접수되고 있는 무역거래 B2B 사이트인 tradeKorea.com 및 gobizKorea.or.kr에 자사제품을 등록하여, 전 세계 해외 바이어를 대상으로 수출상품을 홍보합니다.
+        - generic [ref=e473]:
+          - term [ref=e474]: 바이어 거래 매칭
+          - definition [ref=e475]: 다양한 채널(전시회/마케팅 오피스/웹사이트 등)을 통하여 거래를 요청받는 세계 각국 바이어들의 인콰이어리를 토대로, 그에 적합한 국내업체와의 거래를 알선 합니다.
+        - generic [ref=e476]:
+          - term [ref=e477]: 빅바이어 상시 거래 알선 서비스
+          - definition [ref=e478]: 나이스디앤비와 수출 유관기관들이 보유한 바이어 DB를 활용하여, 특정 바이어를 대상으로 한 타겟 마케팅을 지원합니다.
+        - generic [ref=e479]:
+          - term [ref=e480]: 바이어 DB 타겟 마케팅
+          - definition [ref=e481]: 해외전시회에 수출 유관기관의 부스를 운영하여 유망 수출 기업의 제품 샘플을 직접 전시하고, 이를 통해 해외 바이어 발굴 및 제품홍보를 지원합니다.
+        - generic [ref=e482]:
+          - term [ref=e483]: 주요 카테고리 전시회 - 샘플 전시 대행지원
+          - definition [ref=e484]: 해외전시회에 수출유관 기관의 부스를 운영하여 유망 수출 기업의 제품 샘플을 대행하여 전시하고, 이를 통해 해외 바이어 발굴 및 제품홍보를 지원합니다.
+        - generic [ref=e485]:
+          - term [ref=e486]: VIB(Visiting Buyer) 매칭 서비스
+          - definition [ref=e487]: 한국 제품 구매 의사가 있는 해외 바이어의 소싱 품목 관련하여 사전에 해당 바이어와 협의하고, 이후 바이어가 한국 방문 시 관심 업체와의 미팅 주선 및 공장 방문 등을 지원합니다.
+    - generic [ref=e489]: 해외시장조사 서비스 안내 - 해외 시장 조사/분석 정보 제공 서비스
+    - generic [ref=e491]:
+      - heading "서비스 개요" [level=3] [ref=e492]
+      - generic [ref=e493]:
+        - text: 세계 최대의 글로벌 네트워크, 산업·시장·기업 분석 노하우를 갖춘 당사 조사 전문 인력 및 제휴 전문가 풀을 활용해 수출 기업 의 글로벌 시장 진출에 필요한
+        - strong [ref=e494]: 해외 시장 조사/분석 정보 등을 제공함으로써 시장 개척 및 확대를 지원
+        - text: 합니다.
+      - heading "서비스 내용" [level=3] [ref=e495]
+      - table "서비스 내용" [ref=e496]:
+        - rowgroup [ref=e500]:
+          - row "항목 정보" [ref=e501]:
+            - columnheader "항목" [ref=e502]
+            - columnheader "정보" [ref=e503]
+        - rowgroup
+        - rowgroup [ref=e504]:
+          - row "국가 정보 국가 개요, 위험등급 및 전망, 거시경제 및 무역통상 환경, 경제 지표 등" [ref=e505]:
+            - rowheader "국가 정보" [ref=e506]
+            - cell "국가 개요, 위험등급 및 전망, 거시경제 및 무역통상 환경, 경제 지표 등" [ref=e507]
+          - row "시장 규모 및 전망 산업 분석, 시장 규모 및 전망, 수출입 통계 등" [ref=e508]:
+            - rowheader "시장 규모 및 전망" [ref=e509]
+            - cell "산업 분석, 시장 규모 및 전망, 수출입 통계 등" [ref=e510]
+          - row "시장 트렌드 정책 동향 및 이슈, 제품 트렌드, 소비 경향, 유통 트렌드, 소비자 인터뷰 등" [ref=e511]:
+            - rowheader "시장 트렌드" [ref=e512]
+            - cell "정책 동향 및 이슈, 제품 트렌드, 소비 경향, 유통 트렌드, 소비자 인터뷰 등" [ref=e513]
+          - row "경쟁 현황 온/ 오프라인 경쟁 제품 정보, 경쟁 기업 정보 등" [ref=e514]:
+            - rowheader "경쟁 현황" [ref=e515]
+            - cell "온/ 오프라인 경쟁 제품 정보, 경쟁 기업 정보 등" [ref=e516]
+          - row "유통채널 유통구조, 유통채널별 점유율, 개별 유통채널 분석, 입점 담당자 인터뷰 등" [ref=e517]:
+            - rowheader "유통채널" [ref=e518]
+            - cell "유통구조, 유통채널별 점유율, 개별 유통채널 분석, 입점 담당자 인터뷰 등" [ref=e519]
+          - row "통관 및 제도 통관 및 검역, 관세율, HS CODE, FTA, 라벨링, 인증 등" [ref=e520]:
+            - rowheader "통관 및 제도" [ref=e521]
+            - cell "통관 및 검역, 관세율, HS CODE, FTA, 라벨링, 인증 등" [ref=e522]
+          - row "전문가 인터뷰 학계, 연구원, 업계 관계자 등과의 FGI 수행" [ref=e523]:
+            - rowheader "전문가 인터뷰" [ref=e524]
+            - cell "학계, 연구원, 업계 관계자 등과의 FGI 수행" [ref=e525]
+          - row "수출 제언 타깃 시장 진출 전략 제시" [ref=e526]:
+            - rowheader "수출 제언" [ref=e527]
+            - cell "타깃 시장 진출 전략 제시" [ref=e528]
+      - heading "보고서 샘플" [level=3] [ref=e529]
+      - generic [ref=e530]:
+        - generic [ref=e531]:
+          - paragraph [ref=e532]: 시장 현황
+          - img "보고서 1" [ref=e533]
+        - generic [ref=e534]:
+          - paragraph [ref=e535]: 기업 분석
+          - img "보고서 2" [ref=e536]
+        - generic [ref=e537]:
+          - paragraph [ref=e538]: 경쟁 제품
+          - img "보고서 3" [ref=e539]
+    - link "기타 서비스 서비스 안내 - 국가정보 서비스 & 수출역량강화사업 서비스" [ref=e542] [cursor=pointer]:
+      - /url: https://global.nicednb.com/servEtc.do
+    - generic [ref=e544]:
+      - heading "국가정보 서비스" [level=3] [ref=e545]
+      - generic [ref=e546]:
+        - generic [ref=e548]:
+          - heading "D&B IRPR" [level=4] [ref=e549]
+          - list [ref=e550]:
+            - listitem [ref=e551]: International Risk & Payment Review
+            - listitem [ref=e552]: 무역거래에서 발생할 수 있는 국가별 위험요소를 분석하여 국가별 위험도를 제공하는 국가 분석정보입니다.
+            - listitem [ref=e553]: "대상국가 : 전세계 130여개 국가 (신청 전 문의)"
+            - listitem [ref=e554]: "제공방식 : 책자(우편으로 발송)"
+            - listitem [ref=e555]: "제공가격 : 300만원/연 (월1회 총 12권)"
+          - paragraph [ref=e556]:
+            - link " 샘플보기" [ref=e557] [cursor=pointer]:
+              - /url: https://global.nicednb.com/cmp_doc/DNB%20IRPR_Myanmar.pdf
+              - generic [ref=e558]: 
+              - text: 샘플보기
+        - generic [ref=e560]:
+          - heading "D&B Country Report" [level=4] [ref=e561]
+          - list [ref=e562]:
+            - listitem [ref=e563]: 한 국가에 대한 정치, 경제, 사회, 문화 등 전반적인 내용을 기재한 전문 국가 평가 보고서
+            - listitem [ref=e564]: 해당 국가에 대한 다양하고 심도있는 조사와 평가로 향후 전망을 제시하며, 해당국가의 시장판도 이해와 전술 및 마케팅 등에 중요한 정보로 활용될 수 있습니다.
+            - listitem [ref=e565]: "제공가격 : 60만원(1회 제공)"
+          - paragraph [ref=e566]:
+            - link " 샘플보기" [ref=e567] [cursor=pointer]:
+              - /url: https://global.nicednb.com/cmp_doc/DNB%20Country%20Report_Myanmar.pdf
+              - generic [ref=e568]: 
+              - text: 샘플보기
+      - generic [ref=e569]:
+        - link " 서비스 상세보기" [ref=e570] [cursor=pointer]:
+          - /url: https://global.nicednb.com/servOtsInfo.do
+          - generic [ref=e571]: 
+          - text: 서비스 상세보기
+        - link " 서비스 신청하기" [ref=e572] [cursor=pointer]:
+          - /url: https://global.nicednb.com/servOtsApply01.do
+          - generic [ref=e573]: 
+          - text: 서비스 신청하기
+  - generic [ref=e574]:
+    - generic [ref=e575]:
+      - generic [ref=e577]:
+        - term [ref=e578]:
+          - text: "NICE디앤비 대표전화 :"
+          - paragraph [ref=e579]: 02-2122-2500
+        - definition [ref=e580]: "고객센터 전화문의 : 평일 9:00~18:00 / 점심시간 12:00~13:00 (토, 일 및 법정 공휴일 휴무)"
+      - generic [ref=e581]:
+        - generic [ref=e582]:
+          - generic "새창으로 보기" [ref=e583] [cursor=pointer]:
+            - term [ref=e584]: 공공기관 제출용 기업평가
+            - definition [ref=e585]:
+              - paragraph [ref=e586]: 02-2122-2308
+              - text: www.nicers.co.kr
+          - generic "새창으로 보기" [ref=e587] [cursor=pointer]:
+            - term [ref=e588]: 민간기업 제출용 기업평가
+            - definition [ref=e589]:
+              - paragraph [ref=e590]: 02-2122-2550
+              - text: www.nicers.co.kr
+          - generic "새창으로 보기" [ref=e591] [cursor=pointer]:
+            - term [ref=e592]: ESG평가
+            - definition [ref=e593]:
+              - paragraph [ref=e594]: 02-2122-2337
+              - text: www.nicers.co.kr
+          - generic "새창으로 보기" [ref=e595] [cursor=pointer]:
+            - term [ref=e596]: 기술신용평가(TCB)
+            - definition [ref=e597]:
+              - paragraph [ref=e598]: 02-2122-1300
+              - text: www.gotcb.co.kr
+          - generic "새창으로 보기" [ref=e599] [cursor=pointer]:
+            - term [ref=e600]: 해외기업정보
+            - definition [ref=e601]:
+              - paragraph [ref=e602]: 02-2122-2515
+              - text: global.nicednb.com
+          - generic "새창으로 보기" [ref=e603] [cursor=pointer]:
+            - term [ref=e604]: 국내기업정보
+            - definition [ref=e605]:
+              - paragraph [ref=e606]: 02-2122-2536
+              - text: www.creport.co.kr
+          - generic [ref=e607] [cursor=pointer]:
+            - term [ref=e608]: 데이터가치평가/ 컨설팅
+            - definition [ref=e609]:
+              - paragraph [ref=e610]: 02-2122-2546
+          - generic [ref=e611] [cursor=pointer]:
+            - term [ref=e612]: 데이터 바우처
+            - definition [ref=e613]:
+              - paragraph [ref=e614]: 02-2122-2522
+              - text: www.kdata.or.kr
+        - list [ref=e616]:
+          - listitem [ref=e617]:
+            - link "개인정보처리방침" [ref=e618] [cursor=pointer]:
+              - /url: /cs/cs-center03-pp.do
+          - listitem [ref=e619]:
+            - link "윤리강령" [ref=e620] [cursor=pointer]:
+              - /url: /cs/cs-center03-coe.do
+          - listitem [ref=e621]:
+            - link "신용정보활용체제공시" [ref=e622] [cursor=pointer]:
+              - /url: /cs/cs-center03-ci.do
+          - listitem [ref=e623]:
+            - link "신용등급체계공시" [ref=e624] [cursor=pointer]:
+              - /url: /file/cmp_grd.pdf
+          - listitem [ref=e625]:
+            - link "개인사업자 신용등급체계공시" [ref=e626] [cursor=pointer]:
+              - /url: /file/cmp_grd2.pdf
+          - listitem [ref=e627]:
+            - link "공정거래자율준수" [ref=e628] [cursor=pointer]:
+              - /url: /cs/cs-center04.do
+          - listitem [ref=e629]:
+            - link "이메일무단수집거부" [ref=e630] [cursor=pointer]:
+              - /url: /cs/cs-center03-ec.do
+          - listitem [ref=e631]:
+            - link "전자민원센터" [ref=e632] [cursor=pointer]:
+              - /url: /cs/cs-center05-1.do
+          - listitem [ref=e633]:
+            - link "사이트맵" [ref=e634] [cursor=pointer]:
+              - /url: /site_map.do
+        - generic [ref=e636]:
+          - paragraph [ref=e637]:
+            - strong [ref=e638]: ㈜NICE디앤비
+          - paragraph [ref=e639]:
+            - strong [ref=e640]: "주소 :"
+            - text: (04535) 서울특별시 중구 소공로70, 포스트타워 B동 16층 ㈜NICE디앤비
+          - paragraph [ref=e641]:
+            - strong [ref=e642]: "통신판매업신고 :"
+            - text: 제2024-서울중구-1736호
+          - paragraph [ref=e643]:
+            - strong [ref=e644]: "사업자등록번호 :"
+            - text: 107-86-24874
+          - paragraph [ref=e645]:
+            - strong [ref=e646]: "FAX :"
+            - text: 02-2122-2543
+          - paragraph [ref=e647]:
+            - strong [ref=e648]: COPYRIGHT © 2019 NICE D&B Co.,Ltd. ALL RIGHTS RESERVED.
+        - combobox "FAMILY SITE" [ref=e650]:
+          - option "FAMILY SITE" [selected]
+          - option "NICE 홀딩스"
+          - option "NICE D&R"
+          - option "NICE평가정보"
+          - option "NICE신용평가"
+          - option "NICE신용정보"
+          - option "NICE피앤아이"
+          - option "NICE에프앤아이"
+          - option "NICE지니데이타"
+          - option "한국전자금융"
+          - option "NICE정보통신"
+          - option "KIS정보통신"
+          - option "NICE씨엠에스"
+          - option "오케이포스"
+          - option "서울전자통신"
+          - option "아이티엠반도체"
+          - option "지니틱스"
+          - option "LMS"
+          - option "BBS"
+          - option "닥터스텍"
+          - option "버드뷰"
+        - generic [ref=e651]:
+          - img "ISMS인증획득" [ref=e653]
+          - generic [ref=e654]:
+            - text: "[인증범위] 기업신용정보 서비스 등 전 사업부문"
+            - text: "[유효기간] 2025년 11월 28일 ~ 2028년 11월 27일"
+          - img [ref=e656]
+    - text: 

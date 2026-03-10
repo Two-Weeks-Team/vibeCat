@@ -1,0 +1,145 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - banner [ref=e4]:
+      - generic [ref=e5]:
+        - alert [ref=e9]:
+          - button "Close" [ref=e10] [cursor=pointer]:
+            - generic [ref=e11]: ×
+            - generic [ref=e12]: Close
+          - generic [ref=e13]:
+            - img "filtered alert info" [ref=e15]
+            - table [ref=e19]:
+              - rowgroup [ref=e20]:
+                - row "Welcome to the improved Digital Service Center!" [ref=e21]:
+                  - columnheader "Welcome to the improved Digital Service Center!" [ref=e22]
+                  - columnheader [ref=e23]
+              - rowgroup [ref=e24]:
+                - row "We've introduced a new AI feature - ChatD&B for Customer Service - to make getting help even easier." [ref=e25]:
+                  - cell "We've introduced a new AI feature - ChatD&B for Customer Service - to make getting help even easier." [ref=e26]
+                - row "To use it, simply log in or create an account." [ref=e27]:
+                  - cell "To use it, simply log in or create an account." [ref=e28]:
+                    - listitem [ref=e29]: To use it, simply log in or create an account.
+                - row "Just select the blue box that best matches the reason for your visit, then click Log In to get started." [ref=e30]:
+                  - cell "Just select the blue box that best matches the reason for your visit, then click Log In to get started." [ref=e31]:
+                    - listitem [ref=e32]: Just select the blue box that best matches the reason for your visit, then click Log In to get started.
+              - rowgroup [ref=e33]:
+                - row "Thanks for visiting - we're glad you're here!" [ref=e34]:
+                  - cell "Thanks for visiting - we're glad you're here!" [ref=e35]
+                  - cell [ref=e36]
+        - generic [ref=e37]:
+          - navigation [ref=e39]:
+            - link "Dun & Bradstreet full logo" [ref=e40] [cursor=pointer]:
+              - /url: https://www.dnb.com/
+              - img "Dun & Bradstreet full logo" [ref=e41]
+          - button "filtered alert info 2" [ref=e44] [cursor=pointer]:
+            - img "filtered alert info" [ref=e45]
+            - generic [ref=e46]: "2"
+    - generic [ref=e47]:
+      - img "D&B loading indicator" [ref=e51]
+      - generic [ref=e52]:
+        - generic [ref=e54]:
+          - heading "Welcome to the Digital Service Center for U.S. Support" [level=1] [ref=e55]
+          - heading "Please choose one of the below services:" [level=5] [ref=e56]
+        - generic [ref=e58]:
+          - button "duns-enquiry-icon Update Data On Your Own Company" [ref=e60] [cursor=pointer]:
+            - img "duns-enquiry-icon" [ref=e62]
+            - generic [ref=e63]: Update Data On Your Own Company
+          - button "duns-enquiry-icon Start An Investigation On Another Company" [ref=e65] [cursor=pointer]:
+            - img "duns-enquiry-icon" [ref=e67]
+            - generic [ref=e68]: Start An Investigation On Another Company
+          - button "duns-enquiry-icon Help With Your D&B Product Or Subscription" [ref=e70] [cursor=pointer]:
+            - img "duns-enquiry-icon" [ref=e72]
+            - generic [ref=e73]: Help With Your D&B Product Or Subscription
+        - generic [ref=e75]:
+          - paragraph [ref=e76]:
+            - img "duns-lookup-icon" [ref=e77]
+            - text: For Global Customer Support (Not a Subscriber on a U.S.-Based Contract)
+          - link "Click Here, opens in a new window" [ref=e80] [cursor=pointer]:
+            - /url: https://www.dnb.com/en-us/about/choose-your-country.html
+            - text: Click Here
+    - contentinfo [ref=e81]:
+      - generic [ref=e82]:
+        - generic [ref=e86]:
+          - generic [ref=e87]: Helpful Links
+          - generic [ref=e88]:
+            - link "Home (DNB.Com Home Page), opens in a new window" [ref=e90] [cursor=pointer]:
+              - /url: https://www.dnb.com/en-us/
+              - text: Home (DNB.Com Home Page)
+              - img "update" [ref=e91]
+            - link "Trade Data FAQ, opens in a new window" [ref=e93] [cursor=pointer]:
+              - /url: https://www.dnb.com/content/dam/english/company/Trade_Data_FAQ.pdf
+              - text: Trade Data FAQ
+              - img "update" [ref=e94]
+            - link "DUNS Number Questions, opens in a new window" [ref=e96] [cursor=pointer]:
+              - /url: https://www.dnb.com/en-us/smb/duns.html
+              - text: DUNS Number Questions
+              - img "update" [ref=e97]
+            - link "D-U-N-S Manager, opens in a new window" [ref=e99] [cursor=pointer]:
+              - /url: https://www.dnb.com/en-us/smb/duns/get-a-duns.html
+              - text: D-U-N-S Manager
+              - img "update" [ref=e100]
+            - link "D-U-N-S LookUp Tool, opens in a new window" [ref=e102] [cursor=pointer]:
+              - /url: https://www.dnb.com/duns-number/lookup.html
+              - text: D-U-N-S LookUp Tool
+              - img "update" [ref=e103]
+            - link "Dun & Bradstreet Small Business Hub, opens in a new window" [ref=e105] [cursor=pointer]:
+              - /url: https://www.dnb.com/en-us/smb/business-credit.html
+              - text: Dun & Bradstreet Small Business Hub
+              - img "update" [ref=e106]
+            - link "Apple Developer D-U-N-S Support, opens in a new window" [ref=e108] [cursor=pointer]:
+              - /url: https://developer.apple.com/help/account/membership/D-U-N-S/
+              - text: Apple Developer D-U-N-S Support
+              - img "update" [ref=e109]
+            - link "Government D-U-N-S, opens in a new window" [ref=e111] [cursor=pointer]:
+              - /url: https://www.dnb.com/en-us/smb/duns/duns-number-and-government.html
+              - text: Government D-U-N-S
+              - img "update" [ref=e112]
+            - link "International & World Wide Network Sites, opens in a new window" [ref=e114] [cursor=pointer]:
+              - /url: https://www.dnb.com/en-us/about/choose-your-country.html
+              - text: International & World Wide Network Sites
+              - img "update" [ref=e115]
+            - link "Operational Status Page, opens in a new window" [ref=e117] [cursor=pointer]:
+              - /url: https://status.dnb.com/
+              - text: Operational Status Page
+              - img "update" [ref=e118]
+            - link "DUNS Number Myths, opens in a new window" [ref=e120] [cursor=pointer]:
+              - /url: https://www.dnb.com/en-us/smb/duns/duns-number-myths.html
+              - text: DUNS Number Myths
+              - img "update" [ref=e121]
+            - link "D&B Customer Community, opens in a new window" [ref=e123] [cursor=pointer]:
+              - /url: https://community.dnb.com/
+              - text: D&B Customer Community
+              - img "update" [ref=e124]
+        - navigation [ref=e126]:
+          - generic [ref=e127]:
+            - generic [ref=e128]:
+              - text: "United States : English"
+              - generic [ref=e129]:
+                - text: ©
+                - link "Dun & Bradstreet, Inc., opens in a new window" [ref=e130] [cursor=pointer]:
+                  - /url: https://www.dnb.com/
+                  - text: Dun & Bradstreet, Inc.
+                - text: 2000-2026. All rights reserved.
+            - generic [ref=e132]:
+              - link "Privacy Policy, opens in a new window" [ref=e133] [cursor=pointer]:
+                - /url: https://www.dnb.com/utility-pages/privacy-policy.html
+                - text: Privacy Policy |
+              - link "Terms of Use, opens in a new window" [ref=e134] [cursor=pointer]:
+                - /url: https://www.dnb.com/utility-pages/terms-of-use.html
+                - text: Terms of Use
+  - generic:
+    - link "Cookie Preferences" [ref=e136] [cursor=pointer]
+    - dialog "Cookie Consent Banner" [ref=e137]:
+      - generic [ref=e138]:
+        - img "company logo" [ref=e141]
+        - generic [ref=e142]:
+          - heading "WE VALUE YOUR PRIVACY" [level=2] [ref=e144]
+          - generic [ref=e145]:
+            - text: This website uses 'required' cookies to work properly as well as other cookies to provide a better experience, analyze site usage and for marketing purposes. Click on 'Agree and Proceed' to accept all, 'Required Only' to turn off all but required cookies, or 'Manage Choices'. This website offers chat functionality to answer questions and provide support. Enabling and using the chat functionality requires accepting ‘Chat’ cookies. To enable and accept the ‘Chat’ cookies choose ‘Manage Choices’ enable 'Chat' and 'Submit All Preferences'. For further information on how Dun & Bradstreet uses your personal information, please see our
+            - link "Cookie Policy" [ref=e146] [cursor=pointer]:
+              - /url: https://www.dnb.com/content/dam/english/dnb-solutions/DnB_Cookie_Policy_Statement_Version.pdf
+            - text: .
+        - generic [ref=e148]:
+          - button "Manage Choices" [ref=e149] [cursor=pointer]
+          - button "Agree & Proceed" [ref=e150] [cursor=pointer]
+          - button "Required Only" [ref=e151] [cursor=pointer]

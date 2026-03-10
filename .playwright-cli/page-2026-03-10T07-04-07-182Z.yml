@@ -1,0 +1,345 @@
+- generic [ref=e3]:
+  - generic [ref=e5]:
+    - generic [ref=e7]:
+      - link "나이스디앤비" [ref=e8] [cursor=pointer]:
+        - /url: /
+        - img "나이스디앤비" [ref=e9]
+      - text: 
+      - list [ref=e11]:
+        - listitem [ref=e12]:
+          - link "회사소개" [ref=e13] [cursor=pointer]:
+            - /url: /cp/company02.do
+        - listitem [ref=e14]:
+          - link "투자정보" [ref=e15] [cursor=pointer]:
+            - /url: /im/investment08.do?cm_cd=9200
+        - listitem [ref=e16]:
+          - link "인재채용" [ref=e17] [cursor=pointer]:
+            - /url: /ep/employment04.do
+        - listitem [ref=e18]:
+          - link "고객센터" [ref=e19] [cursor=pointer]:
+            - /url: /cs/cs-center01-list.do?cm_cd=9100
+        - listitem [ref=e20]:
+          - link "QUICK LINK" [ref=e21] [cursor=pointer]:
+            - /url: "#"
+    - text:  
+  - generic [ref=e25]:
+    - generic [ref=e26]:
+      - list [ref=e27]:
+        - listitem [ref=e28]:
+          - generic [ref=e29]:
+            - term [ref=e30]: NICE RS
+            - definition [ref=e31]: 나이스디앤비는 국내 1위
+            - definition [ref=e32]: 기업신용평가 전문 기관으로서
+            - definition [ref=e33]: 신속하고 정확한 평가 서비스를 제공합니다.
+            - definition [ref=e34]:
+              - link "자세히 보기" [ref=e35] [cursor=pointer]:
+                - /url: https://ppsrating.nicednb.com
+        - listitem [ref=e36]:
+          - generic [ref=e37]:
+            - term [ref=e38]: GO TCB
+            - definition [ref=e39]: 나이스디앤비는
+            - definition [ref=e40]: 전문화, 차별화된평가로
+            - definition [ref=e41]: 고객의 미래를 함께 그립니다
+            - definition [ref=e42]:
+              - link "자세히 보기" [ref=e43] [cursor=pointer]:
+                - /url: http://www.gotcb.co.kr
+        - listitem [ref=e44]:
+          - generic [ref=e45]:
+            - term [ref=e46]: CREPORT
+            - definition [ref=e47]: 나이스디앤비는
+            - definition [ref=e48]: 최신, 최대의정보를 통해
+            - definition [ref=e49]: 고객의 더 나은 의사결정을 이끕니다
+            - definition [ref=e50]:
+              - link "자세히 보기" [ref=e51] [cursor=pointer]:
+                - /url: https://www.creport.co.kr
+        - listitem [ref=e52]:
+          - generic [ref=e53]:
+            - term [ref=e54]: GLOBAL
+            - definition [ref=e55]: 나이스디앤비는
+            - definition [ref=e56]: 글로벌 최고 수준의서비스로
+            - definition [ref=e57]: 고객의 해외진출을 지원합니다
+            - definition [ref=e58]:
+              - link "자세히 보기" [ref=e59] [cursor=pointer]:
+                - /url: https://global.nicednb.com
+      - list [ref=e60]:
+        - listitem [ref=e61]:
+          - button [ref=e62] [cursor=pointer]
+        - listitem [ref=e63]:
+          - button [ref=e64] [cursor=pointer]
+        - listitem [ref=e65]:
+          - button [ref=e66] [cursor=pointer]
+        - listitem [ref=e67]:
+          - button [ref=e68] [cursor=pointer]
+        - listitem [ref=e69]:
+          - button [ref=e70] [cursor=pointer]
+    - generic [ref=e71]:
+      - generic [ref=e73]:
+        - generic [ref=e75]: BUSINESS & SERVICE
+        - generic [ref=e76]:
+          - generic [ref=e77]:
+            - generic [ref=e78]:
+              - term [ref=e79]:
+                - text: 공공기관
+                - text: 입찰용 기업평가
+              - definition [ref=e80]:
+                - text: 국내최초로 공공기관입찰용 평가 업무를 시작하여
+                - strong [ref=e81]: 평가 실적 1위 업체(조달청 검증)
+                - text: 로그 공신력을 인정받고 있습니다.
+              - definition [ref=e82]:
+                - button "" [ref=e83] [cursor=pointer]:
+                  - generic [ref=e84]: 
+                - button "" [ref=e85] [cursor=pointer]:
+                  - generic [ref=e86]: 
+            - generic [ref=e87]:
+              - term [ref=e88]:
+                - text: 민간기업
+                - text: 제출용 기업평가
+              - definition [ref=e89]: 협력기업의 전문적인 신용분석 및 경영상태 평가를 지원하는 서비스로, 구매기업/건설 원청사 협력업체 등록 및 유지, 입찰 심사 시 활용됩니다.
+              - definition [ref=e90]:
+                - button "" [ref=e91] [cursor=pointer]:
+                  - generic [ref=e92]: 
+                - button "" [ref=e93] [cursor=pointer]:
+                  - generic [ref=e94]: 
+            - generic [ref=e95]:
+              - term [ref=e96]: ESG평가
+              - definition [ref=e97]: ESG 평가는 기업활동에 있어 환경(Environment), 사회(Social), 지배구조(Governance) 와 같은 비재무적인 요소를 고려하여 기업의 지속가능성을 평가하고 진단하는 서비스입니다.
+              - definition [ref=e98]:
+                - button "" [ref=e99] [cursor=pointer]:
+                  - generic [ref=e100]: 
+                - button "" [ref=e101] [cursor=pointer]:
+                  - generic [ref=e102]: 
+            - generic [ref=e103]:
+              - term [ref=e104]: 기술신용평가(TCB)
+              - definition [ref=e105]: 기술경쟁력이 우수한 기업에게 전문 심사자와 고도화된 기술평가 인프라를 바탕으로 기술신용평가를 제공합니다.
+              - definition [ref=e106]:
+                - button "" [ref=e107] [cursor=pointer]:
+                  - generic [ref=e108]: 
+                - button "" [ref=e109] [cursor=pointer]:
+                  - generic [ref=e110]: 
+            - generic [ref=e111]:
+              - term [ref=e112]: 해외기업정보 서비스
+              - definition [ref=e113]: 해외기업 신용조사(BIR), 국제사업자등록번호(D-U-N-S® Number), 기업정보 조회 솔루션(D&B Hoover's, GRS), 해외 협력사 평가(GSE), 국가분석(IPPR)등의 서비스를 제공합니다.
+              - definition [ref=e114]:
+                - button "" [ref=e115] [cursor=pointer]:
+                  - generic [ref=e116]: 
+                - button "" [ref=e117] [cursor=pointer]:
+                  - generic [ref=e118]: 
+            - generic [ref=e119]:
+              - term [ref=e120]: 국내기업정보
+              - definition [ref=e121]: 정보조회, 데이터 컨설팅,정보 구매 등의 서비스를 제공합니다.
+              - definition [ref=e122]:
+                - button "" [ref=e123] [cursor=pointer]:
+                  - generic [ref=e124]: 
+                - button "" [ref=e125] [cursor=pointer]:
+                  - generic [ref=e126]: 
+            - generic [ref=e127]:
+              - term [ref=e128]:
+                - text: 데이터가치평가/
+                - text: 컨설팅
+              - definition [ref=e129]: 금융기관의 여신 및 리스크 관리 분야에서 폭 넓은 솔루션과 컨설팅 노하우로 고객 맞춤형 컨설팅 서비스를 제공합니다.
+              - definition [ref=e130]:
+                - button "" [ref=e131] [cursor=pointer]:
+                  - generic [ref=e132]: 
+                - button "" [ref=e133] [cursor=pointer]:
+                  - generic [ref=e134]: 
+            - generic [ref=e135]:
+              - term [ref=e136]: 데이터 바우처
+              - definition [ref=e137]: 과학기술정보통신부가 주관하고 한국데이터산업진흥원이 전담하여 DATA 구매 및 가공에 수요는 있으나 비용적인 문제로 어려움을 겪는 수요기업을 지원하는 서비스를 제공합니다.
+              - definition [ref=e138]:
+                - button "" [ref=e139] [cursor=pointer]:
+                  - generic [ref=e140]: 
+                - button "" [ref=e141] [cursor=pointer]:
+                  - generic [ref=e142]: 
+          - generic [ref=e143]:
+            - generic [ref=e144]:
+              - term [ref=e145]:
+                - text: 공공기관
+                - text: 입찰용 기업평가
+              - definition [ref=e146]:
+                - link "자세히 보기" [ref=e147] [cursor=pointer]:
+                  - /url: https://ppsrating.nicednb.com
+                - img [ref=e148]
+            - generic [ref=e149]:
+              - term [ref=e150]:
+                - text: 민간기업
+                - text: 제출용 기업평가
+              - definition [ref=e151]
+            - generic [ref=e152]:
+              - term [ref=e153]: ESG평가
+              - definition [ref=e154]
+            - generic [ref=e155]:
+              - term [ref=e156]: 기술신용평가(TCB)
+              - definition [ref=e157]
+            - generic [ref=e158]:
+              - term [ref=e159]: 해외기업정보
+              - definition [ref=e160]
+            - generic [ref=e161]:
+              - term [ref=e162]: 국내기업정보
+              - definition [ref=e163]
+            - generic [ref=e164]:
+              - term [ref=e165]: 데이터가치평가/컨설팅
+              - definition [ref=e166]:
+                - generic [ref=e167]:
+                  - generic [ref=e168]: 
+                  - generic [ref=e169]: +82-2-2122-2546
+                - generic [ref=e170]:
+                  - generic [ref=e171]: ✉
+                  - generic [ref=e172]: kangd@nicednb.com
+              - definition [ref=e173]
+            - generic [ref=e174]:
+              - term [ref=e175]: 데이터 바우처
+              - definition [ref=e176]
+      - generic [ref=e177]:
+        - generic [ref=e179]: NEWS
+        - list [ref=e180]:
+          - listitem [ref=e181]:
+            - link "나이스디앤비, 2025년 산업맞춤형 혁신바우처 지원 사업 우수상 수상" [ref=e182] [cursor=pointer]:
+              - /url: https://www.mirae.news/news/articleView.html?idxno=8097
+              - paragraph [ref=e183]: 나이스디앤비, 2025년 산업맞춤형 혁신바우처 지원 사업 우수상 수상
+          - listitem [ref=e184]:
+            - link "나이스디앤비, &#39;코스닥 우수 전문평가기관&#39;으로 선정" [ref=e185] [cursor=pointer]:
+              - /url: https://www.sedaily.com/NewsView/2H1K9RD4E2
+              - paragraph [ref=e186]: 나이스디앤비, &#39;코스닥 우수 전문평가기관&#39;으로 선정
+          - listitem [ref=e187]:
+            - link "나이스디앤비, ㈜링스업과 사업활성화를 위한 전략적 MOU 체결" [ref=e188] [cursor=pointer]:
+              - /url: https://magazine.hankyung.com/business/article/202503116858b
+              - paragraph [ref=e189]: 나이스디앤비, ㈜링스업과 사업활성화를 위한 전략적 MOU 체결
+          - listitem [ref=e190]:
+            - link "NICE디앤비, 이즈피엠피와 MICE참여기업에 글로벌 기업정보 제공" [ref=e191] [cursor=pointer]:
+              - /url: https://news.mt.co.kr/mtview.php?no=2024122316330884383
+              - paragraph [ref=e192]: NICE디앤비, 이즈피엠피와 MICE참여기업에 글로벌 기업정보 제공
+          - listitem [ref=e193]:
+            - link "나이스디앤비 2024 대한민국 IT서비스 혁신대상 전자신문사장상 수상" [ref=e194] [cursor=pointer]:
+              - /url: https://www.etnews.com/20241113000114
+              - paragraph [ref=e195]: 나이스디앤비 2024 대한민국 IT서비스 혁신대상 전자신문사장상 수상
+        - link "+ 더보기" [ref=e197] [cursor=pointer]:
+          - /url: /im/investment08.do?cm_cd=9200
+    - generic [ref=e200]:
+      - generic [ref=e202]: RECRUIT
+      - generic [ref=e204]:
+        - term [ref=e205]: NICE디앤비는 도전정신과 열정을 가진 여러분을 기다립니다.
+        - definition [ref=e206]:
+          - link "채용 바로가기" [ref=e207] [cursor=pointer]:
+            - /url: https://nice.career.greetinghr.com
+  - generic [ref=e208]:
+    - generic [ref=e209]:
+      - generic [ref=e211]:
+        - term [ref=e212]:
+          - text: "NICE디앤비 대표전화 :"
+          - paragraph [ref=e213]: 02-2122-2500
+        - definition [ref=e214]: "고객센터 전화문의 : 평일 9:00~18:00 / 점심시간 12:00~13:00 (토, 일 및 법정 공휴일 휴무)"
+      - generic [ref=e215]:
+        - generic [ref=e216]:
+          - generic "새창으로 보기" [ref=e217] [cursor=pointer]:
+            - term [ref=e218]: 공공기관 제출용 기업평가
+            - definition [ref=e219]:
+              - paragraph [ref=e220]: 02-2122-2308
+              - text: www.nicers.co.kr
+          - generic "새창으로 보기" [ref=e221] [cursor=pointer]:
+            - term [ref=e222]: 민간기업 제출용 기업평가
+            - definition [ref=e223]:
+              - paragraph [ref=e224]: 02-2122-2550
+              - text: www.nicers.co.kr
+          - generic "새창으로 보기" [ref=e225] [cursor=pointer]:
+            - term [ref=e226]: ESG평가
+            - definition [ref=e227]:
+              - paragraph [ref=e228]: 02-2122-2337
+              - text: www.nicers.co.kr
+          - generic "새창으로 보기" [ref=e229] [cursor=pointer]:
+            - term [ref=e230]: 기술신용평가(TCB)
+            - definition [ref=e231]:
+              - paragraph [ref=e232]: 02-2122-1300
+              - text: www.gotcb.co.kr
+          - generic "새창으로 보기" [ref=e233] [cursor=pointer]:
+            - term [ref=e234]: 해외기업정보
+            - definition [ref=e235]:
+              - paragraph [ref=e236]: 02-2122-2515
+              - text: global.nicednb.com
+          - generic "새창으로 보기" [ref=e237] [cursor=pointer]:
+            - term [ref=e238]: 국내기업정보
+            - definition [ref=e239]:
+              - paragraph [ref=e240]: 02-2122-2536
+              - text: www.creport.co.kr
+          - generic [ref=e241] [cursor=pointer]:
+            - term [ref=e242]: 데이터가치평가/ 컨설팅
+            - definition [ref=e243]:
+              - paragraph [ref=e244]: 02-2122-2546
+          - generic [ref=e245] [cursor=pointer]:
+            - term [ref=e246]: 데이터 바우처
+            - definition [ref=e247]:
+              - paragraph [ref=e248]: 02-2122-2522
+              - text: www.kdata.or.kr
+        - list [ref=e250]:
+          - listitem [ref=e251]:
+            - link "개인정보처리방침" [ref=e252] [cursor=pointer]:
+              - /url: /cs/cs-center03-pp.do
+          - listitem [ref=e253]:
+            - link "윤리강령" [ref=e254] [cursor=pointer]:
+              - /url: /cs/cs-center03-coe.do
+          - listitem [ref=e255]:
+            - link "신용정보활용체제공시" [ref=e256] [cursor=pointer]:
+              - /url: /cs/cs-center03-ci.do
+          - listitem [ref=e257]:
+            - link "신용등급체계공시" [ref=e258] [cursor=pointer]:
+              - /url: /file/cmp_grd.pdf
+          - listitem [ref=e259]:
+            - link "개인사업자 신용등급체계공시" [ref=e260] [cursor=pointer]:
+              - /url: /file/cmp_grd2.pdf
+          - listitem [ref=e261]:
+            - link "공정거래자율준수" [ref=e262] [cursor=pointer]:
+              - /url: /cs/cs-center04.do
+          - listitem [ref=e263]:
+            - link "이메일무단수집거부" [ref=e264] [cursor=pointer]:
+              - /url: /cs/cs-center03-ec.do
+          - listitem [ref=e265]:
+            - link "전자민원센터" [ref=e266] [cursor=pointer]:
+              - /url: /cs/cs-center05-1.do
+          - listitem [ref=e267]:
+            - link "사이트맵" [ref=e268] [cursor=pointer]:
+              - /url: /site_map.do
+        - generic [ref=e270]:
+          - paragraph [ref=e271]:
+            - strong [ref=e272]: ㈜NICE디앤비
+          - paragraph [ref=e273]:
+            - strong [ref=e274]: "주소 :"
+            - text: (04535) 서울특별시 중구 소공로70, 포스트타워 B동 16층 ㈜NICE디앤비
+          - paragraph [ref=e275]:
+            - strong [ref=e276]: "통신판매업신고 :"
+            - text: 제2024-서울중구-1736호
+          - paragraph [ref=e277]:
+            - strong [ref=e278]: "사업자등록번호 :"
+            - text: 107-86-24874
+          - paragraph [ref=e279]:
+            - strong [ref=e280]: "FAX :"
+            - text: 02-2122-2543
+          - paragraph [ref=e281]:
+            - strong [ref=e282]: COPYRIGHT © 2019 NICE D&B Co.,Ltd. ALL RIGHTS RESERVED.
+        - combobox "FAMILY SITE" [ref=e284]:
+          - option "FAMILY SITE" [selected]
+          - option "NICE 홀딩스"
+          - option "NICE D&R"
+          - option "NICE평가정보"
+          - option "NICE신용평가"
+          - option "NICE신용정보"
+          - option "NICE피앤아이"
+          - option "NICE에프앤아이"
+          - option "NICE지니데이타"
+          - option "한국전자금융"
+          - option "NICE정보통신"
+          - option "KIS정보통신"
+          - option "NICE씨엠에스"
+          - option "오케이포스"
+          - option "서울전자통신"
+          - option "아이티엠반도체"
+          - option "지니틱스"
+          - option "LMS"
+          - option "BBS"
+          - option "닥터스텍"
+          - option "버드뷰"
+        - generic [ref=e285]:
+          - img "ISMS인증획득" [ref=e287]
+          - generic [ref=e288]:
+            - text: "[인증범위] 기업신용정보 서비스 등 전 사업부문"
+            - text: "[유효기간] 2025년 11월 28일 ~ 2028년 11월 27일"
+          - img [ref=e290]
+    - text: 

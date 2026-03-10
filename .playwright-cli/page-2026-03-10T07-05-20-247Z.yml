@@ -1,0 +1,186 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - link "NICE D&B" [ref=e6] [cursor=pointer]:
+        - /url: /
+        - img "NICE D&B" [ref=e7]
+      - navigation [ref=e8]:
+        - list [ref=e9]:
+          - listitem [ref=e10]:
+            - generic [ref=e11] [cursor=pointer]: 서비스 소개
+          - listitem [ref=e12]:
+            - link "서비스 신청" [ref=e13] [cursor=pointer]:
+              - /url: /apply-main
+          - listitem [ref=e14]:
+            - generic [ref=e15] [cursor=pointer]: 고객센터
+      - generic [ref=e17]:
+        - link "회원가입" [ref=e18] [cursor=pointer]:
+          - /url: /join
+        - link "로그인" [ref=e19] [cursor=pointer]:
+          - /url: /login
+  - generic [ref=e20]:
+    - generic [ref=e21]:
+      - generic [ref=e22]:
+        - link "로그인" [ref=e23] [cursor=pointer]:
+          - /url: /login
+        - link "회원가입" [ref=e24] [cursor=pointer]:
+          - /url: /join
+      - button "사이드바 닫기" [ref=e25] [cursor=pointer]:
+        - img "사이드바 닫기" [ref=e26]
+    - list [ref=e28]:
+      - listitem [ref=e29]:
+        - generic [ref=e30] [cursor=pointer]:
+          - text: 서비스 소개
+          - img "열기" [ref=e32]
+      - listitem [ref=e33]:
+        - link "서비스 신청" [ref=e34] [cursor=pointer]:
+          - /url: /apply-main
+      - listitem [ref=e35]:
+        - generic [ref=e36] [cursor=pointer]:
+          - text: 고객센터
+          - img "열기" [ref=e38]
+  - main [ref=e39]:
+    - generic [ref=e41]:
+      - img "비주얼 배경 이미지" [ref=e42]
+      - generic [ref=e43]:
+        - generic [ref=e44]:
+          - heading "나이스디앤비, 글로벌 비즈니스를 연결하는 기업정보" [level=1] [ref=e45]:
+            - text: 나이스디앤비,
+            - text: 글로벌 비즈니스를 연결하는
+            - text: 기업정보
+          - heading "전 세계 기업 정보 데이터베이스를 국내 고객분들에게 최신 정보로 제공하고 있습니다." [level=4] [ref=e46]:
+            - text: 전 세계 기업 정보 데이터베이스를
+            - text: 국내 고객분들에게 최신 정보로 제공하고 있습니다.
+          - generic [ref=e47]:
+            - img "바로가기" [ref=e48]
+            - generic [ref=e49]: "문의하기 : 02-2122-2515"
+        - list [ref=e50]:
+          - listitem [ref=e51] [cursor=pointer]:
+            - generic [ref=e52]: 신규/갱신
+            - heading "던스번호 발급" [level=3] [ref=e53]
+            - img "바로가기" [ref=e55]
+          - listitem [ref=e56] [cursor=pointer]:
+            - generic [ref=e57]: 타사/자사
+            - heading "기업신용조사" [level=3] [ref=e58]
+            - img "바로가기" [ref=e60]
+    - generic [ref=e61]:
+      - generic [ref=e63]:
+        - heading "글로벌 서비스, 어디까지 사용해보셨나요?" [level=1] [ref=e64]
+        - list [ref=e65]:
+          - listitem [ref=e66]:
+            - generic [ref=e67] [cursor=pointer]:
+              - heading "해외기업 정보검색" [level=3] [ref=e68]
+              - heading "D&B의 2억건(Active 기준) 기업 정보를 언제든, 무제한으로 조회하세요" [level=5] [ref=e69]:
+                - text: D&B의 2억건(Active 기준)
+                - text: 기업 정보를
+                - text: 언제든, 무제한으로 조회하세요
+              - img "해외기업 정보검색" [ref=e70]
+          - listitem [ref=e71]:
+            - generic [ref=e72] [cursor=pointer]:
+              - heading "컴플라이언스 서비스" [level=3] [ref=e73]
+              - heading "실소유자 정보를 통해 빠르고 정확하게 기업을 검증하세요" [level=5] [ref=e74]:
+                - text: 실소유자 정보를 통해 빠르고
+                - text: 정확하게 기업을 검증하세요
+              - img "컴플라이언스 서비스" [ref=e75]
+          - listitem [ref=e76]:
+            - generic [ref=e77] [cursor=pointer]:
+              - heading "기업DB 구축/정비" [level=3] [ref=e78]
+              - heading "4.8억 개 기업정보로 필요한 데이터를 확보하세요" [level=5] [ref=e79]:
+                - text: 4.8억 개 기업정보로
+                - text: 필요한 데이터를 확보하세요
+              - img "기업DB 구축/정비" [ref=e80]
+          - listitem [ref=e81]:
+            - generic [ref=e82] [cursor=pointer]:
+              - heading "오픈 API 서비스" [level=3] [ref=e83]
+              - heading "고객 데이터를 효과적으로 운영하고 경쟁력 있는 인프라를 구축하세요" [level=5] [ref=e84]:
+                - text: 고객 데이터를 효과적으로 운영하고
+                - text: 경쟁력 있는 인프라를 구축하세요
+              - img "오픈 API 서비스" [ref=e85]
+      - generic [ref=e87]:
+        - heading "자주묻는 질문을 모아봤어요." [level=1] [ref=e88]
+        - generic [ref=e89]:
+          - generic [ref=e90]:
+            - button "Q. 나이스디앤비는 어떤 회사입니까? 열기" [ref=e91] [cursor=pointer]:
+              - text: Q. 나이스디앤비는 어떤 회사입니까?
+              - img "열기" [ref=e93]
+            - paragraph [ref=e95]:
+              - text: 나이스디앤비는 국내 최대 금융인프라 그룹 NICE와 세계 최대 기업정보사 D&B의 합작으로 설립된 기업신용정보 전문기업입니다.
+              - text: 국내 650만개 기업정보, 해외 4.8억개 기업정보를 제공하는 국내 최대의 Global Commercial Credit Bureau입니다.
+          - generic [ref=e96]:
+            - button "Q. 나이스디앤비는 어떤 업무를 하는 회사입니까? 열기" [ref=e97] [cursor=pointer]:
+              - text: Q. 나이스디앤비는 어떤 업무를 하는 회사입니까?
+              - img "열기" [ref=e99]
+            - paragraph [ref=e101]:
+              - text: 조달청, 중소벤처기업부에서부터 공공기관, 지방자치단체에 이르기까지 구매계약 시 신용평가등급을 적격심사기준에 포함시키는
+              - text: 기관들이 계속해서 늘어나고 있습니다. 조달청, 중소기업청, 지방자치단체들을 시작으로 한국토지공사, 한국주택공사,
+              - text: 한국도로공사, 한국전력공사, 한국철도공사, 한국수자원공사, 한국농촌공사, 한국조폐공사, 지하철공사, 한국마사회,
+              - text: 방위사업청, 한국공항공사, 공무원연금관리공단, 한국가스공사 등이 신용평가등급을 적용 중이며 계속 확대추세에 있습니다.
+          - generic [ref=e102]:
+            - button "Q. D&B는 공공기관인가요? 열기" [ref=e103] [cursor=pointer]:
+              - text: Q. D&B는 공공기관인가요?
+              - img "열기" [ref=e105]
+            - paragraph [ref=e107]: 아닙니다. 하지만 D&B 정보의 객관성 때문에 이미 많은 전세계 공공기관이 D&B의 서비스를 의무화하여 이용하고 있습니다.
+          - generic [ref=e108]:
+            - button "Q. OTS란 무엇입니까? 열기" [ref=e109] [cursor=pointer]:
+              - text: Q. OTS란 무엇입니까?
+              - img "열기" [ref=e111]
+            - paragraph [ref=e113]:
+              - text: OTS란, Online Trust Solution의 준말로 국내 현존하는 기업에 대해 D-U-N-S® Registered Seal 을 발급하는 서비스로서,
+              - text: 오프라인 뿐 아니라, 온라인으로도 세계 최대 신용정보 기관인 D&B 의 심층된 평가를 통해 기업의 인증을 받을 수 있습니다.
+              - text: 기존 발급 되었던 D-U-N-S® 인증서가 업그레이드 되어 제공되는 서비스로 D-U-N-S® Number 를 취득하기 위해서는
+              - text: OTS를 신청하셔야만 합니다.
+          - generic [ref=e114]:
+            - button "Q. D-U-N-S Number란 무엇입니까? 열기" [ref=e115] [cursor=pointer]:
+              - text: Q. D-U-N-S Number란 무엇입니까?
+              - img "열기" [ref=e117]
+            - paragraph [ref=e119]:
+              - text: D-U-N-S® Number란 Data Universal Numbering System의 준말로 D&B가 독자적으로 개발한 기업식별코드입니다.
+              - text: 번호 자체에 의미를 갖지 않는 9자리의 독특한 코드로, 각 사업체에 부여하고 있습니다.
+              - text: 현재, 국제연합, 국제표준화기구, 미국 연방정부를 비롯한 다양한 국제기관이나 미국 산업계,
+              - text: 단체 등이 D-U-N-S® Number를 이용하여 기업의 식별 및 관리를 하고 있습니다.
+        - button "자주묻는 질문 더보기 자주묻는 질문 더보기" [ref=e121] [cursor=pointer]:
+          - text: 자주묻는 질문 더보기
+          - img "자주묻는 질문 더보기" [ref=e122]
+  - contentinfo [ref=e123]:
+    - generic [ref=e124]:
+      - generic [ref=e125]:
+        - list [ref=e126]:
+          - listitem [ref=e127]:
+            - button "회사소개 열기" [ref=e129] [cursor=pointer]:
+              - text: 회사소개
+              - img "열기" [ref=e131]
+          - listitem [ref=e132]:
+            - link "개인정보처리방침" [ref=e133] [cursor=pointer]:
+              - /url: https://www.nicednb.com/cs/cs-center03-pp.do
+          - listitem [ref=e134]:
+            - link "신용정보활용체제공시" [ref=e135] [cursor=pointer]:
+              - /url: https://www.nicednb.com/cs/cs-center03-ci.do
+          - listitem [ref=e136]:
+            - link "이메일무단수집거부" [ref=e137] [cursor=pointer]:
+              - /url: https://www.nicednb.com/cs/cs-center03-ec.do
+          - listitem [ref=e138]:
+            - link "제휴사·회원사 전용 서비스 신청" [ref=e139] [cursor=pointer]:
+              - /url: /apply-partner
+        - list [ref=e140]:
+          - listitem [ref=e141]:
+            - link "유튜브 바로가기" [ref=e142] [cursor=pointer]:
+              - /url: https://www.youtube.com/channel/UCKtjaw6IARfHoplsenQC9hA
+              - img "유튜브 바로가기" [ref=e143]
+          - listitem [ref=e144]:
+            - link "블로그 바로가기" [ref=e145] [cursor=pointer]:
+              - /url: https://blog.naver.com/nicednbglobal
+              - img "블로그 바로가기" [ref=e146]
+      - generic [ref=e147]:
+        - generic [ref=e148]:
+          - list [ref=e149]:
+            - listitem [ref=e150]: (주)나이스디앤비
+            - listitem [ref=e151]: (04535) 서울특별시 중구 소공로 70, 포스트타워 B동, 15층
+            - listitem [ref=e152]: "통신판매업신고 : 제2012-서울마포-0168호"
+          - list [ref=e153]:
+            - listitem [ref=e154]: "사업자등록번호 : 107-86-24874"
+            - listitem [ref=e155]: "TEL : 02-2122-2511"
+            - listitem [ref=e156]: "FAX : 02-2122-2591"
+        - button "관련사이트 열기" [ref=e158] [cursor=pointer]:
+          - text: 관련사이트
+          - img "열기" [ref=e160]
+      - paragraph [ref=e161]: © COPYRIGHT 2006 NICE D&B Co.,Ltd. ALL RIGHTS RESERVED
