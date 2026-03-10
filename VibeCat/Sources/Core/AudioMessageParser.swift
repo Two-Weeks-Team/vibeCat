@@ -4,6 +4,8 @@ public enum ServerMessage: Sendable {
     case audio(Data)
     case transcription(text: String, finished: Bool)
     case inputTranscription(text: String, finished: Bool)
+    case turnState(state: String, source: String)
+    case traceEvent(flow: String, traceId: String, phase: String, elapsedMs: Int?, detail: String)
     case turnComplete
     case interrupted
     case companionSpeech(text: String, emotion: String, urgency: String)
@@ -60,6 +62,17 @@ public enum AudioMessageParser {
             let text = json["text"] as? String ?? ""
             let finished = json["finished"] as? Bool ?? false
             return .inputTranscription(text: text, finished: finished)
+        case "turnState":
+            let state = json["state"] as? String ?? "idle"
+            let source = json["source"] as? String ?? "live"
+            return .turnState(state: state, source: source)
+        case "traceEvent":
+            let flow = json["flow"] as? String ?? "unknown"
+            let traceId = json["traceId"] as? String ?? ""
+            let phase = json["phase"] as? String ?? "unknown"
+            let elapsedMs = json["elapsedMs"] as? Int
+            let detail = json["detail"] as? String ?? ""
+            return .traceEvent(flow: flow, traceId: traceId, phase: phase, elapsedMs: elapsedMs, detail: detail)
         case "turnComplete":
             return .turnComplete
         case "interrupted":

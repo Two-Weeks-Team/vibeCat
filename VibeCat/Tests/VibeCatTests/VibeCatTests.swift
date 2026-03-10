@@ -8,6 +8,7 @@ final class VibeCatTests: XCTestCase {
         "vibecat.character",
         "vibecat.chattiness",
         "vibecat.captureInterval",
+        "vibecat.captureTargetMode",
         "vibecat.liveModel",
         "vibecat.musicEnabled",
         "vibecat.gatewayURL",
@@ -33,6 +34,7 @@ final class VibeCatTests: XCTestCase {
         XCTAssertEqual(settings.character, "cat")
         XCTAssertEqual(settings.chattiness, "normal")
         XCTAssertEqual(settings.captureInterval, 1.0)
+        XCTAssertEqual(settings.captureTargetMode, .windowUnderCursor)
         XCTAssertEqual(settings.liveModel, GeminiModels.liveNativeAudio)
         XCTAssertFalse(settings.musicEnabled)
         XCTAssertEqual(settings.gatewayURL, "wss://realtime-gateway-163070481841.asia-northeast3.run.app")
@@ -48,6 +50,7 @@ final class VibeCatTests: XCTestCase {
         settings.character = "jinwoo"
         settings.chattiness = "chatty"
         settings.captureInterval = 10.0
+        settings.captureTargetMode = .display
         settings.liveModel = "gemini-live-2.5-flash-preview"
         settings.musicEnabled = true
         settings.gatewayURL = "wss://example.test/ws/live"
@@ -59,6 +62,7 @@ final class VibeCatTests: XCTestCase {
         XCTAssertEqual(settings.character, "jinwoo")
         XCTAssertEqual(settings.chattiness, "chatty")
         XCTAssertEqual(settings.captureInterval, 10.0)
+        XCTAssertEqual(settings.captureTargetMode, .display)
         XCTAssertEqual(settings.liveModel, "gemini-live-2.5-flash-preview")
         XCTAssertTrue(settings.musicEnabled)
         XCTAssertEqual(settings.gatewayURL, "wss://example.test/ws/live")

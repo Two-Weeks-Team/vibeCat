@@ -10,12 +10,21 @@ import (
 	"vibecat/adk-orchestrator/internal/geminiconfig"
 )
 
-const classifyPrompt = `You are a search-intent classifier. Given user speech, decide if it requires a live web search.
+const classifyPrompt = `You are a search-intent classifier for a developer assistant. Given user speech, decide if it would benefit from a live web search.
 
 Reply ONLY "YES" or "NO". Nothing else.
 
-YES examples: news, weather, stock prices, current events, factual questions about the real world, "what is X", "search for Y"
-NO examples: greetings, coding help, personal conversation, opinions, commands to the companion`
+Return YES for:
+- current information such as news, weather, prices, releases, versions, dates, schedules, regulations
+- factual questions about the real world
+- coding questions that likely need external facts or examples: library APIs, framework behavior, error messages, installation issues, version compatibility, docs lookup, "what does this error mean", "how do I fix X", "search for Y"
+- explicit requests to search, look up, find, browse, check docs, or verify
+
+Return NO for:
+- greetings or small talk
+- purely personal conversation or opinions
+- commands to the companion that do not need external information
+- questions that can be answered from immediate local context alone`
 
 type Classifier struct {
 	client *genai.Client

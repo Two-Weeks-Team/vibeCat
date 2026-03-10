@@ -151,12 +151,15 @@ func TestBuildLiveConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "google search flag ignored for live api",
+			name: "google search tool enabled for live api",
 			cfg:  Config{GoogleSearch: true},
 			check: func(t *testing.T, lc *genai.LiveConnectConfig) {
 				t.Helper()
-				if len(lc.Tools) != 0 {
-					t.Fatalf("Google Search must not be added to Live API (causes latency), got %d tools", len(lc.Tools))
+				if len(lc.Tools) != 1 {
+					t.Fatalf("expected one live tool, got %d", len(lc.Tools))
+				}
+				if lc.Tools[0] == nil || lc.Tools[0].GoogleSearch == nil {
+					t.Fatal("expected Google Search live tool")
 				}
 			},
 		},
@@ -167,6 +170,23 @@ func TestBuildLiveConfig(t *testing.T) {
 				t.Helper()
 				if len(lc.Tools) != 0 {
 					t.Fatalf("expected no tools, got %d", len(lc.Tools))
+				}
+			},
+		},
+		{
+			name: "memory context included in system prompt",
+			cfg:  Config{Language: "ko", MemoryContext: "Previous session: websocket search routing fix was in progress."},
+			check: func(t *testing.T, lc *genai.LiveConnectConfig) {
+				t.Helper()
+				if lc.SystemInstruction == nil || len(lc.SystemInstruction.Parts) != 1 {
+					t.Fatal("expected system instruction")
+				}
+				got := lc.SystemInstruction.Parts[0].Text
+				if !strings.Contains(got, "=== RECENT ESSENTIAL CONTEXT ===") {
+					t.Fatal("expected recent essential context section")
+				}
+				if !strings.Contains(got, "websocket search routing fix was in progress") {
+					t.Fatal("expected memory context content")
 				}
 			},
 		},

@@ -1,9 +1,14 @@
 @preconcurrency import AVFoundation
 import Foundation
 
+enum AudioForwardMode: Sendable {
+    case normal
+    case bargeIn
+}
+
 @MainActor
 final class SpeechRecognizer {
-    var onAudioBufferCaptured: (@Sendable (AVAudioPCMBuffer) -> Void)?
+    var onAudioBufferCaptured: (@Sendable (AVAudioPCMBuffer, AudioForwardMode) -> Void)?
     var onBargeInDetected: (@Sendable () -> Void)?
     private(set) var currentAudioFormat: AVAudioFormat?
     private(set) var isListening = false
@@ -76,23 +81,22 @@ final class SpeechAudioCapture: @unchecked Sendable {
     private var engine: AVAudioEngine?
     private(set) var recordingFormat: AVAudioFormat?
     private(set) var isVoiceProcessingActive = false
-    private var streamingCallback: (@Sendable (AVAudioPCMBuffer) -> Void)?
+    private var streamingCallback: (@Sendable (AVAudioPCMBuffer, AudioForwardMode) -> Void)?
 
-    private let rmsThreshold: Float = 0.03
-    private let bargeInThreshold: Float = 0.06
+    private let bargeInThreshold: Float = 0.04
     private let _speakingLock = NSLock()
     private var _modelSpeaking: Bool = false
     var modelSpeaking: Bool {
         get { _speakingLock.withLock { _modelSpeaking } }
         set { _speakingLock.withLock { _modelSpeaking = newValue } }
     }
-    private let consecutiveThreshold: Int = 4
+    private let consecutiveThreshold: Int = 2
     private var consecutiveAboveCount: Int = 0
     private var bargeInNotified = false
     private var bargeInCallback: (@Sendable () -> Void)?
 
     func start(
-        streamingCallback: (@Sendable (AVAudioPCMBuffer) -> Void)? = nil,
+        streamingCallback: (@Sendable (AVAudioPCMBuffer, AudioForwardMode) -> Void)? = nil,
         bargeInCallback: (@Sendable () -> Void)? = nil
     ) throws {
         self.streamingCallback = streamingCallback
@@ -103,10 +107,12 @@ final class SpeechAudioCapture: @unchecked Sendable {
         let inputNode = engine.inputNode
 
         do {
-            try inputNode.setVoiceProcessingEnabled(false)
-            isVoiceProcessingActive = false
+            try inputNode.setVoiceProcessingEnabled(true)
+            isVoiceProcessingActive = true
+            NSLog("[SPEECH] voice processing enabled")
         } catch {
             isVoiceProcessingActive = false
+            NSLog("[SPEECH] voice processing unavailable: %@", String(describing: error))
         }
 
         let hwFormat = inputNode.outputFormat(forBus: 0)
@@ -125,7 +131,7 @@ final class SpeechAudioCapture: @unchecked Sendable {
 
         self.recordingFormat = recordingFormat
 
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: recordingFormat) { [weak self] buffer, _ in
+        inputNode.installTap(onBus: 0, bufferSize: 2048, format: recordingFormat) { [weak self] buffer, _ in
             guard let self else { return }
             guard let channelData = buffer.floatChannelData else { return }
 
@@ -153,7 +159,7 @@ final class SpeechAudioCapture: @unchecked Sendable {
                     dst[channel].update(from: src[channel], count: Int(buffer.frameLength))
                 }
             }
-            self.streamingCallback?(copy)
+            self.streamingCallback?(copy, gate.forwardMode)
         }
 
         engine.prepare()
@@ -172,28 +178,37 @@ final class SpeechAudioCapture: @unchecked Sendable {
         consecutiveAboveCount = 0
     }
 
-    private func evaluateAudioGate(rms: Float) -> (shouldForward: Bool, shouldNotifyBargeIn: Bool) {
+    private func evaluateAudioGate(rms: Float) -> (shouldForward: Bool, shouldNotifyBargeIn: Bool, forwardMode: AudioForwardMode) {
         _speakingLock.withLock {
             if _modelSpeaking {
                 guard rms >= bargeInThreshold else {
                     consecutiveAboveCount = 0
                     bargeInNotified = false
-                    return (false, false)
+                    return (false, false, .normal)
                 }
 
                 consecutiveAboveCount += 1
+                if consecutiveAboveCount == 1 {
+                    NSLog("[SPEECH] barge-in candidate rms=%.4f threshold=%.4f", rms, bargeInThreshold)
+                }
                 guard consecutiveAboveCount >= consecutiveThreshold else {
-                    return (false, false)
+                    return (false, false, .normal)
                 }
 
                 let shouldNotify = !bargeInNotified
+                if shouldNotify {
+                    NSLog("[SPEECH] barge-in confirmed rms=%.4f frames=%d", rms, consecutiveAboveCount)
+                }
                 bargeInNotified = true
-                return (true, shouldNotify)
+                return (true, shouldNotify, .bargeIn)
             }
 
             consecutiveAboveCount = 0
             bargeInNotified = false
-            return (rms >= rmsThreshold, false)
+            // Gemini Live automatic VAD expects a continuous audio stream so it can
+            // detect end-of-speech from trailing silence after the user stops talking.
+            // If we drop silent frames here, short barge-in utterances never complete.
+            return (true, false, .normal)
         }
     }
 }

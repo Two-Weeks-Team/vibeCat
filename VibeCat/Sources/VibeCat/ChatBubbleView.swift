@@ -18,6 +18,7 @@ final class ChatBubbleView: NSView {
 
     private let horizontalPadding: CGFloat = 14
     private let verticalPadding: CGFloat = 10
+    private let textHeightCompensation: CGFloat = 6
     private let tailSize = CGSize(width: 16, height: 12)
     private let cornerRadius: CGFloat = 16
 
@@ -45,6 +46,8 @@ final class ChatBubbleView: NSView {
         label.isBezeled = false
         label.isEditable = false
         label.maximumNumberOfLines = 0
+        label.lineBreakMode = .byWordWrapping
+        label.usesSingleLineMode = false
         label.translatesAutoresizingMaskIntoConstraints = false
         addSubview(label)
 
@@ -158,21 +161,30 @@ final class ChatBubbleView: NSView {
 
     private let maxBubbleWidth: CGFloat = 380
     private let maxBubbleHeight: CGFloat = 500
+    private let minBubbleWidth: CGFloat = 80
 
     func preferredSize(for text: String) -> NSSize {
-        let maxTextWidth: CGFloat = maxBubbleWidth - horizontalPadding * 2
-        let minTextWidth: CGFloat = 80 - horizontalPadding * 2
+        let maxTextWidth = maxBubbleWidth - horizontalPadding * 2
+        let minTextWidth = minBubbleWidth - horizontalPadding * 2
 
         label.stringValue = text
         label.maximumNumberOfLines = 0
         label.preferredMaxLayoutWidth = maxTextWidth
 
-        let textSize = label.intrinsicContentSize
-        let textWidth = max(minTextWidth, ceil(textSize.width))
-        let width = min(maxBubbleWidth, textWidth + horizontalPadding * 2)
-        let rawHeight = ceil(textSize.height) + verticalPadding * 2 + tailSize.height
+        let font = label.font ?? .systemFont(ofSize: 13, weight: .medium)
+        let attributes: [NSAttributedString.Key: Any] = [.font: font]
+        let singleLineWidth = ceil(NSString(string: text).size(withAttributes: attributes).width)
+        let width = min(maxBubbleWidth, max(minBubbleWidth, singleLineWidth + horizontalPadding * 2))
+        let measuredTextWidth = max(minTextWidth, width - horizontalPadding * 2)
+
+        let textBounds = NSString(string: text).boundingRect(
+            with: NSSize(width: measuredTextWidth, height: maxBubbleHeight),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: attributes
+        )
+        let rawHeight = ceil(textBounds.height) + textHeightCompensation + verticalPadding * 2 + tailSize.height
         let height = min(maxBubbleHeight, rawHeight)
-        return NSSize(width: max(80, width), height: max(34, height))
+        return NSSize(width: width, height: max(34, height))
     }
 
     func setTailDirection(_ direction: TailDirection) {
@@ -267,7 +279,7 @@ final class ChatBubbleView: NSView {
             x: bodyRect.minX + horizontalPadding,
             y: bodyRect.minY + verticalPadding,
             width: availableWidth,
-            height: bodyRect.height - verticalPadding * 2
-        )
+            height: bodyRect.height - verticalPadding * 2 + textHeightCompensation
+        ).integral
     }
 }

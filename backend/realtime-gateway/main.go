@@ -15,7 +15,6 @@ import (
 	"vibecat/realtime-gateway/internal/adk"
 	"vibecat/realtime-gateway/internal/auth"
 	"vibecat/realtime-gateway/internal/live"
-	"vibecat/realtime-gateway/internal/tts"
 	"vibecat/realtime-gateway/internal/ws"
 )
 
@@ -60,7 +59,6 @@ func main() {
 	jwtMgr := auth.NewManager(authSecret)
 
 	var liveMgr *live.Manager
-	var ttsClient *tts.Client
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey != "" {
 		genaiClient, clientErr := genai.NewClient(context.Background(), &genai.ClientConfig{
@@ -75,8 +73,6 @@ func main() {
 		} else {
 			liveMgr = live.NewManager(genaiClient)
 			slog.Info("gemini live manager initialized")
-			ttsClient = tts.NewClient(genaiClient)
-			slog.Info("tts client initialized")
 		}
 	} else {
 		slog.Warn("GEMINI_API_KEY not set, live sessions disabled (stub mode)")
@@ -96,7 +92,7 @@ func main() {
 	mux.HandleFunc("/readyz", readyHandler)
 	mux.HandleFunc("/api/v1/auth/register", auth.RegisterHandler(jwtMgr))
 	mux.HandleFunc("/api/v1/auth/refresh", auth.RefreshHandler(jwtMgr))
-	mux.Handle("/ws/live", auth.Middleware(jwtMgr, ws.Handler(registry, liveMgr, adkClient, ttsClient)))
+	mux.Handle("/ws/live", auth.Middleware(jwtMgr, ws.Handler(registry, liveMgr, adkClient)))
 
 	addr := ":" + portOrDefault("8080")
 	slog.Info("starting server", "service", serviceName, "addr", addr)

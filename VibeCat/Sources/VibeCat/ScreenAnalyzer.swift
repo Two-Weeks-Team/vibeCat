@@ -14,7 +14,7 @@ final class ScreenAnalyzer {
     private var captureLoopTask: Task<Void, Never>?
     private var isRunning = false
     private(set) var isAnalyzing = false
-    private var userId: String = "local-user"
+    private var userId: String = GatewayClient.deviceIdentifier()
     private var sessionStartTime: Date = Date()
 
     private var workspaceObserver: NSObjectProtocol?
@@ -135,11 +135,16 @@ final class ScreenAnalyzer {
         max(1.0, AppSettings.shared.captureInterval)
     }
 
+    private func newTraceID(prefix: String) -> String {
+        let token = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+        return "\(prefix)_\(token)"
+    }
+
     private var isSpeechActive: Bool {
         let audioPlaying = audioPlayer?.isPlaying ?? false
-        let ttsSpeaking = gatewayClient.isTTSSpeaking
-        let recentlyStopped = Date().timeIntervalSince(gatewayClient.lastSpeechEndTime) < postSpeechCooldown
-        return audioPlaying || ttsSpeaking || recentlyStopped
+        let modelTurnActive = gatewayClient.isModelTurnActive
+        let recentlyStopped = Date().timeIntervalSince(gatewayClient.lastModelTurnEndTime) < postSpeechCooldown
+        return audioPlaying || modelTurnActive || recentlyStopped
     }
 
     private func runAnalysisCycle(forceSmartPath: Bool) async {
@@ -167,31 +172,44 @@ final class ScreenAnalyzer {
                   snapshot.windowTitle ?? "")
 
             let now = Date()
+            let speechActive = isSpeechActive
+            let smartPathReady = !speechActive && (forceSmartPath || now.timeIntervalSince(lastSmartPathSend) >= smartPathCooldown)
+            let traceID = smartPathReady ? newTraceID(prefix: forceSmartPath ? "force" : "cap") : nil
+            if let traceID {
+                NSLog("[TRACE] flow=proactive trace=%@ phase=capture_ready force=%d target=%@ app=%@ window=%@",
+                      traceID,
+                      forceSmartPath,
+                      snapshot.targetKind.rawValue,
+                      snapshot.appName,
+                      snapshot.windowTitle ?? "")
+            }
 
             if now.timeIntervalSince(lastFastPathSend) >= fastPathCooldown {
-                sendFastPath(image: snapshot.image)
+                sendFastPath(image: snapshot.image, traceID: traceID)
                 lastFastPathSend = now
             }
 
-            let speechActive = isSpeechActive
-            if !speechActive {
-                let smartPathReady = forceSmartPath || now.timeIntervalSince(lastSmartPathSend) >= smartPathCooldown
-                if smartPathReady {
-                    await sendSmartPath(snapshot: snapshot, highSignificance: forceSmartPath)
-                    lastSmartPathSend = now
-                }
+            if smartPathReady, let traceID {
+                await sendSmartPath(snapshot: snapshot, highSignificance: forceSmartPath, traceID: traceID)
+                lastSmartPathSend = now
             }
         }
     }
 
     func forceAnalysis() async {
         guard gatewayClient.isConnected else { return }
-        let result = await captureService.captureFullWindow()
+        let result = await captureService.forceCapture()
         if case .captured(let snapshot) = result {
-            sendFastPath(image: snapshot.image)
+            let traceID = newTraceID(prefix: "force")
+            NSLog("[TRACE] flow=proactive trace=%@ phase=force_capture_ready target=%@ app=%@ window=%@",
+                  traceID,
+                  snapshot.targetKind.rawValue,
+                  snapshot.appName,
+                  snapshot.windowTitle ?? "")
+            sendFastPath(image: snapshot.image, traceID: traceID)
             lastFastPathSend = Date()
             if !isSpeechActive {
-                await sendSmartPath(snapshot: snapshot, highSignificance: true)
+                await sendSmartPath(snapshot: snapshot, highSignificance: true, traceID: traceID)
                 lastSmartPathSend = Date()
             }
         }
@@ -199,25 +217,32 @@ final class ScreenAnalyzer {
 
     // MARK: - Fast Path (video frame → Gemini Live API)
 
-    private func sendFastPath(image: CGImage) {
+    private func sendFastPath(image: CGImage, traceID: String?) {
         let img = image
         let client = gatewayClient
         DispatchQueue.global(qos: .userInitiated).async {
+            let startedAt = Date()
             guard let jpegData = ImageProcessor.toFastPathJPEG(img) else { return }
             NSLog("[CAPTURE] Fast Path: sending %d bytes JPEG to Live API", jpegData.count)
+            if let traceID {
+                let elapsedMs = Int(Date().timeIntervalSince(startedAt) * 1000)
+                NSLog("[TRACE] flow=proactive trace=%@ phase=fast_path_encoded elapsed_ms=%d bytes=%d",
+                      traceID, elapsedMs, jpegData.count)
+            }
             DispatchQueue.main.async { client.sendVideoFrame(jpegData) }
         }
     }
 
     // MARK: - Smart Path (base64 image → ADK orchestrator)
 
-    private func sendSmartPath(snapshot: ScreenCaptureService.CaptureSnapshot, highSignificance: Bool) async {
+    private func sendSmartPath(snapshot: ScreenCaptureService.CaptureSnapshot, highSignificance: Bool, traceID: String) async {
         guard gatewayClient.isConnected else { return }
 
         let character = AppSettings.shared.character
         let soul = spriteAnimator.loadPreset(for: character).soul
 
         let img = snapshot.image
+        let encodeStart = Date()
         let base64: String? = await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let result = ImageProcessor.toBase64JPEG(img)
@@ -225,9 +250,12 @@ final class ScreenAnalyzer {
             }
         }
         guard let base64 else { return }
+        let encodeElapsedMs = Int(Date().timeIntervalSince(encodeStart) * 1000)
 
         NSLog("[CAPTURE] Smart Path: base64=%d bytes, character=%@, context=%@",
               base64.count, character, snapshot.contextDescription)
+        NSLog("[TRACE] flow=proactive trace=%@ phase=smart_path_encoded elapsed_ms=%d base64_bytes=%d high_significance=%d",
+              traceID, encodeElapsedMs, base64.count, highSignificance)
 
         if highSignificance {
             gatewayClient.sendForceCapture(
@@ -236,7 +264,8 @@ final class ScreenAnalyzer {
                 userId: userId,
                 character: character,
                 soul: soul,
-                activityMinutes: activityMinutes
+                activityMinutes: activityMinutes,
+                traceID: traceID
             )
         } else {
             gatewayClient.sendScreenCapture(
@@ -245,9 +274,12 @@ final class ScreenAnalyzer {
                 userId: userId,
                 character: character,
                 soul: soul,
-                activityMinutes: activityMinutes
+                activityMinutes: activityMinutes,
+                traceID: traceID
             )
         }
+
+        NSLog("[TRACE] flow=proactive trace=%@ phase=smart_path_sent high_significance=%d", traceID, highSignificance)
 
         spriteAnimator.setState(.thinking)
     }

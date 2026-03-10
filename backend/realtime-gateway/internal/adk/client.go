@@ -25,6 +25,7 @@ type AnalysisRequest struct {
 	Character       string `json:"character,omitempty"`
 	Soul            string `json:"soul,omitempty"`
 	ActivityMinutes int    `json:"activityMinutes,omitempty"`
+	TraceID         string `json:"traceId,omitempty"`
 }
 
 type VisionAnalysis struct {
@@ -74,6 +75,53 @@ type AnalysisResult struct {
 type SearchRequest struct {
 	Query    string `json:"query"`
 	Language string `json:"language,omitempty"`
+	TraceID  string `json:"traceId,omitempty"`
+}
+
+type ToolKind string
+
+const (
+	ToolKindNone          ToolKind = "none"
+	ToolKindSearch        ToolKind = "search"
+	ToolKindMaps          ToolKind = "maps"
+	ToolKindURLContext    ToolKind = "url_context"
+	ToolKindCodeExecution ToolKind = "code_execution"
+	ToolKindFileSearch    ToolKind = "file_search"
+)
+
+type ToolRequest struct {
+	Query     string `json:"query"`
+	Language  string `json:"language,omitempty"`
+	SessionID string `json:"sessionId,omitempty"`
+	UserID    string `json:"userId,omitempty"`
+	TraceID   string `json:"traceId,omitempty"`
+}
+
+type ToolResult struct {
+	Tool          ToolKind `json:"tool"`
+	Query         string   `json:"query"`
+	Summary       string   `json:"summary"`
+	Sources       []string `json:"sources,omitempty"`
+	RetrievedURLs []string `json:"retrievedUrls,omitempty"`
+	GeneratedCode string   `json:"generatedCode,omitempty"`
+	CodeOutput    string   `json:"codeOutput,omitempty"`
+	Reason        string   `json:"reason,omitempty"`
+}
+
+type SessionSummaryRequest struct {
+	UserID    string   `json:"userId"`
+	SessionID string   `json:"sessionId,omitempty"`
+	Language  string   `json:"language,omitempty"`
+	History   []string `json:"history"`
+}
+
+type MemoryContextRequest struct {
+	UserID   string `json:"userId"`
+	Language string `json:"language,omitempty"`
+}
+
+type MemoryContextResponse struct {
+	Context string `json:"context"`
 }
 
 type Client struct {
@@ -110,6 +158,7 @@ func (c *Client) Analyze(ctx context.Context, req AnalysisRequest) (*AnalysisRes
 	slog.Info("[ADK-CLIENT] >>> POST /analyze",
 		"url", c.baseURL+"/analyze",
 		"body_bytes", len(body),
+		"trace_id", req.TraceID,
 		"character", req.Character,
 		"context", req.Context,
 		"image_bytes", len(req.Image),
@@ -151,6 +200,7 @@ func (c *Client) Analyze(ctx context.Context, req AnalysisRequest) (*AnalysisRes
 	}
 
 	slog.Info("[ADK-CLIENT] <<< response OK",
+		"trace_id", req.TraceID,
 		"elapsed", elapsed.String(),
 		"has_vision", result.Vision != nil,
 		"has_decision", result.Decision != nil,
@@ -168,7 +218,7 @@ func (c *Client) Search(ctx context.Context, req SearchRequest) (*SearchResult, 
 		return nil, fmt.Errorf("adk client: marshal search request: %w", err)
 	}
 
-	slog.Info("[ADK-CLIENT] >>> POST /search", "query", req.Query, "language", req.Language)
+	slog.Info("[ADK-CLIENT] >>> POST /search", "trace_id", req.TraceID, "query", req.Query, "language", req.Language)
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/search", bytes.NewReader(body))
 	if err != nil {
@@ -183,14 +233,16 @@ func (c *Client) Search(ctx context.Context, req SearchRequest) (*SearchResult, 
 		}
 	}
 
+	startTime := time.Now()
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("adk client: search request failed: %w", err)
 	}
 	defer resp.Body.Close()
+	elapsed := time.Since(startTime)
 
 	if resp.StatusCode == http.StatusNoContent {
-		slog.Info("[ADK-CLIENT] <<< search: classifier rejected (not a search query)")
+		slog.Info("[ADK-CLIENT] <<< search: classifier rejected (not a search query)", "trace_id", req.TraceID, "elapsed", elapsed.String())
 		return nil, nil
 	}
 
@@ -203,6 +255,121 @@ func (c *Client) Search(ctx context.Context, req SearchRequest) (*SearchResult, 
 		return nil, fmt.Errorf("adk client: decode search response: %w", err)
 	}
 
-	slog.Info("[ADK-CLIENT] <<< search OK", "query", result.Query, "summary_len", len(result.Summary))
+	slog.Info("[ADK-CLIENT] <<< search OK", "trace_id", req.TraceID, "elapsed", elapsed.String(), "query", result.Query, "summary_len", len(result.Summary))
 	return &result, nil
+}
+
+func (c *Client) Tool(ctx context.Context, req ToolRequest) (*ToolResult, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("adk client: marshal tool request: %w", err)
+	}
+
+	slog.Info("[ADK-CLIENT] >>> POST /tool", "trace_id", req.TraceID, "query", req.Query, "language", req.Language)
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/tool", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("adk client: create tool request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	if c.tokenSource != nil {
+		if token, tokenErr := c.tokenSource.Token(); tokenErr == nil {
+			httpReq.Header.Set("Authorization", "Bearer "+token.AccessToken)
+		}
+	}
+
+	startTime := time.Now()
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("adk client: tool request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	elapsed := time.Since(startTime)
+
+	if resp.StatusCode == http.StatusNoContent {
+		slog.Info("[ADK-CLIENT] <<< tool: no result", "trace_id", req.TraceID, "elapsed", elapsed.String())
+		return nil, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("adk client: tool unexpected status %d", resp.StatusCode)
+	}
+
+	var result ToolResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("adk client: decode tool response: %w", err)
+	}
+	slog.Info("[ADK-CLIENT] <<< tool OK", "trace_id", req.TraceID, "elapsed", elapsed.String(), "tool", result.Tool, "summary_len", len(result.Summary))
+	return &result, nil
+}
+
+func (c *Client) SaveSessionSummary(ctx context.Context, req SessionSummaryRequest) error {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("adk client: marshal session summary request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/memory/session-summary", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("adk client: create session summary request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	if c.tokenSource != nil {
+		if token, tokenErr := c.tokenSource.Token(); tokenErr == nil {
+			httpReq.Header.Set("Authorization", "Bearer "+token.AccessToken)
+		}
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("adk client: session summary request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNoContent {
+		return nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("adk client: session summary unexpected status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func (c *Client) MemoryContext(ctx context.Context, req MemoryContextRequest) (string, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return "", fmt.Errorf("adk client: marshal memory context request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/memory/context", bytes.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("adk client: create memory context request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	if c.tokenSource != nil {
+		if token, tokenErr := c.tokenSource.Token(); tokenErr == nil {
+			httpReq.Header.Set("Authorization", "Bearer "+token.AccessToken)
+		}
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return "", fmt.Errorf("adk client: memory context request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNoContent {
+		return "", nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("adk client: memory context unexpected status %d", resp.StatusCode)
+	}
+
+	var result MemoryContextResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("adk client: decode memory context response: %w", err)
+	}
+	return result.Context, nil
 }

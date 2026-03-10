@@ -12,6 +12,7 @@ final class ScreenCaptureService {
         enum TargetKind: String {
             case windowUnderCursor = "window_under_cursor"
             case frontmostWindow = "frontmost_window"
+            case display = "display"
             case displayFallback = "display_fallback"
         }
 
@@ -51,7 +52,7 @@ final class ScreenCaptureService {
     /// Capture the screen. Returns .unchanged if screen hasn't changed significantly.
     func captureAroundCursor() async -> CaptureResult {
         do {
-            let snapshot = try await performCapture(mode: .windowUnderCursor)
+            let snapshot = try await performCapture(mode: selectedCaptureMode())
             if snapshot.targetIdentity != lastTargetIdentity {
                 lastImage = nil
                 lastTargetIdentity = snapshot.targetIdentity
@@ -82,7 +83,7 @@ final class ScreenCaptureService {
     /// Force a capture regardless of change detection.
     func forceCapture() async -> CaptureResult {
         do {
-            let snapshot = try await performCapture(mode: .windowUnderCursor)
+            let snapshot = try await performCapture(mode: selectedCaptureMode())
             lastTargetIdentity = snapshot.targetIdentity
             lastImage = snapshot.image
             return .captured(snapshot)
@@ -127,6 +128,18 @@ final class ScreenCaptureService {
                     targetIdentity: "window:\(target.window.windowID)"
                 )
             }
+            if let target = frontmostWindow(from: content) {
+                let filter = SCContentFilter(desktopIndependentWindow: target.window)
+                let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+                return CaptureSnapshot(
+                    image: image,
+                    appName: target.appName,
+                    appBundleID: target.appBundleID,
+                    windowTitle: target.windowTitle,
+                    targetKind: .frontmostWindow,
+                    targetIdentity: "window:\(target.window.windowID)"
+                )
+            }
 
         case .frontmostWindow:
             if let target = frontmostWindow(from: content) {
@@ -141,6 +154,20 @@ final class ScreenCaptureService {
                     targetIdentity: "window:\(target.window.windowID)"
                 )
             }
+
+        case .display:
+            let filter = SCContentFilter(display: display, excludingApplications: excludedApps, exceptingWindows: [])
+            let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+            let appName = NSWorkspace.shared.frontmostApplication?.localizedName ?? "Unknown"
+            let appBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+            return CaptureSnapshot(
+                image: image,
+                appName: appName,
+                appBundleID: appBundleID,
+                windowTitle: nil,
+                targetKind: .display,
+                targetIdentity: "display:\(display.displayID)"
+            )
         }
 
         let filter = SCContentFilter(display: display, excludingApplications: excludedApps, exceptingWindows: [])
@@ -160,6 +187,18 @@ final class ScreenCaptureService {
     private enum CaptureMode {
         case windowUnderCursor
         case frontmostWindow
+        case display
+    }
+
+    private func selectedCaptureMode() -> CaptureMode {
+        switch AppSettings.shared.captureTargetMode {
+        case .windowUnderCursor:
+            return .windowUnderCursor
+        case .frontmostWindow:
+            return .frontmostWindow
+        case .display:
+            return .display
+        }
     }
 
     private struct WindowTarget {

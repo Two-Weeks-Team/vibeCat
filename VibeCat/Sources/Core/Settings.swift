@@ -1,5 +1,19 @@
 import Foundation
 
+public enum CaptureTargetMode: String, CaseIterable, Sendable {
+    case windowUnderCursor = "window_under_cursor"
+    case frontmostWindow = "frontmost_window"
+    case display = "display"
+
+    public var menuTitle: String {
+        switch self {
+        case .windowUnderCursor: return "Window Under Cursor"
+        case .frontmostWindow: return "Frontmost Window"
+        case .display: return "Display"
+        }
+    }
+}
+
 public final class AppSettings: @unchecked Sendable {
     public static let shared = AppSettings()
 
@@ -11,6 +25,7 @@ public final class AppSettings: @unchecked Sendable {
         case character = "vibecat.character"
         case chattiness = "vibecat.chattiness"
         case captureInterval = "vibecat.captureInterval"
+        case captureTargetMode = "vibecat.captureTargetMode"
         case liveModel = "vibecat.liveModel"
         case musicEnabled = "vibecat.musicEnabled"
         case gatewayURL = "vibecat.gatewayURL"
@@ -44,6 +59,17 @@ public final class AppSettings: @unchecked Sendable {
             return v >= 1.0 ? v : 1.0
         }
         set { defaults.set(newValue, forKey: Key.captureInterval.rawValue) }
+    }
+
+    public var captureTargetMode: CaptureTargetMode {
+        get {
+            guard let raw = defaults.string(forKey: Key.captureTargetMode.rawValue),
+                  let value = CaptureTargetMode(rawValue: raw) else {
+                return .windowUnderCursor
+            }
+            return value
+        }
+        set { defaults.set(newValue.rawValue, forKey: Key.captureTargetMode.rawValue) }
     }
 
     public var liveModel: String {

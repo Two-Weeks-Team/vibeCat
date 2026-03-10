@@ -53,6 +53,54 @@ type SearchRequest struct {
 	Language  string `json:"language,omitempty"`
 	SessionID string `json:"sessionId,omitempty"`
 	UserID    string `json:"userId,omitempty"`
+	TraceID   string `json:"traceId,omitempty"`
+}
+
+type ToolKind string
+
+const (
+	ToolKindNone          ToolKind = "none"
+	ToolKindSearch        ToolKind = "search"
+	ToolKindMaps          ToolKind = "maps"
+	ToolKindURLContext    ToolKind = "url_context"
+	ToolKindCodeExecution ToolKind = "code_execution"
+	ToolKindFileSearch    ToolKind = "file_search"
+)
+
+type ToolRequest struct {
+	Query     string `json:"query"`
+	Language  string `json:"language,omitempty"`
+	SessionID string `json:"sessionId,omitempty"`
+	UserID    string `json:"userId,omitempty"`
+	TraceID   string `json:"traceId,omitempty"`
+}
+
+type ToolResult struct {
+	Tool          ToolKind  `json:"tool"`
+	Query         string    `json:"query"`
+	Summary       string    `json:"summary"`
+	Sources       []string  `json:"sources,omitempty"`
+	RetrievedURLs []string  `json:"retrievedUrls,omitempty"`
+	GeneratedCode string    `json:"generatedCode,omitempty"`
+	CodeOutput    string    `json:"codeOutput,omitempty"`
+	Reason        string    `json:"reason,omitempty"`
+	CreatedAt     time.Time `json:"createdAt,omitempty"`
+}
+
+type SessionSummaryRequest struct {
+	UserID    string   `json:"userId"`
+	SessionID string   `json:"sessionId,omitempty"`
+	Language  string   `json:"language,omitempty"`
+	History   []string `json:"history"`
+}
+
+type MemoryContextRequest struct {
+	UserID   string `json:"userId"`
+	Language string `json:"language,omitempty"`
+}
+
+type MemoryContextResponse struct {
+	Context string `json:"context"`
 }
 
 type AnalysisRequest struct {
@@ -65,6 +113,7 @@ type AnalysisRequest struct {
 	Character       string `json:"character,omitempty"`
 	Soul            string `json:"soul,omitempty"`
 	ActivityMinutes int    `json:"activityMinutes,omitempty"`
+	TraceID         string `json:"traceId,omitempty"`
 }
 
 type AnalysisResult struct {

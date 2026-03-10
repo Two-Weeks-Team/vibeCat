@@ -84,6 +84,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var bubbleLockedByTTS = false
     private var cooldownTask: Task<Void, Never>?
     private var spriteIdleTask: Task<Void, Never>?
+    private var activeTraceContext: (flow: String, traceId: String)?
+    private var traceReadyForClear = false
+
+    private func activeTraceLogContext() -> String? {
+        guard let activeTraceContext else { return nil }
+        return "flow=\(activeTraceContext.flow) trace=\(activeTraceContext.traceId)"
+    }
+
+    private func clearTraceIfReady() {
+        guard traceReadyForClear else { return }
+        activeTraceContext = nil
+        traceReadyForClear = false
+    }
 
     private func transitionSpeech(to newState: SpeechState) {
         let old = speechState
@@ -96,6 +109,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             spriteIdleTask?.cancel()
             speechRecognizer?.setModelSpeaking(false)
             catPanel?.setTurnActive(false)
+            // Barge-in / interrupt paths can jump straight from speaking to idle.
+            // Clear transient celebration/emotion UI immediately in that case.
+            if old.isSpeaking {
+                spriteAnimator?.setState(.idle)
+                catPanel?.setEmotionIndicator(nil)
+            }
         case .modelSpeaking:
             cooldownTask?.cancel()
             spriteIdleTask?.cancel()
@@ -104,6 +123,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .cooldown:
             speechRecognizer?.setModelSpeaking(false)
             catPanel?.setTurnActive(false)
+        }
+    }
+
+    private func beginSpeechCooldown() {
+        lastSpeechEndTime = Date()
+        transitionSpeech(to: .cooldown)
+        cooldownTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard let self else { return }
+            if case .cooldown = self.speechState {
+                self.transitionSpeech(to: .idle)
+            }
+        }
+        spriteIdleTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard let self else { return }
+            if case .idle = self.speechState {
+                self.spriteAnimator?.setState(.idle)
+            }
         }
     }
 
@@ -147,6 +185,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.catPanel = panel
         panel.applySpriteSize(presetSize: initialPreset.size)
         panel.setSmartHideReferences(audioPlayer: audio, screenAnalyzer: analyzer)
+        panel.traceLogContextProvider = { [weak self] in
+            self?.activeTraceLogContext()
+        }
+        panel.onBubbleDidHide = { [weak self] in
+            self?.clearTraceIfReady()
+        }
         panel.show()
         NSLog("[AppDelegate] CatPanel shown. frame=%@ level=%d isVisible=%d", NSStringFromRect(panel.frame), panel.level.rawValue, panel.isVisible ? 1 : 0)
 
@@ -174,7 +218,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         analyzer.onSpeechEvent = { [weak self, weak panel] event in
             panel?.showBubble(text: event.text)
-            self?.recentSpeechStore.add(event.text)
+            self?.recentSpeechStore.add(event.text, speaker: .assistant)
             self?.statusBarController?.recordInteraction()
         }
         analyzer.onBackgroundSpeech = { [weak self] text in
@@ -256,8 +300,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         chatPanel: CompanionChatPanel,
         statusBarController: StatusBarController
     ) {
-        gateway.onAudioData = { data in
+        gateway.onAudioData = { [weak self] data in
+            guard let self else { return }
             NSLog("[GW-IN] onAudioData: %lu bytes", data.count)
+            if !self.speechState.isSpeaking && !self.speechState.isCooldown {
+                self.transitionSpeech(to: .modelSpeaking(.live))
+            }
             voice.enqueueAudio(data)
         }
         gateway.onStateChange = { [weak statusBarController] state in
@@ -313,7 +361,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             switch message {
             case .companionSpeech(let text, let emotionStr, let urgency):
-                NSLog("[GW-IN] onMessage: companionSpeech, textLength=%lu, emotion=%@, chatModeActive=%d, state=%@", text.count, emotionStr, self.chatModeActive, self.speechState.description)
+                NSLog("[GW-IN] onMessage: companionSpeech(legacy), textLength=%lu, emotion=%@, chatModeActive=%d, state=%@", text.count, emotionStr, self.chatModeActive, self.speechState.description)
                 if self.speechState.isSpeaking || self.speechState.isCooldown {
                     NSLog("[GW-IN] companionSpeech DROPPED: speech active (state=%@)", self.speechState.description)
                     return
@@ -323,8 +371,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     NSLog("[GW-IN] companionSpeech DROPPED: too soon (%.1fs < %.1fs gap)", timeSinceLastSpeech, self.minimumSpeechGap)
                     return
                 }
-                self.bubbleLockedByTTS = true
-                self.transitionSpeech(to: .modelSpeaking(.tts))
                 let emotion = CompanionEmotion(rawValue: emotionStr) ?? .neutral
                 if self.chatModeActive {
                     chatPanel?.updateLastAssistantMessage(text)
@@ -341,9 +387,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         chatPanel?.updateListeningText(text)
                     }
                 } else if !text.isEmpty {
-                    if !self.speechState.isSpeaking {
-                        self.transitionSpeech(to: .modelSpeaking(.live))
-                    }
                     var displayText = text
                     if let parsed = AudioMessageParser.parseEmotionTag(from: text) {
                         displayText = parsed.cleanText
@@ -357,7 +400,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                     if finished {
                         if !self.pendingTranscription.isEmpty {
-                            self.recentSpeechStore.add(self.pendingTranscription)
+                            self.recentSpeechStore.add(self.pendingTranscription, speaker: .assistant)
                         }
                         NSLog("[GW-IN] transcription COMPLETE: %@", String(self.pendingTranscription.prefix(80)))
                         self.statusBarController?.recordInteraction()
@@ -365,17 +408,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         self.maybeActivateChatFromWakeWord(text)
                     }
                 }
+            case .turnState(let state, let source):
+                NSLog("[GW-IN] onMessage: turnState, state=%@, source=%@, current=%@", state, source, self.speechState.description)
+                switch state {
+                case "speaking":
+                    let speechSource: SpeechSource = source == "tts" ? .tts : .live
+                    if !self.speechState.isSpeaking {
+                        self.transitionSpeech(to: .modelSpeaking(speechSource))
+                    }
+                default:
+                    if self.speechState.isSpeaking {
+                        self.beginSpeechCooldown()
+                    }
+                }
+            case .traceEvent(let flow, let traceId, let phase, let elapsedMs, let detail):
+                NSLog("[TRACE] flow=%@ trace=%@ phase=%@ elapsed_ms=%@ detail=%@",
+                      flow, traceId, phase, elapsedMs.map(String.init) ?? "-", detail)
+                switch phase {
+                case "first_output_text", "turn_started":
+                    self.activeTraceContext = (flow: flow, traceId: traceId)
+                    self.traceReadyForClear = false
+                case "turn_complete", "turn_interrupted", "turn_failed":
+                    if self.activeTraceContext?.traceId == traceId {
+                        self.traceReadyForClear = true
+                    }
+                default:
+                    break
+                }
             case .inputTranscription(let text, let finished):
                 NSLog("[GW-IN] onMessage: inputTranscription, text=%@, finished=%d", String(text.prefix(60)), finished)
+                if finished {
+                    self.recentSpeechStore.add(text, speaker: .user)
+                }
             case .audio(let data):
                 NSLog("[GW-IN] onMessage: audio, dataSize=%lu", data.count)
             case .turnComplete:
                 NSLog("[GW-IN] onMessage: turnComplete")
                 self.catVoice?.flush()
-                self.lastSpeechEndTime = Date()
-                if case .cooldown = self.speechState {
-                } else {
-                    self.transitionSpeech(to: .idle)
+                if self.speechState.isSpeaking {
+                    self.beginSpeechCooldown()
+                }
+                if !self.pendingTranscription.isEmpty {
+                    self.recentSpeechStore.add(self.pendingTranscription, speaker: .assistant)
                 }
                 self.pendingTranscription = ""
             case .interrupted:
@@ -412,22 +486,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.pendingTranscription = ""
                     return
                 }
-                self.lastSpeechEndTime = Date()
-                self.transitionSpeech(to: .cooldown)
-                self.cooldownTask = Task { @MainActor [weak self] in
-                    try? await Task.sleep(nanoseconds: 1_000_000_000)
-                    guard let self else { return }
-                    if case .cooldown = self.speechState {
-                        self.transitionSpeech(to: .idle)
-                    }
-                }
-                self.spriteIdleTask = Task { @MainActor [weak self] in
-                    try? await Task.sleep(nanoseconds: 2_000_000_000)
-                    guard let self else { return }
-                    if case .idle = self.speechState {
-                        self.spriteAnimator?.setState(.idle)
-                    }
-                }
+                self.beginSpeechCooldown()
             case .error(let code, let message):
                 NSLog("[GW-IN] onMessage: error, code=%@, message=%@", code, message)
             case .unknown:
@@ -541,7 +600,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        speechRecognizer.onAudioBufferCaptured = { [weak self] buffer in
+        speechRecognizer.onAudioBufferCaptured = { [weak self] buffer, forwardMode in
             guard let converter = self?.audioConverter else {
                 NSLog("[AUDIO-PIPE] buffer dropped: audioConverter is nil")
                 return
@@ -549,7 +608,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.audioConversionQueue.async { [weak self] in
                 guard let data = Self.convertAudioBufferToPCM16k(buffer: buffer, converter: converter) else { return }
                 Task { @MainActor [weak self] in
-                    self?.gatewayClient?.sendAudio(data)
+                    guard let self else { return }
+                    let serverModelTurnActive = self.gatewayClient?.isModelTurnActive == true
+                    if serverModelTurnActive && self.speechState.isSpeaking && forwardMode != .bargeIn {
+                        NSLog("[AUDIO-PIPE] dropped stale non-barge-in audio during model turn (%lu bytes)", data.count)
+                        return
+                    }
+                    self.gatewayClient?.sendAudio(data)
                 }
             }
         }

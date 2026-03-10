@@ -43,10 +43,10 @@ final class GatewayClient {
     private var isNetworkAvailable = true
     private var lastPongAt: Date?
     private var isManuallyDisconnected = false
-    private(set) var isTTSSpeaking = false
-    /// Timestamp when the last TTS speech ended. Used by ScreenAnalyzer for post-speech cooldown.
-    private(set) var lastSpeechEndTime: Date = .distantPast
-    private var ttsEndCooldownTask: Task<Void, Never>?
+    private(set) var isModelTurnActive = false
+    /// Timestamp when the last server-authoritative model turn ended.
+    private(set) var lastModelTurnEndTime: Date = .distantPast
+    private var turnStateCooldownTask: Task<Void, Never>?
     private var currentSessionToken: String?
     private var setupSoul: String?
     private var lastPingSentAt: Date?
@@ -71,6 +71,9 @@ final class GatewayClient {
     private let rapidFailureWindow: TimeInterval = 5
 
     private let settings = AppSettings.shared
+
+    var isTTSSpeaking: Bool { isModelTurnActive }
+    var lastSpeechEndTime: Date { lastModelTurnEndTime }
 
     init() {
         pathMonitor.pathUpdateHandler = { [weak self] path in
@@ -153,8 +156,12 @@ final class GatewayClient {
         guard case .connected = state else { return }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        let traceID = "text_" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
         NSLog("[GW-OUT] sendText: %@", trimmed)
+        NSLog("[TRACE] flow=text trace=%@ phase=text_submit text_len=%d", traceID, trimmed.count)
         let payload: [String: Any] = [
+            "type": "clientContent",
+            "traceId": traceID,
             "clientContent": [
                 "turnComplete": true,
                 "turns": [
@@ -174,7 +181,7 @@ final class GatewayClient {
         sendJSON(["type": "bargeIn"])
     }
 
-    func sendScreenCapture(imageBase64: String, context: String, userId: String, character: String, soul: String?, activityMinutes: Int = 0) {
+    func sendScreenCapture(imageBase64: String, context: String, userId: String, character: String, soul: String?, activityMinutes: Int = 0, traceID: String? = nil) {
         guard case .connected(let sid) = state else { return }
         NSLog("[GW-OUT] sendScreenCapture: image=%lu bytes, context=%@, character=%@, activityMinutes=%d", imageBase64.count, context, character, activityMinutes)
         var payload: [String: Any] = [
@@ -186,13 +193,16 @@ final class GatewayClient {
             "character": character,
             "activityMinutes": activityMinutes
         ]
+        if let traceID, !traceID.isEmpty {
+            payload["traceId"] = traceID
+        }
         if let soul, !soul.isEmpty {
             payload["soul"] = soul
         }
         sendJSON(payload)
     }
 
-    func sendForceCapture(imageBase64: String, context: String, userId: String, character: String, soul: String?, activityMinutes: Int = 0) {
+    func sendForceCapture(imageBase64: String, context: String, userId: String, character: String, soul: String?, activityMinutes: Int = 0, traceID: String? = nil) {
         guard case .connected(let sid) = state else { return }
         NSLog("[GW-OUT] sendForceCapture: image=%lu bytes, context=%@, character=%@, activityMinutes=%d", imageBase64.count, context, character, activityMinutes)
         var payload: [String: Any] = [
@@ -204,6 +214,9 @@ final class GatewayClient {
             "character": character,
             "activityMinutes": activityMinutes
         ]
+        if let traceID, !traceID.isEmpty {
+            payload["traceId"] = traceID
+        }
         if let soul, !soul.isEmpty {
             payload["soul"] = soul
         }
@@ -336,7 +349,7 @@ final class GatewayClient {
         ]
         var mutablePayload = payload
         if let sessionHandle, !sessionHandle.isEmpty {
-            mutablePayload["sessionHandle"] = sessionHandle
+            mutablePayload["resumptionHandle"] = sessionHandle
         }
         sendJSON(mutablePayload)
     }
@@ -393,21 +406,29 @@ final class GatewayClient {
                 onMessage?(parsed)
             case .ttsStart(let ttsText):
                 NSLog("[GW-IN] message type=ttsStart, suppressing mic, hasText=%d", ttsText != nil ? 1 : 0)
-                ttsEndCooldownTask?.cancel()
-                ttsEndCooldownTask = nil
-                isTTSSpeaking = true
+                activateModelTurn()
                 onMessage?(parsed)
             case .ttsEnd:
                 NSLog("[GW-IN] message type=ttsEnd, cooldown before resuming mic")
                 onMessage?(parsed)
-                ttsEndCooldownTask?.cancel()
-                ttsEndCooldownTask = Task { @MainActor [weak self] in
-                    try? await Task.sleep(nanoseconds: 500_000_000)
-                    guard !Task.isCancelled, let self else { return }
-                    self.isTTSSpeaking = false
-                    self.lastSpeechEndTime = Date()
-                    NSLog("[GW-IN] mic resumed after cooldown")
+                scheduleModelTurnEndCooldown(logResume: true)
+            case .turnState(let state, let source):
+                NSLog("[GW-IN] message type=turnState, state=%@, source=%@", state, source)
+                switch state {
+                case "speaking":
+                    activateModelTurn()
+                default:
+                    scheduleModelTurnEndCooldown()
                 }
+                onMessage?(parsed)
+            case .interrupted:
+                NSLog("[GW-IN] message type=interrupted, resuming mic immediately")
+                clearModelTurnStateImmediately()
+                onMessage?(parsed)
+            case .traceEvent(let flow, let traceId, let phase, let elapsedMs, let detail):
+                NSLog("[GW-IN] message type=traceEvent, flow=%@, trace=%@, phase=%@, elapsedMs=%@, detail=%@",
+                      flow, traceId, phase, elapsedMs.map(String.init) ?? "-", detail)
+                onMessage?(parsed)
             default:
                 NSLog("[GW-IN] message type=other")
                 onMessage?(parsed)
@@ -432,21 +453,29 @@ final class GatewayClient {
                 onMessage?(parsed)
             case .ttsStart(let ttsText):
                 NSLog("[GW-IN] message type=ttsStart, suppressing mic, hasText=%d", ttsText != nil ? 1 : 0)
-                ttsEndCooldownTask?.cancel()
-                ttsEndCooldownTask = nil
-                isTTSSpeaking = true
+                activateModelTurn()
                 onMessage?(parsed)
             case .ttsEnd:
                 NSLog("[GW-IN] message type=ttsEnd, cooldown before resuming mic")
                 onMessage?(parsed)
-                ttsEndCooldownTask?.cancel()
-                ttsEndCooldownTask = Task { @MainActor [weak self] in
-                    try? await Task.sleep(nanoseconds: 500_000_000)
-                    guard !Task.isCancelled, let self else { return }
-                    self.isTTSSpeaking = false
-                    self.lastSpeechEndTime = Date()
-                    NSLog("[GW-IN] mic resumed after cooldown")
+                scheduleModelTurnEndCooldown(logResume: true)
+            case .turnState(let state, let source):
+                NSLog("[GW-IN] message type=turnState, state=%@, source=%@", state, source)
+                switch state {
+                case "speaking":
+                    activateModelTurn()
+                default:
+                    scheduleModelTurnEndCooldown()
                 }
+                onMessage?(parsed)
+            case .interrupted:
+                NSLog("[GW-IN] message type=interrupted, resuming mic immediately")
+                clearModelTurnStateImmediately()
+                onMessage?(parsed)
+            case .traceEvent(let flow, let traceId, let phase, let elapsedMs, let detail):
+                NSLog("[GW-IN] message type=traceEvent, flow=%@, trace=%@, phase=%@, elapsedMs=%@, detail=%@",
+                      flow, traceId, phase, elapsedMs.map(String.init) ?? "-", detail)
+                onMessage?(parsed)
             default:
                 NSLog("[GW-IN] message type=other")
                 onMessage?(parsed)
@@ -455,6 +484,32 @@ final class GatewayClient {
             NSLog("[GW-IN] unknown message type")
             break
         }
+    }
+
+    private func activateModelTurn() {
+        turnStateCooldownTask?.cancel()
+        turnStateCooldownTask = nil
+        isModelTurnActive = true
+    }
+
+    private func scheduleModelTurnEndCooldown(delayNanoseconds: UInt64 = 500_000_000, logResume: Bool = false) {
+        turnStateCooldownTask?.cancel()
+        turnStateCooldownTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: delayNanoseconds)
+            guard !Task.isCancelled, let self else { return }
+            self.isModelTurnActive = false
+            self.lastModelTurnEndTime = Date()
+            if logResume {
+                NSLog("[GW-IN] mic resumed after cooldown")
+            }
+        }
+    }
+
+    private func clearModelTurnStateImmediately() {
+        turnStateCooldownTask?.cancel()
+        turnStateCooldownTask = nil
+        isModelTurnActive = false
+        lastModelTurnEndTime = Date()
     }
 
     private func startHeartbeatTimer() {
@@ -621,6 +676,10 @@ final class GatewayClient {
     }
 
     private func closeConnection() {
+        turnStateCooldownTask?.cancel()
+        turnStateCooldownTask = nil
+        isModelTurnActive = false
+        lastModelTurnEndTime = .distantPast
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
         webSocketTask = nil
         urlSession = nil

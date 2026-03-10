@@ -21,6 +21,9 @@ final class CatPanel: NSPanel {
     private var bubbleShownAt: Date?
     private let maxBubbleDisplayTime: TimeInterval = 15.0
 
+    var traceLogContextProvider: (() -> String?)?
+    var onBubbleDidHide: (() -> Void)?
+
     init(catViewModel: CatViewModel, spriteAnimator: SpriteAnimator) {
         self.catViewModel = catViewModel
         self.spriteAnimator = spriteAnimator
@@ -99,6 +102,9 @@ final class CatPanel: NSPanel {
         NSLog("[BUBBLE] showBubble: %@", preview)
         let displayText = text
         let wasVisible = !bubbleView.isHidden && bubbleView.alphaValue > 0
+        if let traceContext = traceLogContextProvider?() {
+            NSLog("[TRACE] %@ phase=%@ text_len=%d", traceContext, wasVisible ? "bubble_update" : "bubble_show", displayText.count)
+        }
         currentBubbleText = displayText
         bubbleShownAt = Date()
         bubbleDuration = 2.0
@@ -114,6 +120,9 @@ final class CatPanel: NSPanel {
     }
 
     func hideBubble() {
+        if let traceContext = traceLogContextProvider?() {
+            NSLog("[TRACE] %@ phase=bubble_hide", traceContext)
+        }
         bubbleView.hide()
         currentBubbleText = nil
         bubbleShownAt = nil
@@ -121,6 +130,7 @@ final class CatPanel: NSPanel {
         hideCountdownTimer = nil
         smartHideTimer?.invalidate()
         smartHideTimer = nil
+        onBubbleDidHide?()
     }
 
     func setTurnActive(_ active: Bool) {

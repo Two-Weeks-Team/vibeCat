@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	cloudlogging "cloud.google.com/go/logging"
@@ -16,7 +17,7 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"google.golang.org/adk/agent"
-	"google.golang.org/adk/memory"
+	adkmemory "google.golang.org/adk/memory"
 	"google.golang.org/adk/plugin"
 	"google.golang.org/adk/plugin/retryandreflect"
 	"google.golang.org/adk/runner"
@@ -25,7 +26,9 @@ import (
 	"google.golang.org/genai"
 
 	"vibecat/adk-orchestrator/internal/agents/graph"
+	memoryagent "vibecat/adk-orchestrator/internal/agents/memory"
 	"vibecat/adk-orchestrator/internal/agents/search"
+	"vibecat/adk-orchestrator/internal/agents/tooluse"
 	"vibecat/adk-orchestrator/internal/models"
 	"vibecat/adk-orchestrator/internal/store"
 )
@@ -38,6 +41,9 @@ type orchestrator struct {
 	genaiClient    *genai.Client
 	sessionService session.Service
 	searchAgent    *search.Agent
+	toolAgent      *tooluse.Agent
+	memoryAgent    *memoryagent.Agent
+	storeClient    *store.Client
 	appName        string
 	analyzeCounter metric.Int64Counter
 	analyzeDurHist metric.Float64Histogram
@@ -131,7 +137,7 @@ func main() {
 
 	// Create ADK runner with in-memory session service + retryandreflect plugin
 	sessService := session.InMemoryService()
-	memService := memory.InMemoryService()
+	memService := adkmemory.InMemoryService()
 	retryPlugin := retryandreflect.MustNew(
 		retryandreflect.WithMaxRetries(3),
 		retryandreflect.WithTrackingScope(retryandreflect.Invocation),
@@ -166,6 +172,9 @@ func main() {
 		genaiClient:    genaiClient,
 		sessionService: sessService,
 		searchAgent:    search.New(genaiClient),
+		toolAgent:      tooluse.New(genaiClient, parseCSVEnv("GEMINI_FILE_SEARCH_STORES")),
+		memoryAgent:    memoryagent.New(genaiClient, storeClient),
+		storeClient:    storeClient,
 		appName:        "vibecat",
 		analyzeCounter: analyzeCounter,
 		analyzeDurHist: analyzeDurHist,
@@ -177,6 +186,9 @@ func main() {
 	mux.HandleFunc("/readyz", readyHandler)
 	mux.HandleFunc("/analyze", orch.analyzeHandler)
 	mux.HandleFunc("/search", orch.searchHandler)
+	mux.HandleFunc("/tool", orch.toolHandler)
+	mux.HandleFunc("/memory/session-summary", orch.sessionSummaryHandler)
+	mux.HandleFunc("/memory/context", orch.memoryContextHandler)
 
 	addr := ":" + portOrDefault("8080")
 	slog.Info("starting server", "service", serviceName, "addr", addr)
@@ -215,7 +227,7 @@ func (o *orchestrator) analyzeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	imageLen := len(req.Image)
-	slog.Info("analyze request parsed", "image_bytes", imageLen, "context", req.Context, "user_id", req.UserID, "session_id", req.SessionID)
+	slog.Info("analyze request parsed", "trace_id", req.TraceID, "image_bytes", imageLen, "context", req.Context, "user_id", req.UserID, "session_id", req.SessionID)
 
 	// Use session/user IDs from request, or defaults
 	userID := req.UserID
@@ -311,10 +323,19 @@ func (o *orchestrator) analyzeHandler(w http.ResponseWriter, r *http.Request) {
 
 	if lastResult.Decision == nil && lastResult.Vision == nil && lastResult.SpeechText == "" {
 		o.errorCounter.Add(r.Context(), 1)
-		slog.Warn("agent graph produced no usable result", "user_id", userID, "session_id", sessionID, "had_error", hadError)
+		slog.Warn("agent graph produced no usable result", "trace_id", req.TraceID, "user_id", userID, "session_id", sessionID, "had_error", hadError, "elapsed", time.Since(analyzeStart).String())
 		http.Error(w, "agent graph failed to produce result", http.StatusServiceUnavailable)
 		return
 	}
+
+	slog.Info("[TIMING] analyze complete",
+		"trace_id", req.TraceID,
+		"user_id", userID,
+		"session_id", sessionID,
+		"elapsed", time.Since(analyzeStart).String(),
+		"should_speak", lastResult.Decision != nil && lastResult.Decision.ShouldSpeak,
+		"speech_text_len", len(lastResult.SpeechText),
+	)
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(lastResult); err != nil {
@@ -339,7 +360,8 @@ func (o *orchestrator) searchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.Info("[SEARCH] voice search request", "query", req.Query, "language", req.Language)
+	searchStart := time.Now()
+	slog.Info("[SEARCH] voice search request", "trace_id", req.TraceID, "query", req.Query, "language", req.Language)
 
 	result := o.searchAgent.DirectSearch(r.Context(), req.Query, req.Language)
 
@@ -349,12 +371,160 @@ func (o *orchestrator) searchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.Info("[SEARCH] voice search result", "query", result.Query, "summary_len", len(result.Summary))
+	slog.Info("[SEARCH] voice search result", "trace_id", req.TraceID, "elapsed", time.Since(searchStart).String(), "query", result.Query, "summary_len", len(result.Summary))
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(result); err != nil {
 		slog.Error("failed to encode search response", "error", err)
 	}
+}
+
+func (o *orchestrator) toolHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req models.ToolRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.Query) == "" {
+		http.Error(w, "query is required", http.StatusBadRequest)
+		return
+	}
+
+	if o.toolAgent == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	toolStart := time.Now()
+	slog.Info("[TOOL] request", "trace_id", req.TraceID, "query", req.Query, "language", req.Language)
+	result := o.toolAgent.Resolve(r.Context(), req)
+	if result == nil {
+		slog.Info("[TOOL] empty result", "trace_id", req.TraceID, "elapsed", time.Since(toolStart).String())
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	slog.Info("[TOOL] result", "trace_id", req.TraceID, "elapsed", time.Since(toolStart).String(), "tool", result.Tool, "summary_len", len(result.Summary))
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		slog.Error("failed to encode tool response", "error", err)
+	}
+}
+
+func (o *orchestrator) sessionSummaryHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req models.SessionSummaryRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.UserID) == "" {
+		http.Error(w, "userId is required", http.StatusBadRequest)
+		return
+	}
+	if len(req.History) == 0 {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	if o.memoryAgent != nil {
+		if err := o.memoryAgent.SaveSessionSummary(r.Context(), req.UserID, req.History, req.Language); err != nil {
+			slog.Warn("failed to save session summary", "user_id", req.UserID, "session_id", req.SessionID, "error", err)
+			http.Error(w, "failed to save summary", http.StatusBadGateway)
+			return
+		}
+	}
+
+	if o.storeClient != nil && req.SessionID != "" {
+		for _, event := range req.History {
+			if strings.TrimSpace(event) == "" {
+				continue
+			}
+			_ = o.storeClient.AddHistoryEntry(r.Context(), req.SessionID, &store.HistoryEntry{
+				Timestamp:    time.Now(),
+				Type:         inferHistoryType(event),
+				Content:      event,
+				Significance: 1,
+			})
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"saved":      true,
+		"historyLen": len(req.History),
+	})
+}
+
+func (o *orchestrator) memoryContextHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req models.MemoryContextRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.UserID) == "" {
+		http.Error(w, "userId is required", http.StatusBadRequest)
+		return
+	}
+
+	contextText := ""
+	if o.memoryAgent != nil {
+		contextText = o.memoryAgent.RetrieveContext(r.Context(), req.UserID, req.Language)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(models.MemoryContextResponse{
+		Context: contextText,
+	})
+}
+
+func inferHistoryType(event string) string {
+	lower := strings.ToLower(event)
+	switch {
+	case strings.HasPrefix(lower, "user:"):
+		return "speech"
+	case strings.HasPrefix(lower, "assistant:"):
+		return "speech"
+	case strings.HasPrefix(lower, "tool["):
+		return "search"
+	case strings.Contains(lower, "interrupt"):
+		return "interruption"
+	case strings.HasPrefix(lower, "screen:"):
+		return "vision_analysis"
+	default:
+		return "session_event"
+	}
+}
+
+func parseCSVEnv(key string) []string {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }
 
 func portOrDefault(fallback string) string {

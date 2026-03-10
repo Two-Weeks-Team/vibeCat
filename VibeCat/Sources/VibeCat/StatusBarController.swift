@@ -34,15 +34,32 @@ final class SessionTracker {
 
 @MainActor
 final class RecentSpeechStore {
+    enum Speaker {
+        case user
+        case assistant
+
+        var label: String {
+            switch self {
+            case .user:
+                return "You"
+            case .assistant:
+                return "AI"
+            }
+        }
+    }
+
     struct Entry {
+        let speaker: Speaker
         let text: String
         let timestamp: Date
     }
 
     private var entries: [Entry] = []
 
-    func add(_ text: String, at date: Date = Date()) {
-        entries.insert(Entry(text: text, timestamp: date), at: 0)
+    func add(_ text: String, speaker: Speaker, at date: Date = Date()) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        entries.insert(Entry(speaker: speaker, text: trimmed, timestamp: date), at: 0)
         if entries.count > 10 {
             entries = Array(entries.prefix(10))
         }
@@ -95,6 +112,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private var characterItems: [NSMenuItem] = []
     private var modelItems: [NSMenuItem] = []
     private var captureItems: [NSMenuItem] = []
+    private var captureModeItems: [NSMenuItem] = []
 
     private var musicItem: NSMenuItem?
     private var searchItem: NSMenuItem?
@@ -315,6 +333,20 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         captureItem.submenu = captureMenu
         menu.addItem(captureItem)
 
+        let captureTargetMenu = NSMenu()
+        captureModeItems.removeAll(keepingCapacity: true)
+        for mode in CaptureTargetMode.allCases {
+            let item = NSMenuItem(title: mode.menuTitle, action: #selector(selectCaptureTargetMode(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = mode.rawValue
+            item.state = AppSettings.shared.captureTargetMode == mode ? .on : .off
+            captureTargetMenu.addItem(item)
+            captureModeItems.append(item)
+        }
+        let captureTargetItem = NSMenuItem(title: "Capture Target", action: nil, keyEquivalent: "")
+        captureTargetItem.submenu = captureTargetMenu
+        menu.addItem(captureTargetItem)
+
         menu.addItem(NSMenuItem.separator())
 
         let advancedMenu = NSMenu()
@@ -436,6 +468,13 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         refreshSubmenuChecks()
     }
 
+    @objc private func selectCaptureTargetMode(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? String,
+              let mode = CaptureTargetMode(rawValue: rawValue) else { return }
+        AppSettings.shared.captureTargetMode = mode
+        refreshSubmenuChecks()
+    }
+
     @objc private func toggleMusic(_ sender: NSMenuItem) {
         AppSettings.shared.musicEnabled.toggle()
         sender.state = AppSettings.shared.musicEnabled ? .on : .off
@@ -517,6 +556,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             guard let value = item.representedObject as? Double else { continue }
             item.state = AppSettings.shared.captureInterval == value ? .on : .off
         }
+        for item in captureModeItems {
+            guard let rawValue = item.representedObject as? String,
+                  let mode = CaptureTargetMode(rawValue: rawValue) else { continue }
+            item.state = AppSettings.shared.captureTargetMode == mode ? .on : .off
+        }
 
         musicItem?.state = AppSettings.shared.musicEnabled ? .on : .off
         searchItem?.state = AppSettings.shared.searchEnabled ? .on : .off
@@ -536,7 +580,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         for entry in entries {
             let relative = relativeTime(from: entry.timestamp)
-            let title = "\(entry.text) (\(relative))"
+            let title = "[\(entry.speaker.label)] \(entry.text) (\(relative))"
             let item = NSMenuItem(title: title, action: #selector(handleCopyRecentSpeech(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = entry.text

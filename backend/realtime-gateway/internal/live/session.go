@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"google.golang.org/genai"
@@ -28,6 +29,7 @@ type Config struct {
 	Chattiness      string `json:"chattiness"`
 	Soul            string `json:"soul"`
 	DeviceID        string `json:"deviceId"`
+	MemoryContext   string `json:"-"`
 }
 
 // Session wraps a Gemini Live API session.
@@ -161,6 +163,39 @@ RULES:
 
 Start each response with an emotion tag: [happy], [surprised], [thinking], [concerned], or [idle].`
 
+const (
+	maxMemoryContextChars = 1200
+)
+
+func trimPromptBlock(s string, max int) string {
+	s = strings.TrimSpace(s)
+	if max <= 0 || len(s) <= max {
+		return s
+	}
+	return strings.TrimSpace(s[:max]) + "..."
+}
+
+func buildSystemInstruction(cfg Config) string {
+	instruction := commonLivePrompt
+	if cfg.Soul != "" {
+		instruction += "\n\n=== CHARACTER PERSONA ===\n" + cfg.Soul
+	}
+	if cfg.GoogleSearch {
+		instruction += "\n\n=== TOOL GUIDANCE ===\n" +
+			"Google Search is available in this session.\n" +
+			"Use it before answering when the user asks for current, latest, live, web-grounded, or time-sensitive information, or explicitly asks you to search, browse, look up, check docs, or check GitHub.\n" +
+			"After searching, answer in the same turn with the result. Never say you will search later and then stop.\n" +
+			"Do not use Google Search for casual chat, stable facts, or on-screen observations unless the user explicitly asks or freshness matters."
+	}
+	if ctx := trimPromptBlock(cfg.MemoryContext, maxMemoryContextChars); ctx != "" {
+		instruction += "\n\n=== RECENT ESSENTIAL CONTEXT ===\n" +
+			ctx + "\n" +
+			"Use this as compressed recent memory. Prefer the latest user speech and current screen state when they conflict."
+	}
+	instruction += "\n\nRespond in " + lang.NormalizeLanguage(cfg.Language) + "."
+	return instruction
+}
+
 func buildLiveConfig(cfg Config) *genai.LiveConnectConfig {
 	lc := &genai.LiveConnectConfig{
 		ResponseModalities: []genai.Modality{genai.ModalityAudio},
@@ -215,17 +250,13 @@ func buildLiveConfig(cfg Config) *genai.LiveConnectConfig {
 		},
 	}
 
-	// Google Search is intentionally NOT added to Live API tools.
-	// Adding it causes Gemini to consider searching on EVERY voice response,
-	// adding 5-10s latency even for simple conversation. Search is handled
-	// by the ADK Search Buddy agent on the screen-analysis pipeline instead,
-	// which only triggers selectively (errors, stuck, explicit questions).
-
-	instruction := commonLivePrompt
-	if cfg.Soul != "" {
-		instruction = commonLivePrompt + "\n\n=== CHARACTER PERSONA ===\n" + cfg.Soul
+	if cfg.GoogleSearch {
+		lc.Tools = append(lc.Tools, &genai.Tool{
+			GoogleSearch: &genai.GoogleSearch{},
+		})
 	}
-	instruction += "\n\nRespond in " + lang.NormalizeLanguage(cfg.Language) + "."
+
+	instruction := buildSystemInstruction(cfg)
 	lc.SystemInstruction = &genai.Content{
 		Parts: []*genai.Part{{Text: instruction}},
 	}

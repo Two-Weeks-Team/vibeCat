@@ -26,6 +26,40 @@ final class AudioMessageParserTests: XCTestCase {
         XCTAssertFalse(finished)
     }
 
+    func testParseTurnStateUsesDefaultsForMissingFields() throws {
+        let payload = try makeJSON(["type": "turnState"])
+        let message = AudioMessageParser.parse(payload)
+
+        guard case .turnState(let state, let source) = message else {
+            XCTFail("Expected .turnState")
+            return
+        }
+        XCTAssertEqual(state, "idle")
+        XCTAssertEqual(source, "live")
+    }
+
+    func testParseTraceEventIncludesElapsedAndDetail() throws {
+        let payload = try makeJSON([
+            "type": "traceEvent",
+            "flow": "proactive",
+            "traceId": "cap_123",
+            "phase": "turn_started",
+            "elapsedMs": 1842,
+            "detail": "target=frontmost_window"
+        ])
+        let message = AudioMessageParser.parse(payload)
+
+        guard case .traceEvent(let flow, let traceId, let phase, let elapsedMs, let detail) = message else {
+            XCTFail("Expected .traceEvent")
+            return
+        }
+        XCTAssertEqual(flow, "proactive")
+        XCTAssertEqual(traceId, "cap_123")
+        XCTAssertEqual(phase, "turn_started")
+        XCTAssertEqual(elapsedMs, 1842)
+        XCTAssertEqual(detail, "target=frontmost_window")
+    }
+
     func testParseCompanionSpeechUsesDefaultEmotionAndUrgency() throws {
         let payload = try makeJSON(["type": "companionSpeech", "text": "great job"])
         let message = AudioMessageParser.parse(payload)

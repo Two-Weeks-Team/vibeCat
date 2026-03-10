@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"iter"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 
+	"vibecat/adk-orchestrator/internal/agents/topic"
 	"vibecat/adk-orchestrator/internal/geminiconfig"
 	"vibecat/adk-orchestrator/internal/lang"
 	"vibecat/adk-orchestrator/internal/models"
@@ -89,6 +91,10 @@ func (a *Agent) Run(ctx agent.InvocationContext) iter.Seq2[*session.Event, error
 	}
 }
 
+func (a *Agent) RetrieveContext(ctx context.Context, userID, language string) string {
+	return a.retrieveMemory(ctx, userID, language)
+}
+
 // retrieveMemory fetches the user's cross-session memory and formats it as context.
 func (a *Agent) retrieveMemory(ctx context.Context, userID, language string) string {
 	if a.store == nil {
@@ -104,26 +110,18 @@ func (a *Agent) retrieveMemory(ctx context.Context, userID, language string) str
 		return ""
 	}
 
-	// Build context bridge from most recent summary
-	latest := entry.RecentSummaries[len(entry.RecentSummaries)-1]
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Previous session (%s): %s", latest.Date.Format("Jan 2"), latest.Summary))
-	if len(latest.UnresolvedIssues) > 0 {
-		sb.WriteString("\nUnresolved issues: ")
-		sb.WriteString(strings.Join(latest.UnresolvedIssues, ", "))
-	}
-	sb.WriteString(fmt.Sprintf("\nRespond in %s.", language))
-	return sb.String()
+	return formatMemoryContext(entry, language)
 }
 
 // SaveSessionSummary generates and stores an end-of-session summary.
 // Called by the Gateway when a session ends.
-func (a *Agent) SaveSessionSummary(ctx context.Context, userID string, history []string) error {
+func (a *Agent) SaveSessionSummary(ctx context.Context, userID string, history []string, language string) error {
 	if a.store == nil {
 		return nil
 	}
 
-	summary := a.generateSummary(ctx, history, "English")
+	language = lang.NormalizeLanguage(language)
+	summary := a.generateSummary(ctx, history, language)
 	unresolvedIssues := extractUnresolvedIssues(history)
 
 	entry, err := a.store.GetMemory(ctx, userID)
@@ -148,6 +146,7 @@ func (a *Agent) SaveSessionSummary(ctx context.Context, userID string, history [
 		entry.RecentSummaries = entry.RecentSummaries[len(entry.RecentSummaries)-10:]
 	}
 	entry.UpdatedAt = time.Now()
+	entry.KnownTopics = mergeTopics(entry.KnownTopics, history)
 
 	return a.store.UpdateMemory(ctx, userID, entry)
 }
@@ -237,4 +236,80 @@ func extractUnresolvedIssues(history []string) []string {
 		}
 	}
 	return issues
+}
+
+func mergeTopics(existing []store.Topic, history []string) []store.Topic {
+	if len(history) == 0 {
+		return existing
+	}
+
+	index := make(map[string]int, len(existing))
+	for i, topicEntry := range existing {
+		index[topicEntry.Name] = i
+	}
+
+	now := time.Now()
+	for _, event := range history {
+		for _, name := range topic.Detect(event) {
+			if pos, ok := index[name]; ok {
+				existing[pos].LastMentioned = now
+				continue
+			}
+			index[name] = len(existing)
+			existing = append(existing, store.Topic{
+				Name:          name,
+				LastMentioned: now,
+			})
+		}
+	}
+
+	if len(existing) > 20 {
+		existing = existing[len(existing)-20:]
+	}
+	return existing
+}
+
+func formatMemoryContext(entry *store.MemoryEntry, language string) string {
+	if entry == nil || len(entry.RecentSummaries) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.WriteString("Recent developer context:\n")
+
+	summaryStart := len(entry.RecentSummaries) - 2
+	if summaryStart < 0 {
+		summaryStart = 0
+	}
+	for _, summary := range entry.RecentSummaries[summaryStart:] {
+		sb.WriteString(fmt.Sprintf("- %s: %s\n", summary.Date.Format("Jan 2"), summary.Summary))
+		if len(summary.UnresolvedIssues) > 0 {
+			sb.WriteString("  Unresolved: ")
+			sb.WriteString(strings.Join(summary.UnresolvedIssues, ", "))
+			sb.WriteString("\n")
+		}
+	}
+
+	topics := append([]store.Topic(nil), entry.KnownTopics...)
+	sort.Slice(topics, func(i, j int) bool {
+		return topics[i].LastMentioned.After(topics[j].LastMentioned)
+	})
+	activeTopics := make([]string, 0, 3)
+	for _, topicEntry := range topics {
+		if topicEntry.Resolved || strings.TrimSpace(topicEntry.Name) == "" {
+			continue
+		}
+		activeTopics = append(activeTopics, topicEntry.Name)
+		if len(activeTopics) == 3 {
+			break
+		}
+	}
+	if len(activeTopics) > 0 {
+		sb.WriteString("Active topics: ")
+		sb.WriteString(strings.Join(activeTopics, ", "))
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString(fmt.Sprintf("Respond in %s.", language))
+	return strings.TrimSpace(sb.String())
 }

@@ -4,6 +4,9 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
+
+	"vibecat/adk-orchestrator/internal/store"
 )
 
 func TestNew(t *testing.T) {
@@ -65,7 +68,57 @@ func TestRetrieveMemoryNilStore(t *testing.T) {
 
 func TestSaveSessionSummaryNilStore(t *testing.T) {
 	a := New(nil, nil)
-	if err := a.SaveSessionSummary(context.Background(), "user-1", []string{"some event"}); err != nil {
+	if err := a.SaveSessionSummary(context.Background(), "user-1", []string{"some event"}, "English"); err != nil {
 		t.Fatalf("SaveSessionSummary() error = %v", err)
+	}
+}
+
+func TestMergeTopics(t *testing.T) {
+	got := mergeTopics(nil, []string{
+		"Swift build failed with auth error",
+		"Need to debug websocket reconnect flow",
+	})
+
+	if len(got) == 0 {
+		t.Fatal("mergeTopics() returned no topics")
+	}
+}
+
+func TestFormatMemoryContext(t *testing.T) {
+	entry := &store.MemoryEntry{
+		RecentSummaries: []store.SessionSummary{
+			{
+				Date:    time.Date(2026, 3, 8, 0, 0, 0, 0, time.UTC),
+				Summary: "Worked on websocket reconnect and search routing.",
+			},
+			{
+				Date:             time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC),
+				Summary:          "Stabilized barge-in and Live turn handling.",
+				UnresolvedIssues: []string{"voice search follow-up still flaky"},
+			},
+		},
+		KnownTopics: []store.Topic{
+			{Name: "Gemini Live API", LastMentioned: time.Date(2026, 3, 10, 9, 0, 0, 0, time.UTC)},
+			{Name: "Cloud Run", LastMentioned: time.Date(2026, 3, 9, 9, 0, 0, 0, time.UTC)},
+			{Name: "resolved topic", LastMentioned: time.Date(2026, 3, 10, 10, 0, 0, 0, time.UTC), Resolved: true},
+		},
+	}
+
+	got := formatMemoryContext(entry, "Korean")
+
+	for _, want := range []string{
+		"Recent developer context:",
+		"Mar 8",
+		"Mar 10",
+		"voice search follow-up still flaky",
+		"Active topics: Gemini Live API, Cloud Run",
+		"Respond in Korean.",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("formatMemoryContext() missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "resolved topic") {
+		t.Fatalf("formatMemoryContext() should omit resolved topics:\n%s", got)
 	}
 }
