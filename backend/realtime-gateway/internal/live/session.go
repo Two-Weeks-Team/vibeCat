@@ -189,10 +189,10 @@ func buildLiveConfig(cfg Config) *genai.LiveConnectConfig {
 	lc.InputAudioTranscription = &genai.AudioTranscriptionConfig{}
 
 	prefixPadding := int32(20)
-	silenceDuration := int32(300)
+	silenceDuration := int32(200)
 	lc.RealtimeInputConfig = &genai.RealtimeInputConfig{
 		AutomaticActivityDetection: &genai.AutomaticActivityDetection{
-			StartOfSpeechSensitivity: genai.StartSensitivityLow,
+			StartOfSpeechSensitivity: genai.StartSensitivityHigh,
 			EndOfSpeechSensitivity:   genai.EndSensitivityLow,
 			PrefixPaddingMs:          &prefixPadding,
 			SilenceDurationMs:        &silenceDuration,

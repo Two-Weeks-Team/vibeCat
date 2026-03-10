@@ -96,8 +96,8 @@ func TestBuildLiveConfig(t *testing.T) {
 					t.Fatal("expected automatic activity detection config")
 				}
 				ad := lc.RealtimeInputConfig.AutomaticActivityDetection
-				if ad.StartOfSpeechSensitivity != genai.StartSensitivityLow {
-					t.Fatalf("StartOfSpeechSensitivity = %v, want %v", ad.StartOfSpeechSensitivity, genai.StartSensitivityLow)
+				if ad.StartOfSpeechSensitivity != genai.StartSensitivityHigh {
+					t.Fatalf("StartOfSpeechSensitivity = %v, want %v", ad.StartOfSpeechSensitivity, genai.StartSensitivityHigh)
 				}
 				if ad.EndOfSpeechSensitivity != genai.EndSensitivityLow {
 					t.Fatalf("EndOfSpeechSensitivity = %v, want %v", ad.EndOfSpeechSensitivity, genai.EndSensitivityLow)
@@ -105,8 +105,8 @@ func TestBuildLiveConfig(t *testing.T) {
 				if ad.PrefixPaddingMs == nil || *ad.PrefixPaddingMs != 20 {
 					t.Fatalf("PrefixPaddingMs = %v, want 20", ad.PrefixPaddingMs)
 				}
-				if ad.SilenceDurationMs == nil || *ad.SilenceDurationMs != 300 {
-					t.Fatalf("SilenceDurationMs = %v, want 300", ad.SilenceDurationMs)
+				if ad.SilenceDurationMs == nil || *ad.SilenceDurationMs != 200 {
+					t.Fatalf("SilenceDurationMs = %v, want 200", ad.SilenceDurationMs)
 				}
 			},
 		},
