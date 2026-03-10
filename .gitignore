@@ -25,6 +25,10 @@ vendor/
 .vscode/
 *.code-workspace
 
+# Playwright CLI artifacts
+.playwright-cli/console-*.log
+.playwright-cli/page-*.yml
+
 # Docker
 docker-compose.override.yml
 
