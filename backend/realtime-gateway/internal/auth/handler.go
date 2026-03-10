@@ -2,6 +2,8 @@ package auth
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -9,7 +11,7 @@ import (
 
 // RegisterRequest is the body for POST /api/v1/auth/register.
 type RegisterRequest struct {
-	APIKey string `json:"apiKey"`
+	DeviceID string `json:"deviceId,omitempty"`
 }
 
 // TokenResponse is returned on successful auth.
@@ -19,18 +21,23 @@ type TokenResponse struct {
 }
 
 // RegisterHandler returns an http.HandlerFunc for POST /api/v1/auth/register.
-// For MVP: accepts any non-empty API key and issues a JWT.
-// TODO(Task 10 follow-up): validate key against Gemini API before issuing token.
+// The client never sends a Gemini API key. The gateway issues an app session token
+// and uses the server-side Gemini key from Secret Manager / env.
 func RegisterHandler(mgr *Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+
 		var req RegisterRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.APIKey == "" {
-			http.Error(w, "invalid request body", http.StatusBadRequest)
-			return
+		if r.Body != nil {
+			defer r.Body.Close()
+			dec := json.NewDecoder(r.Body)
+			if err := dec.Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+				http.Error(w, "invalid request body", http.StatusBadRequest)
+				return
+			}
 		}
 
 		token, exp, err := mgr.Issue()
@@ -39,6 +46,7 @@ func RegisterHandler(mgr *Manager) http.HandlerFunc {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
+		slog.Info("gateway session token issued", "device_id", req.DeviceID, "remote", r.RemoteAddr)
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(TokenResponse{

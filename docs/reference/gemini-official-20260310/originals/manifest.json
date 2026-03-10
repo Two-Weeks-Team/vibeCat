@@ -1,0 +1,212 @@
+[
+  {
+    "category": "core",
+    "slug": "01_models",
+    "source_url": "https://ai.google.dev/gemini-api/docs/models",
+    "final_url": "https://ai.google.dev/gemini-api/docs/models",
+    "content_type": "text/html",
+    "bytes": 129631,
+    "saved_path": "docs/reference/gemini-official-20260310/originals/core/01_models.html",
+    "fetched_at_utc": "2026-03-10T05:29:33.095619+00:00"
+  },
+  {
+    "category": "core",
+    "slug": "02_gemini_3",
+    "source_url": "https://ai.google.dev/gemini-api/docs/gemini-3",
+    "final_url": "https://ai.google.dev/gemini-api/docs/gemini-3",
+    "content_type": "text/html",
+    "bytes": 306667,
+    "saved_path": "docs/reference/gemini-official-20260310/originals/core/02_gemini_3.html",
+    "fetched_at_utc": "2026-03-10T05:29:33.972252+00:00"
+  },
+  {
+    "category": "core",
+    "slug": "03_speech_generation",
+    "source_url": "https://ai.google.dev/gemini-api/docs/speech-generation",
+    "final_url": "https://ai.google.dev/gemini-api/docs/speech-generation",
+    "content_type": "text/html",
+    "bytes": 191757,
+    "saved_path": "docs/reference/gemini-official-20260310/originals/core/03_speech_generation.html",
+    "fetched_at_utc": "2026-03-10T05:29:34.928151+00:00"
+  },
+  {
+    "category": "core",
+    "slug": "04_embeddings",
+    "source_url": "https://ai.google.dev/gemini-api/docs/embeddings",
+    "final_url": "https://ai.google.dev/gemini-api/docs/embeddings",
+    "content_type": "text/html",
+    "bytes": 205670,
+    "saved_path": "docs/reference/gemini-official-20260310/originals/core/04_embeddings.html",
+    "fetched_at_utc": "2026-03-10T05:29:35.842699+00:00"
+  },
+  {
+    "category": "tools",
+    "slug": "01_google_search",
+    "source_url": "https://ai.google.dev/gemini-api/docs/google-search",
+    "final_url": "https://ai.google.dev/gemini-api/docs/google-search",
+    "content_type": "text/html",
+    "bytes": 136428,
+    "saved_path": "docs/reference/gemini-official-20260310/originals/tools/01_google_search.html",
+    "fetched_at_utc": "2026-03-10T05:29:36.907815+00:00"
+  },
+  {
+    "category": "tools",
+    "slug": "02_maps_grounding",
+    "source_url": "https://ai.google.dev/gemini-api/docs/maps-grounding",
+    "final_url": "https://ai.google.dev/gemini-api/docs/maps-grounding",
+    "content_type": "text/html",
+    "bytes": 207422,
+    "saved_path": "docs/reference/gemini-official-20260310/originals/tools/02_maps_grounding.html",
+    "fetched_at_utc": "2026-03-10T05:29:37.657166+00:00"
+  },
+  {
+    "category": "tools",
+    "slug": "03_code_execution",
+    "source_url": "https://ai.google.dev/gemini-api/docs/code-execution",
+    "final_url": "https://ai.google.dev/gemini-api/docs/code-execution",
+    "content_type": "text/html",
+    "bytes": 196372,
+    "saved_path": "docs/reference/gemini-official-20260310/originals/tools/03_code_execution.html",
+    "fetched_at_utc": "2026-03-10T05:29:38.252779+00:00"
+  },
+  {
+    "category": "tools",
+    "slug": "04_url_context",
+    "source_url": "https://ai.google.dev/gemini-api/docs/url-context",
+    "final_url": "https://ai.google.dev/gemini-api/docs/url-context",
+    "content_type": "text/html",
+    "bytes": 125330,
+    "saved_path": "docs/reference/gemini-official-20260310/originals/tools/04_url_context.html",
+    "fetched_at_utc": "2026-03-10T05:29:38.780008+00:00"
+  },
+  {
+    "category": "tools",
+    "slug": "05_computer_use",
+    "source_url": "https://ai.google.dev/gemini-api/docs/computer-use",
+    "final_url": "https://ai.google.dev/gemini-api/docs/computer-use",
+    "content_type": "text/html",
+    "bytes": 206808,
+    "saved_path": "docs/reference/gemini-official-20260310/originals/tools/05_computer_use.html",
+    "fetched_at_utc": "2026-03-10T05:29:39.441228+00:00"
+  },
+  {
+    "category": "tools",
+    "slug": "06_file_search",
+    "source_url": "https://ai.google.dev/gemini-api/docs/file-search",
+    "final_url": "https://ai.google.dev/gemini-api/docs/file-search",
+    "content_type": "text/html",
+    "bytes": 207801,
+    "saved_path": "docs/reference/gemini-official-20260310/originals/tools/06_file_search.html",
+    "fetched_at_utc": "2026-03-10T05:29:40.020525+00:00"
+  },
+  {
+    "category": "live-api",
+    "slug": "01_live_api_overview",
+    "source_url": "https://ai.google.dev/gemini-api/docs/live-api",
+    "final_url": "https://ai.google.dev/gemini-api/docs/live-api",
+    "content_type": "text/html",
+    "bytes": 118644,
+    "saved_path": "docs/reference/gemini-official-20260310/originals/live-api/01_live_api_overview.html",
+    "fetched_at_utc": "2026-03-10T05:29:40.546371+00:00"
+  },
+  {
+    "category": "live-api",
+    "slug": "02_get_started_sdk",
+    "source_url": "https://ai.google.dev/gemini-api/docs/live-api/get-started-sdk",
+    "final_url": "https://ai.google.dev/gemini-api/docs/live-api/get-started-sdk",
+    "content_type": "text/html",
+    "bytes": 132093,
+    "saved_path": "docs/reference/gemini-official-20260310/originals/live-api/02_get_started_sdk.html",
+    "fetched_at_utc": "2026-03-10T05:29:41.192331+00:00"
+  },
+  {
+    "category": "live-api",
+    "slug": "03_get_started_websocket",
+    "source_url": "https://ai.google.dev/gemini-api/docs/live-api/get-started-websocket",
+    "final_url": "https://ai.google.dev/gemini-api/docs/live-api/get-started-websocket",
+    "content_type": "text/html",
+    "bytes": 167319,
+    "saved_path": "docs/reference/gemini-official-20260310/originals/live-api/03_get_started_websocket.html",
+    "fetched_at_utc": "2026-03-10T05:29:41.717834+00:00"
+  },
+  {
+    "category": "live-api",
+    "slug": "04_capabilities",
+    "source_url": "https://ai.google.dev/gemini-api/docs/live-api/capabilities",
+    "final_url": "https://ai.google.dev/gemini-api/docs/live-api/capabilities",
+    "content_type": "text/html",
+    "bytes": 290898,
+    "saved_path": "docs/reference/gemini-official-20260310/originals/live-api/04_capabilities.html",
+    "fetched_at_utc": "2026-03-10T05:29:42.292181+00:00"
+  },
+  {
+    "category": "live-api",
+    "slug": "05_tools",
+    "source_url": "https://ai.google.dev/gemini-api/docs/live-api/tools",
+    "final_url": "https://ai.google.dev/gemini-api/docs/live-api/tools",
+    "content_type": "text/html",
+    "bytes": 198070,
+    "saved_path": "docs/reference/gemini-official-20260310/originals/live-api/05_tools.html",
+    "fetched_at_utc": "2026-03-10T05:29:44.015737+00:00"
+  },
+  {
+    "category": "live-api",
+    "slug": "06_session_management",
+    "source_url": "https://ai.google.dev/gemini-api/docs/live-api/session-management",
+    "final_url": "https://ai.google.dev/gemini-api/docs/live-api/session-management",
+    "content_type": "text/html",
+    "bytes": 134533,
+    "saved_path": "docs/reference/gemini-official-20260310/originals/live-api/06_session_management.html",
+    "fetched_at_utc": "2026-03-10T05:29:44.616663+00:00"
+  },
+  {
+    "category": "live-api",
+    "slug": "07_ephemeral_tokens",
+    "source_url": "https://ai.google.dev/gemini-api/docs/live-api/ephemeral-tokens",
+    "final_url": "https://ai.google.dev/gemini-api/docs/live-api/ephemeral-tokens",
+    "content_type": "text/html",
+    "bytes": 118816,
+    "saved_path": "docs/reference/gemini-official-20260310/originals/live-api/07_ephemeral_tokens.html",
+    "fetched_at_utc": "2026-03-10T05:29:45.267690+00:00"
+  },
+  {
+    "category": "live-api",
+    "slug": "08_best_practices",
+    "source_url": "https://ai.google.dev/gemini-api/docs/live-api/best-practices",
+    "final_url": "https://ai.google.dev/gemini-api/docs/live-api/best-practices",
+    "content_type": "text/html",
+    "bytes": 117951,
+    "saved_path": "docs/reference/gemini-official-20260310/originals/live-api/08_best_practices.html",
+    "fetched_at_utc": "2026-03-10T05:29:45.863560+00:00"
+  },
+  {
+    "category": "examples",
+    "slug": "01_ai_studio_showcase",
+    "source_url": "https://aistudio.google.com/app/apps?source=showcase&showcaseTag=gemini-3&showcaseTag=featured",
+    "final_url": "https://accounts.google.com/v3/signin/identifier?continue=https%3A%2F%2Faistudio.google.com%2Fapp%2Fapps%3Fsource%3Dshowcase%26showcaseTag%3Dgemini-3%26showcaseTag%3Dfeatured&dsh=S-1088511871%3A1773120586456177&followup=https%3A%2F%2Faistudio.google.com%2Fapp%2Fapps%3Fsource%3Dshowcase%26showcaseTag%3Dgemini-3%26showcaseTag%3Dfeatured&ifkv=ASfE1-pYpaF09cYFpTqgSdud0hvEBQBib7h8uJ1txPmuIGRQhlbm-CIaQbEdzTNwdgrokrVepSRbDg&passive=1209600&flowName=WebLiteSignIn&flowEntry=ServiceLogin",
+    "content_type": "text/html",
+    "bytes": 1079490,
+    "saved_path": "docs/reference/gemini-official-20260310/originals/examples/01_ai_studio_showcase.html",
+    "fetched_at_utc": "2026-03-10T05:29:47.128890+00:00"
+  },
+  {
+    "category": "maintenance",
+    "slug": "01_troubleshooting",
+    "source_url": "https://ai.google.dev/gemini-api/docs/troubleshooting",
+    "final_url": "https://ai.google.dev/gemini-api/docs/troubleshooting",
+    "content_type": "text/html",
+    "bytes": 106802,
+    "saved_path": "docs/reference/gemini-official-20260310/originals/maintenance/01_troubleshooting.html",
+    "fetched_at_utc": "2026-03-10T05:29:47.724860+00:00"
+  },
+  {
+    "category": "maintenance",
+    "slug": "02_changelog",
+    "source_url": "https://ai.google.dev/gemini-api/docs/changelog",
+    "final_url": "https://ai.google.dev/gemini-api/docs/changelog",
+    "content_type": "text/html",
+    "bytes": 138502,
+    "saved_path": "docs/reference/gemini-official-20260310/originals/maintenance/02_changelog.html",
+    "fetched_at_utc": "2026-03-10T05:29:48.284345+00:00"
+  }
+]

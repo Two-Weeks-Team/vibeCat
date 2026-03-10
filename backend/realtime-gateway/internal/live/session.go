@@ -9,10 +9,11 @@ import (
 
 	"google.golang.org/genai"
 
+	"vibecat/realtime-gateway/internal/geminiconfig"
 	"vibecat/realtime-gateway/internal/lang"
 )
 
-const defaultModel = "gemini-2.5-flash-native-audio-latest"
+const defaultModel = geminiconfig.LiveNativeAudioModel
 
 // Config holds the per-connection Gemini Live session configuration,
 // parsed from the client's "setup" message.
@@ -187,8 +188,8 @@ func buildLiveConfig(cfg Config) *genai.LiveConnectConfig {
 	lc.OutputAudioTranscription = &genai.AudioTranscriptionConfig{}
 	lc.InputAudioTranscription = &genai.AudioTranscriptionConfig{}
 
-	prefixPadding := int32(500)
-	silenceDuration := int32(500)
+	prefixPadding := int32(20)
+	silenceDuration := int32(300)
 	lc.RealtimeInputConfig = &genai.RealtimeInputConfig{
 		AutomaticActivityDetection: &genai.AutomaticActivityDetection{
 			StartOfSpeechSensitivity: genai.StartSensitivityLow,

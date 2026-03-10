@@ -200,7 +200,7 @@ func TestInvalidTokenRejection(t *testing.T) {
 
 func registerToken(t *testing.T, base string) string {
 	t.Helper()
-	body, _ := json.Marshal(map[string]string{"apiKey": "test-key"})
+	body, _ := json.Marshal(map[string]string{"deviceId": "e2e-test"})
 	resp, err := http.Post(base+"/api/v1/auth/register", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("POST /api/v1/auth/register failed: %v", err)

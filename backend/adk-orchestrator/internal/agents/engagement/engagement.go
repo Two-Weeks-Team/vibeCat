@@ -14,6 +14,7 @@ import (
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 
+	"vibecat/adk-orchestrator/internal/geminiconfig"
 	"vibecat/adk-orchestrator/internal/lang"
 	"vibecat/adk-orchestrator/internal/models"
 )
@@ -22,7 +23,6 @@ const (
 	silenceThreshold     = 180 * time.Second
 	restReminderInterval = 50 * time.Minute
 	restReminderCooldown = 30 * time.Minute
-	engageGenModel       = "gemini-3.1-flash-lite-preview"
 )
 
 type Agent struct {
@@ -176,7 +176,7 @@ Rules:
 - Respond in %s
 - Return ONLY the message text`, minutes, lang)
 
-		resp, err := a.genaiClient.Models.GenerateContent(ctx, engageGenModel, []*genai.Content{
+		resp, err := a.genaiClient.Models.GenerateContent(ctx, geminiconfig.LiteTextModel, []*genai.Content{
 			{Parts: []*genai.Part{{Text: prompt}}, Role: genai.RoleUser},
 		}, &genai.GenerateContentConfig{
 			MaxOutputTokens: 80,
@@ -212,7 +212,7 @@ Rules:
 - Respond in %s
 - Return ONLY the message text`, lang)
 
-	resp, err := a.genaiClient.Models.GenerateContent(ctx, engageGenModel, []*genai.Content{
+	resp, err := a.genaiClient.Models.GenerateContent(ctx, geminiconfig.LiteTextModel, []*genai.Content{
 		{Parts: []*genai.Part{{Text: prompt}}, Role: genai.RoleUser},
 	}, &genai.GenerateContentConfig{
 		MaxOutputTokens: 80,

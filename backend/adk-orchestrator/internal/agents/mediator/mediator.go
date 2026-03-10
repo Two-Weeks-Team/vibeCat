@@ -15,6 +15,7 @@ import (
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 
+	"vibecat/adk-orchestrator/internal/geminiconfig"
 	"vibecat/adk-orchestrator/internal/lang"
 	"vibecat/adk-orchestrator/internal/models"
 )
@@ -28,7 +29,6 @@ const (
 
 const (
 	maxRecentSpeech = 5
-	moodGenModel    = "gemini-3.1-flash-lite-preview"
 )
 
 type Agent struct {
@@ -350,7 +350,7 @@ Rules:
 - Respond in %s
 - Return ONLY the message text, nothing else`, mood.Mood, context.String(), avoidList, lang)
 
-	resp, err := a.genaiClient.Models.GenerateContent(ctx, moodGenModel, []*genai.Content{
+	resp, err := a.genaiClient.Models.GenerateContent(ctx, geminiconfig.LiteTextModel, []*genai.Content{
 		{Parts: []*genai.Part{{Text: prompt}}, Role: genai.RoleUser},
 	}, &genai.GenerateContentConfig{
 		MaxOutputTokens: 100,

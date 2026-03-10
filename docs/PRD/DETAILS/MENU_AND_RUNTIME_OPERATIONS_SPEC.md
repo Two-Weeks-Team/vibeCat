@@ -42,21 +42,21 @@ It is implementation guidance for a new team and excludes source code.
 - Mute item switches label between `Mute Voice` and `Unmute Voice`.
 - Checkmarks reflect persisted settings on app launch and after each change.
 
-## 3) API Key UX and Validation Flow
+## 3) Connection UX and Validation Flow
 
 ### Onboarding trigger
-- If key is missing at startup, show onboarding prompt before analysis loop begins.
+- If backend session is not established at startup, show onboarding prompt before analysis loop begins.
 
 ### Validation pipeline
-1. format check (non-empty, prefix, spacing, length)
-2. remote validation request
+1. client sends device registration request
+2. backend issues session token
 3. branch handling
-   - valid: store key and start normal operation
-   - invalid: show error and keep onboarding state
-   - rate/network/server issues: allow explicit save-anyway path
+   - valid: start normal operation
+   - invalid / rejected: show error and keep onboarding state
+   - rate/network/server issues: allow retry without storing any Gemini key on device
 
 ### Persistence rule
-- Successful key save updates secure storage and triggers live reconnect.
+- Successful connection updates the current session token and triggers live reconnect.
 
 ## 4) Runtime Lifecycle Sequence
 
@@ -67,19 +67,19 @@ It is implementation guidance for a new team and excludes source code.
 4. wire callbacks and dependencies
 5. create floating overlay panel and host UI
 6. initialize status bar menu and callbacks
-7. branch by key and pause state
+7. branch by connection and pause state
 
 ### Analysis loop sequence
-1. periodic capture tick
-2. changed-content filter
-3. vision analysis
-4. mediation decision
-5. speak path or silent path
-6. transcription/bubble update
+1. background capture task runs every 1 second minimum
+2. capture the window under the cursor
+3. changed-content filter
+4. send changed frame to Gemini fast path
+5. send smart-path analysis only when speech is not active or capture is forced
+6. update transcription/bubble state from live turn events
 
 ### Force-capture sequence
 1. user circle gesture detected
-2. capture immediately
+2. capture frontmost window immediately
 3. analyze and evaluate
 4. route through live or fallback speech path
 
@@ -103,7 +103,9 @@ It is implementation guidance for a new team and excludes source code.
 ## 6) Interruption and Turn Safety Rules
 
 ### Interruption handling
-- On interruption event: clear queued audio, reset active turn, update adaptive metrics.
+- User speech barge-in has highest priority.
+- On local barge-in detection: stop queued audio immediately, clear current bubble, and notify gateway.
+- On interruption event: keep the user input path active, reset assistant turn state, and update adaptive metrics.
 
 ### Timeout handling
 - If active turn exceeds timeout window, force reset turn state.
@@ -123,11 +125,11 @@ It is implementation guidance for a new team and excludes source code.
 
 ## 8) Operational Scenarios Checklist
 
-### Scenario A - First launch without key
+### Scenario A - First launch without backend session
 - expected: onboarding prompt appears, analysis does not start
 
-### Scenario B - Valid key submission
-- expected: key persists, connection starts, status becomes connected
+### Scenario B - Valid connect request
+- expected: session token issued, connection starts, status becomes connected
 
 ### Scenario C - Pause and resume
 - expected: pause stops capture and proactive triggers; resume restarts loops

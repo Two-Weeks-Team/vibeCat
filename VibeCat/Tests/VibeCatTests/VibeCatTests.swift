@@ -33,7 +33,7 @@ final class VibeCatTests: XCTestCase {
         XCTAssertEqual(settings.character, "cat")
         XCTAssertEqual(settings.chattiness, "normal")
         XCTAssertEqual(settings.captureInterval, 1.0)
-        XCTAssertEqual(settings.liveModel, "gemini-2.5-flash-native-audio-latest")
+        XCTAssertEqual(settings.liveModel, GeminiModels.liveNativeAudio)
         XCTAssertFalse(settings.musicEnabled)
         XCTAssertEqual(settings.gatewayURL, "wss://realtime-gateway-163070481841.asia-northeast3.run.app")
         XCTAssertTrue(settings.searchEnabled)
@@ -48,7 +48,7 @@ final class VibeCatTests: XCTestCase {
         settings.character = "jinwoo"
         settings.chattiness = "chatty"
         settings.captureInterval = 10.0
-        settings.liveModel = "gemini-2.5-flash-preview-native-audio-dialog"
+        settings.liveModel = "gemini-live-2.5-flash-preview"
         settings.musicEnabled = true
         settings.gatewayURL = "wss://example.test/ws/live"
         settings.searchEnabled = true
@@ -59,7 +59,7 @@ final class VibeCatTests: XCTestCase {
         XCTAssertEqual(settings.character, "jinwoo")
         XCTAssertEqual(settings.chattiness, "chatty")
         XCTAssertEqual(settings.captureInterval, 10.0)
-        XCTAssertEqual(settings.liveModel, "gemini-2.5-flash-preview-native-audio-dialog")
+        XCTAssertEqual(settings.liveModel, "gemini-live-2.5-flash-preview")
         XCTAssertTrue(settings.musicEnabled)
         XCTAssertEqual(settings.gatewayURL, "wss://example.test/ws/live")
         XCTAssertTrue(settings.searchEnabled)
@@ -72,6 +72,9 @@ final class VibeCatTests: XCTestCase {
         XCTAssertEqual(settings.captureInterval, 1.0)
 
         settings.captureInterval = -4
+        XCTAssertEqual(settings.captureInterval, 1.0)
+
+        settings.captureInterval = 0.5
         XCTAssertEqual(settings.captureInterval, 1.0)
     }
 

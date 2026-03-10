@@ -8,9 +8,11 @@ import (
 	"time"
 
 	"google.golang.org/genai"
+
+	"vibecat/realtime-gateway/internal/geminiconfig"
 )
 
-const defaultModel = "gemini-2.5-flash-preview-tts"
+const defaultModel = geminiconfig.TextToSpeechModel
 const defaultVoice = "Zephyr"
 const ttsTimeout = 15 * time.Second
 

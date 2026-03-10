@@ -66,10 +66,10 @@ type liveSessionState struct {
 	ttsMu        sync.Mutex
 	ttsCancel    context.CancelFunc
 
-	// modelSpeaking is true while Gemini is actively sending audio response.
-	// While true: client audio is NOT forwarded (prevents self-interruption),
-	// screen captures are deferred, and cancelTTS is suppressed.
-	modelSpeaking bool
+	// modelSpeaking is true while any assistant audio is actively streaming to the client.
+	// While true, screen captures are deferred and incoming user speech is treated as barge-in.
+	modelSpeaking     bool
+	discardModelAudio bool
 }
 
 func (ls *liveSessionState) isReconnecting() bool {
@@ -129,6 +129,9 @@ func (ls *liveSessionState) isModelSpeaking() bool {
 func (ls *liveSessionState) setModelSpeaking(v bool) {
 	ls.mu.Lock()
 	ls.modelSpeaking = v
+	if !v {
+		ls.discardModelAudio = false
+	}
 	ls.mu.Unlock()
 }
 
@@ -147,6 +150,29 @@ func (ls *liveSessionState) setTTSCancel(cancel context.CancelFunc) {
 	ls.ttsMu.Unlock()
 }
 
+func (ls *liveSessionState) hasActiveTTS() bool {
+	ls.ttsMu.Lock()
+	defer ls.ttsMu.Unlock()
+	return ls.ttsCancel != nil
+}
+
+func (ls *liveSessionState) markBargeInPending() bool {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+	if !ls.modelSpeaking {
+		return false
+	}
+	alreadyDiscarding := ls.discardModelAudio
+	ls.discardModelAudio = true
+	return !alreadyDiscarding
+}
+
+func (ls *liveSessionState) shouldDiscardModelAudio() bool {
+	ls.mu.RLock()
+	defer ls.mu.RUnlock()
+	return ls.discardModelAudio
+}
+
 func isJPEG(data []byte) bool {
 	return len(data) > 2 && data[0] == 0xFF && data[1] == 0xD8
 }
@@ -155,6 +181,17 @@ func newConnID() string {
 	b := make([]byte, 8)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+func handleBargeIn(c *Conn, ls *liveSessionState) {
+	shouldInterrupt := ls.markBargeInPending()
+	if ls.hasActiveTTS() {
+		ls.cancelTTS()
+		shouldInterrupt = true
+	}
+	if shouldInterrupt {
+		lockedSendJSON(c, map[string]string{"type": "interrupted"})
+	}
 }
 
 // Handler returns an http.HandlerFunc that upgrades connections to WebSocket.
@@ -239,7 +276,9 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client, ttsCli
 						}
 					}
 				} else {
-					ls.cancelTTS()
+					if ls.isModelSpeaking() || ls.hasActiveTTS() {
+						handleBargeIn(c, ls)
+					}
 					if sess := ls.getSession(); sess != nil {
 						if sendErr := sess.SendAudio(data); sendErr != nil {
 							slog.Warn("send audio to gemini failed", "conn_id", c.ID, "error", sendErr)
@@ -378,6 +417,10 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client, ttsCli
 						sess.Close()
 						ls.setSession(nil)
 					}
+
+				case "bargeIn":
+					slog.Info("barge-in received", "conn_id", c.ID)
+					handleBargeIn(c, ls)
 
 				case "screenCapture", "forceCapture":
 					if adkClient == nil {
@@ -603,6 +646,10 @@ func receiveFromGemini(ctx context.Context, c *Conn, sess *live.Session, ls *liv
 							slog.Info("[GEMINI-RX] model audio started, suppressing client input", "conn_id", c.ID)
 						}
 
+						if ls.shouldDiscardModelAudio() {
+							continue
+						}
+
 						c.mu.Lock()
 						c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 						writeErr := c.conn.WriteMessage(websocket.BinaryMessage, part.InlineData.Data)
@@ -705,11 +752,13 @@ func receiveFromGemini(ctx context.Context, c *Conn, sess *live.Session, ls *liv
 func startTTSStream(ctx context.Context, c *Conn, ls *liveSessionState, ttsClient *tts.Client, text string, displayText string) {
 	ttsCtx, ttsCancel := context.WithCancel(ctx)
 	ls.setTTSCancel(ttsCancel)
+	ls.setModelSpeaking(true)
 	lockedSendJSON(c, map[string]any{"type": "ttsStart", "text": displayText})
 
 	go func() {
 		defer func() {
 			ls.setTTSCancel(nil)
+			ls.setModelSpeaking(false)
 			lockedSendJSON(c, map[string]string{"type": "ttsEnd"})
 		}()
 		cfg := ls.getConfig()

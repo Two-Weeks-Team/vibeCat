@@ -21,17 +21,13 @@ import (
 
 	"golang.org/x/image/draw"
 	"google.golang.org/genai"
+	"vibecat/realtime-gateway/internal/geminiconfig"
 )
 
 // Models to try for text+image Live API tests.
-// Native audio models do NOT support ModalityText output.
-// For BackendGeminiAPI: "gemini-live-2.5-flash-preview"
-// For BackendVertexAI: "gemini-2.0-flash-live-preview-04-09"
+// Native audio models do NOT support ModalityText output and are validated separately below.
 var modelsToTry = []string{
-	"gemini-2.5-flash-image",
-	"gemini-2.0-flash-exp-image-generation",
 	"gemini-live-2.5-flash-preview",
-	"gemini-2.0-flash-live-preview-04-09",
 }
 
 type testCase struct {
@@ -247,7 +243,7 @@ func main() {
 	fmt.Println("=== PHASE 6: Native Audio + Video (production simulation) ===")
 	fmt.Println(strings.Repeat("=", 80))
 
-	nativeAudioModel := "gemini-2.5-flash-native-audio-latest"
+	nativeAudioModel := geminiconfig.LiveNativeAudioModel
 	log.Printf("Testing %s with SendRealtimeInput(Video)...", nativeAudioModel)
 
 	result = runNativeAudioVideoTest(ctx, client, nativeAudioModel, jpeg768)

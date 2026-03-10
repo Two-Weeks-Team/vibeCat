@@ -13,6 +13,7 @@ import (
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 
+	"vibecat/adk-orchestrator/internal/geminiconfig"
 	"vibecat/adk-orchestrator/internal/lang"
 	"vibecat/adk-orchestrator/internal/models"
 	"vibecat/adk-orchestrator/internal/prompts"
@@ -24,8 +25,6 @@ var searchKeywords = []string{
 	"cannot", "can't", "failed", "failure", "why is", "what is",
 	"npm install", "go get", "pip install", "import error",
 }
-
-const searchModel = "gemini-3.1-flash-lite-preview"
 
 type Agent struct {
 	genaiClient *genai.Client
@@ -161,7 +160,7 @@ func (a *Agent) search(ctx agent.InvocationContext, query string, result models.
 
 	prompt := fmt.Sprintf("Search for solutions to this developer problem: %s\n\nProvide a concise, actionable answer. Respond in %s.", query, lang.NormalizeLanguage(language))
 
-	resp, err := a.genaiClient.Models.GenerateContent(ctx, "gemini-3.1-flash-lite-preview", []*genai.Content{
+	resp, err := a.genaiClient.Models.GenerateContent(ctx, geminiconfig.SearchModel, []*genai.Content{
 		{Parts: []*genai.Part{{Text: prompt}}, Role: genai.RoleUser},
 	}, &genai.GenerateContentConfig{
 		ResponseMIMEType: "application/json",
@@ -220,13 +219,13 @@ func (a *Agent) DirectSearch(ctx context.Context, query, language string) *model
 		return nil
 	}
 
-	slog.Info("[SEARCH] executing search", "query", truncateText(query, 60), "model", searchModel)
+	slog.Info("[SEARCH] executing search", "query", truncateText(query, 60), "model", geminiconfig.SearchModel)
 	return a.executeSearch(ctx, query, lang)
 }
 
 func (a *Agent) executeSearch(ctx context.Context, query, language string) *models.SearchResult {
 	prompt := fmt.Sprintf("Search and answer: %s\nRespond in %s. Be concise (2-3 sentences).", query, language)
-	resp, err := a.genaiClient.Models.GenerateContent(ctx, searchModel, []*genai.Content{
+	resp, err := a.genaiClient.Models.GenerateContent(ctx, geminiconfig.SearchModel, []*genai.Content{
 		{Parts: []*genai.Part{{Text: prompt}}, Role: genai.RoleUser},
 	}, &genai.GenerateContentConfig{
 		SystemInstruction: &genai.Content{

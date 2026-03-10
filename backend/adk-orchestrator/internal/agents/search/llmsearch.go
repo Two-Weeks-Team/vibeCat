@@ -14,6 +14,7 @@ import (
 	"google.golang.org/adk/tool/geminitool"
 	"google.golang.org/genai"
 
+	"vibecat/adk-orchestrator/internal/geminiconfig"
 	"vibecat/adk-orchestrator/internal/lang"
 )
 
@@ -76,7 +77,7 @@ func NewLLMSearchAgent(apiKey string, language string) (agent.Agent, error) {
 	}
 
 	// Create Gemini model via ADK model/gemini package
-	llm, err := gemini.NewModel(context.Background(), searchModel, &genai.ClientConfig{
+	llm, err := gemini.NewModel(context.Background(), geminiconfig.SearchModel, &genai.ClientConfig{
 		APIKey:  apiKey,
 		Backend: genai.BackendGeminiAPI,
 	})

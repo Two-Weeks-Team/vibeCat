@@ -4,6 +4,7 @@ import Foundation
 @MainActor
 final class SpeechRecognizer {
     var onAudioBufferCaptured: (@Sendable (AVAudioPCMBuffer) -> Void)?
+    var onBargeInDetected: (@Sendable () -> Void)?
     private(set) var currentAudioFormat: AVAudioFormat?
     private(set) var isListening = false
 
@@ -31,11 +32,12 @@ final class SpeechRecognizer {
 
         let capture = audioCapture
         let callback = onAudioBufferCaptured
+        let bargeInCallback = onBargeInDetected
         NSLog("[SPEECH] startListening: hasCallback=%d", callback != nil ? 1 : 0)
 
         do {
             try await Task.detached {
-                try capture.start(streamingCallback: callback)
+                try capture.start(streamingCallback: callback, bargeInCallback: bargeInCallback)
             }.value
 
             currentAudioFormat = capture.recordingFormat
@@ -77,18 +79,24 @@ final class SpeechAudioCapture: @unchecked Sendable {
     private var streamingCallback: (@Sendable (AVAudioPCMBuffer) -> Void)?
 
     private let rmsThreshold: Float = 0.03
-    private let bargeInThreshold: Float = 0.08
+    private let bargeInThreshold: Float = 0.04
     private let _speakingLock = NSLock()
     private var _modelSpeaking: Bool = false
     var modelSpeaking: Bool {
         get { _speakingLock.withLock { _modelSpeaking } }
         set { _speakingLock.withLock { _modelSpeaking = newValue } }
     }
-    private let consecutiveThreshold: Int = 3
+    private let consecutiveThreshold: Int = 2
     private var consecutiveAboveCount: Int = 0
+    private var bargeInNotified = false
+    private var bargeInCallback: (@Sendable () -> Void)?
 
-    func start(streamingCallback: (@Sendable (AVAudioPCMBuffer) -> Void)? = nil) throws {
+    func start(
+        streamingCallback: (@Sendable (AVAudioPCMBuffer) -> Void)? = nil,
+        bargeInCallback: (@Sendable () -> Void)? = nil
+    ) throws {
         self.streamingCallback = streamingCallback
+        self.bargeInCallback = bargeInCallback
 
         let engine = AVAudioEngine()
         self.engine = engine
@@ -129,13 +137,12 @@ final class SpeechAudioCapture: @unchecked Sendable {
                 sumSquares += s * s
             }
             let rms = sqrtf(sumSquares / Float(max(frames, 1)))
-            // During model speech, use higher threshold to block echo while allowing barge-in
-            let threshold = self.modelSpeaking ? self.bargeInThreshold : self.rmsThreshold
-            if rms >= threshold {
-                self.consecutiveAboveCount += 1
-                guard self.consecutiveAboveCount >= self.consecutiveThreshold else { return }
-            } else {
-                self.consecutiveAboveCount = 0
+
+            let gate = self.evaluateAudioGate(rms: rms)
+            if gate.shouldNotifyBargeIn {
+                self.bargeInCallback?()
+            }
+            guard gate.shouldForward else {
                 return
             }
 
@@ -159,6 +166,34 @@ final class SpeechAudioCapture: @unchecked Sendable {
         engine = nil
         recordingFormat = nil
         streamingCallback = nil
+        bargeInCallback = nil
         isVoiceProcessingActive = false
+        bargeInNotified = false
+        consecutiveAboveCount = 0
+    }
+
+    private func evaluateAudioGate(rms: Float) -> (shouldForward: Bool, shouldNotifyBargeIn: Bool) {
+        _speakingLock.withLock {
+            if _modelSpeaking {
+                guard rms >= bargeInThreshold else {
+                    consecutiveAboveCount = 0
+                    bargeInNotified = false
+                    return (false, false)
+                }
+
+                consecutiveAboveCount += 1
+                guard consecutiveAboveCount >= consecutiveThreshold else {
+                    return (false, false)
+                }
+
+                let shouldNotify = !bargeInNotified
+                bargeInNotified = true
+                return (true, shouldNotify)
+            }
+
+            consecutiveAboveCount = 0
+            bargeInNotified = false
+            return (rms >= rmsThreshold, false)
+        }
     }
 }
