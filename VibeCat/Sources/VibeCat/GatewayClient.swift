@@ -47,7 +47,6 @@ final class GatewayClient {
     /// Timestamp when the last TTS speech ended. Used by ScreenAnalyzer for post-speech cooldown.
     private(set) var lastSpeechEndTime: Date = .distantPast
     private var ttsEndCooldownTask: Task<Void, Never>?
-    private var currentAPIKey: String?
     private var currentSessionToken: String?
     private var setupSoul: String?
     private var lastPingSentAt: Date?
@@ -86,8 +85,7 @@ final class GatewayClient {
         pathMonitor.cancel()
     }
 
-    func connect(apiKey: String) {
-        currentAPIKey = apiKey
+    func connect() {
         currentSessionToken = nil
         isManuallyDisconnected = false
         reconnectAttempts = 0
@@ -97,7 +95,7 @@ final class GatewayClient {
         reconnectWorkItem = nil
         lastErrorDescription = nil
         Task { [weak self] in
-            await self?.registerAndConnect(apiKey: apiKey)
+            await self?.registerAndConnect()
         }
     }
 
@@ -112,8 +110,7 @@ final class GatewayClient {
         onDisconnected?()
     }
 
-    func reconnect(apiKey: String) {
-        currentAPIKey = apiKey
+    func reconnect() {
         currentSessionToken = nil
         isManuallyDisconnected = false
         reconnectAttempts = 0
@@ -126,7 +123,7 @@ final class GatewayClient {
         lastErrorDescription = nil
         state = .disconnected
         Task { [weak self] in
-            await self?.registerAndConnect(apiKey: apiKey)
+            await self?.registerAndConnect()
         }
     }
 
@@ -169,6 +166,12 @@ final class GatewayClient {
             ]
         ]
         sendJSON(payload)
+    }
+
+    func sendBargeIn() {
+        guard case .connected = state else { return }
+        NSLog("[GW-OUT] sendBargeIn")
+        sendJSON(["type": "bargeIn"])
     }
 
     func sendScreenCapture(imageBase64: String, context: String, userId: String, character: String, soul: String?, activityMinutes: Int = 0) {
@@ -225,12 +228,7 @@ final class GatewayClient {
         return components.url
     }
 
-    private func registerAndConnect(apiKey: String) async {
-        guard !apiKey.isEmpty else {
-            lastErrorDescription = "Connection keeps failing — check API key"
-            state = .failed(GatewayError.registrationFailed)
-            return
-        }
+    private func registerAndConnect() async {
         guard let baseURL = restBaseURL() else {
             lastErrorDescription = "Gateway URL invalid — check Settings"
             state = .failed(GatewayError.invalidURL)
@@ -241,9 +239,9 @@ final class GatewayClient {
         var request = URLRequest(url: registerURL)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let body: [String: String] = ["apiKey": apiKey]
+        let body: [String: String] = ["deviceId": Self.deviceIdentifier()]
         guard let bodyData = try? JSONSerialization.data(withJSONObject: body) else {
-            lastErrorDescription = "Connection keeps failing — check API key"
+            lastErrorDescription = "Gateway registration failed — retry connection"
             state = .failed(GatewayError.registrationFailed)
             return
         }
@@ -253,7 +251,7 @@ final class GatewayClient {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse,
                   (200...299).contains(httpResponse.statusCode) else {
-                lastErrorDescription = "Connection keeps failing — check API key"
+                lastErrorDescription = "Gateway registration failed — check backend connection"
                 state = .failed(GatewayError.registrationFailed)
                 return
             }
@@ -261,7 +259,7 @@ final class GatewayClient {
             let decoded = try JSONDecoder().decode(RegisterResponse.self, from: data)
             let token = decoded.sessionToken.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !token.isEmpty else {
-                lastErrorDescription = "Connection keeps failing — check API key"
+                lastErrorDescription = "Gateway registration failed — empty session token"
                 state = .failed(GatewayError.registrationFailed)
                 return
             }
@@ -269,7 +267,7 @@ final class GatewayClient {
             currentSessionToken = token
             establishConnection(token: token)
         } catch {
-            lastErrorDescription = "Connection keeps failing — check API key"
+            lastErrorDescription = "Gateway registration failed — check backend connection"
             state = .failed(GatewayError.registrationFailed)
         }
     }
@@ -536,7 +534,7 @@ final class GatewayClient {
 
         if rapidFailureCount >= 3 {
             circuitBreakerOpen = true
-            lastErrorDescription = "Connection keeps failing — check API key"
+            lastErrorDescription = "Connection keeps failing — check gateway URL or backend status"
             onReconnectExhausted?()
             state = .disconnected
             return
@@ -553,10 +551,6 @@ final class GatewayClient {
             return
         }
         guard isNetworkAvailable else { return }
-        guard let apiKey = currentAPIKey, !apiKey.isEmpty else {
-            onReconnectExhausted?()
-            return
-        }
 
         guard reconnectAttempts < maxReconnectAttempts else {
             onReconnectExhausted?()
@@ -585,7 +579,7 @@ final class GatewayClient {
                 if let token = self.currentSessionToken, !token.isEmpty {
                     self.establishConnection(token: token)
                 } else {
-                    await self.registerAndConnect(apiKey: apiKey)
+                    await self.registerAndConnect()
                 }
             }
         }
@@ -653,7 +647,7 @@ final class GatewayClient {
             case .invalidURL:
                 return "Gateway URL invalid — check Settings"
             case .registrationFailed:
-                return "Connection keeps failing — check API key"
+                return "Gateway registration failed — check backend connection"
             case .pongTimeout:
                 return "Connection timed out — Reconnecting…"
             case .networkUnavailable:

@@ -15,6 +15,7 @@ import (
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 
+	"vibecat/adk-orchestrator/internal/geminiconfig"
 	"vibecat/adk-orchestrator/internal/lang"
 	"vibecat/adk-orchestrator/internal/models"
 	"vibecat/adk-orchestrator/internal/store"
@@ -171,7 +172,7 @@ Session events:
 Return ONLY valid JSON in this schema: {"summary":"..."}.
 Respond in %s.`, combined, lang.NormalizeLanguage(language))
 
-	resp, err := a.genaiClient.Models.GenerateContent(ctx, "gemini-3.1-flash-lite-preview", []*genai.Content{
+	resp, err := a.genaiClient.Models.GenerateContent(ctx, geminiconfig.LiteTextModel, []*genai.Content{
 		{Parts: []*genai.Part{{Text: prompt}}, Role: genai.RoleUser},
 	}, &genai.GenerateContentConfig{ResponseMIMEType: "application/json"})
 	if err != nil {

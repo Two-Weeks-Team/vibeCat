@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"google.golang.org/genai"
-)
 
-const classifierModel = "gemini-3.1-flash-lite-preview"
+	"vibecat/adk-orchestrator/internal/geminiconfig"
+)
 
 const classifyPrompt = `You are a search-intent classifier. Given user speech, decide if it requires a live web search.
 
@@ -30,7 +30,7 @@ func (c *Classifier) NeedsSearch(ctx context.Context, text string) bool {
 		return false
 	}
 
-	resp, err := c.client.Models.GenerateContent(ctx, classifierModel, []*genai.Content{
+	resp, err := c.client.Models.GenerateContent(ctx, geminiconfig.LiteTextModel, []*genai.Content{
 		{Parts: []*genai.Part{{Text: text}}, Role: genai.RoleUser},
 	}, &genai.GenerateContentConfig{
 		SystemInstruction: &genai.Content{

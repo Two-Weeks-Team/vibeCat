@@ -1,0 +1,6 @@
+package geminiconfig
+
+const (
+	LiveNativeAudioModel = "gemini-2.5-flash-native-audio-preview-12-2025"
+	TextToSpeechModel    = "gemini-2.5-flash-preview-tts"
+)

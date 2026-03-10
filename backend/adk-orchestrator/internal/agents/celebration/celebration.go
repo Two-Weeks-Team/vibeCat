@@ -15,13 +15,13 @@ import (
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 
+	"vibecat/adk-orchestrator/internal/geminiconfig"
 	"vibecat/adk-orchestrator/internal/lang"
 	"vibecat/adk-orchestrator/internal/models"
 )
 
 const (
-	cooldown      = 10 * time.Minute
-	celebGenModel = "gemini-3.1-flash-lite-preview"
+	cooldown = 10 * time.Minute
 )
 
 type Agent struct {
@@ -235,7 +235,7 @@ Rules:
 - Do NOT use any of these recent phrases: %s
 - Return ONLY the message text`, screenContext, lang, strings.Join(a.recentMessages, "; "))
 
-	resp, err := a.genaiClient.Models.GenerateContent(ctx, celebGenModel, []*genai.Content{
+	resp, err := a.genaiClient.Models.GenerateContent(ctx, geminiconfig.LiteTextModel, []*genai.Content{
 		{Parts: []*genai.Part{{Text: prompt}}, Role: genai.RoleUser},
 	}, &genai.GenerateContentConfig{
 		MaxOutputTokens: 80,

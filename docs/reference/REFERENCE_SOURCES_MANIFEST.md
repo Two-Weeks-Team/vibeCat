@@ -6,6 +6,7 @@ Generated: 2026-03-03
 
 - This manifest tracks the curated local reference library under `docs/reference/`.
 - All saved source pages are Markdown snapshots converted from official documentation pages and official repositories.
+- `gemini-official-20260310/originals/` is an exception: it stores raw HTML snapshots fetched from the requested official URLs on 2026-03-10.
 
 ## Stored Domains
 
@@ -24,6 +25,7 @@ Generated: 2026-03-03
   - `gemini/live-api/`
   - `gemini/genai-sdk/`
   - `gemini/models/`
+  - `gemini-official-20260310/`
 - GCP:
   - `gcp/cloud-run/`
   - `gcp/firestore/`

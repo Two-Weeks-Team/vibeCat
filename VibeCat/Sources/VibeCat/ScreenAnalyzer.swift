@@ -11,7 +11,7 @@ final class ScreenAnalyzer {
     private let spriteAnimator: SpriteAnimator
     private weak var audioPlayer: AudioPlayer?
 
-    private var analysisTimer: Timer?
+    private var captureLoopTask: Task<Void, Never>?
     private var isRunning = false
     private(set) var isAnalyzing = false
     private var userId: String = "local-user"
@@ -22,7 +22,7 @@ final class ScreenAnalyzer {
 
     private var lastFastPathSend: Date = .distantPast
     private var lastSmartPathSend: Date = .distantPast
-    private let fastPathCooldown: TimeInterval = 5.0
+    private let fastPathCooldown: TimeInterval = 1.0
     private let smartPathCooldown: TimeInterval = 15.0
     private let postSpeechCooldown: TimeInterval = 5.0
 
@@ -53,21 +53,21 @@ final class ScreenAnalyzer {
         guard !isRunning else { return }
         isRunning = true
         sessionStartTime = Date()
-        startCaptureTimer()
+        startCaptureLoop()
         observeAppSwitches()
     }
 
     func pause() {
         isRunning = false
-        analysisTimer?.invalidate()
-        analysisTimer = nil
+        captureLoopTask?.cancel()
+        captureLoopTask = nil
         removeAppSwitchObserver()
     }
 
     func resume() {
         guard !isRunning else { return }
         isRunning = true
-        startCaptureTimer()
+        startCaptureLoop()
         observeAppSwitches()
     }
 
@@ -108,15 +108,23 @@ final class ScreenAnalyzer {
 
     // MARK: - Capture Scheduling
 
-    private func startCaptureTimer() {
-        analysisTimer?.invalidate()
-        let interval = AppSettings.shared.captureInterval
-        analysisTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self, self.isRunning, !self.isAnalyzing else { return }
-                await self.runAnalysisCycle(forceSmartPath: false)
+    private func startCaptureLoop() {
+        captureLoopTask?.cancel()
+        captureLoopTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            while self.isRunning && !Task.isCancelled {
+                if !self.isAnalyzing {
+                    await self.runAnalysisCycle(forceSmartPath: false)
+                }
+
+                let interval = UInt64(self.effectiveCaptureInterval * 1_000_000_000)
+                try? await Task.sleep(nanoseconds: interval)
             }
         }
+    }
+
+    private var effectiveCaptureInterval: TimeInterval {
+        max(1.0, AppSettings.shared.captureInterval)
     }
 
     private var isSpeechActive: Bool {
@@ -142,13 +150,18 @@ final class ScreenAnalyzer {
         case .unavailable(let reason):
             NSLog("[CAPTURE] unavailable: %@", reason)
             return
-        case .captured(let image):
-            NSLog("[CAPTURE] captured: %dx%d", image.width, image.height)
+        case .captured(let snapshot):
+            NSLog("[CAPTURE] captured: %dx%d target=%@ app=%@ window=%@",
+                  snapshot.image.width,
+                  snapshot.image.height,
+                  snapshot.targetKind.rawValue,
+                  snapshot.appName,
+                  snapshot.windowTitle ?? "")
 
             let now = Date()
 
             if now.timeIntervalSince(lastFastPathSend) >= fastPathCooldown {
-                sendFastPath(image: image)
+                sendFastPath(image: snapshot.image)
                 lastFastPathSend = now
             }
 
@@ -156,7 +169,7 @@ final class ScreenAnalyzer {
             if !speechActive {
                 let smartPathReady = forceSmartPath || now.timeIntervalSince(lastSmartPathSend) >= smartPathCooldown
                 if smartPathReady {
-                    await sendSmartPath(image: image, highSignificance: forceSmartPath)
+                    await sendSmartPath(snapshot: snapshot, highSignificance: forceSmartPath)
                     lastSmartPathSend = now
                 }
             }
@@ -165,12 +178,12 @@ final class ScreenAnalyzer {
 
     func forceAnalysis() async {
         guard gatewayClient.isConnected else { return }
-        let result = await captureService.forceCapture()
-        if case .captured(let image) = result {
-            sendFastPath(image: image)
+        let result = await captureService.captureFullWindow()
+        if case .captured(let snapshot) = result {
+            sendFastPath(image: snapshot.image)
             lastFastPathSend = Date()
             if !isSpeechActive {
-                await sendSmartPath(image: image, highSignificance: true)
+                await sendSmartPath(snapshot: snapshot, highSignificance: true)
                 lastSmartPathSend = Date()
             }
         }
@@ -190,15 +203,13 @@ final class ScreenAnalyzer {
 
     // MARK: - Smart Path (base64 image → ADK orchestrator)
 
-    private func sendSmartPath(image: CGImage, highSignificance: Bool) async {
+    private func sendSmartPath(snapshot: ScreenCaptureService.CaptureSnapshot, highSignificance: Bool) async {
         guard gatewayClient.isConnected else { return }
 
-        let appName = NSWorkspace.shared.frontmostApplication?.localizedName ?? "Unknown"
-        let context = "[App: \(appName)]"
         let character = AppSettings.shared.character
         let soul = spriteAnimator.loadPreset(for: character).soul
 
-        let img = image
+        let img = snapshot.image
         let base64: String? = await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let result = ImageProcessor.toBase64JPEG(img)
@@ -207,12 +218,27 @@ final class ScreenAnalyzer {
         }
         guard let base64 else { return }
 
-        NSLog("[CAPTURE] Smart Path: base64=%d bytes, character=%@, app=%@", base64.count, character, appName)
+        NSLog("[CAPTURE] Smart Path: base64=%d bytes, character=%@, context=%@",
+              base64.count, character, snapshot.contextDescription)
 
         if highSignificance {
-            gatewayClient.sendForceCapture(imageBase64: base64, context: context, userId: userId, character: character, soul: soul, activityMinutes: activityMinutes)
+            gatewayClient.sendForceCapture(
+                imageBase64: base64,
+                context: snapshot.contextDescription,
+                userId: userId,
+                character: character,
+                soul: soul,
+                activityMinutes: activityMinutes
+            )
         } else {
-            gatewayClient.sendScreenCapture(imageBase64: base64, context: context, userId: userId, character: character, soul: soul, activityMinutes: activityMinutes)
+            gatewayClient.sendScreenCapture(
+                imageBase64: base64,
+                context: snapshot.contextDescription,
+                userId: userId,
+                character: character,
+                soul: soul,
+                activityMinutes: activityMinutes
+            )
         }
 
         spriteAnimator.setState(.thinking)

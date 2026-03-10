@@ -5,6 +5,7 @@
 - `challenge/gemini-live-agent-challenge/`: challenge source pages (home/resources/rules)
 - `adk/`: ADK streaming, runtime, deployment, components, reference, safety
 - `gemini/`: Gemini Live API, GenAI SDK, models
+- `gemini-official-20260310/`: dated Gemini official-doc sync with summary notes and raw HTML originals
 - `gcp/`: Cloud Run, Firestore, Secret Manager, Logging/Monitoring/Trace, Cloud Build, Artifact Registry
 - `samples/`: official sample/repository snapshots
 - `REFERENCE_SOURCES_MANIFEST.md`: full local-file to source-URL mapping

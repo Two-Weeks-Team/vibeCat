@@ -272,10 +272,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         liveHeader.isEnabled = false
         modelMenu.addItem(liveHeader)
 
-        for model in [
-            "gemini-2.5-flash-native-audio-latest",
-            "gemini-2.0-flash-live-001",
-        ] {
+        for model in GeminiModels.selectableLiveModels {
             let item = NSMenuItem(title: "  \(model)", action: #selector(selectModel(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = model
@@ -286,14 +283,19 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         modelMenu.addItem(NSMenuItem.separator())
 
-        let visionHeader = NSMenuItem(title: "Vision API Model", action: nil, keyEquivalent: "")
+        let visionHeader = NSMenuItem(title: "Backend Analysis Models", action: nil, keyEquivalent: "")
         visionHeader.isEnabled = false
         modelMenu.addItem(visionHeader)
 
-        let visionInfoItem = NSMenuItem(title: "  gemini-3.1-flash-lite-preview", action: nil, keyEquivalent: "")
+        let visionInfoItem = NSMenuItem(title: "  Vision/Search: \(GeminiModels.vision)", action: nil, keyEquivalent: "")
         visionInfoItem.state = .on
         visionInfoItem.isEnabled = false
         modelMenu.addItem(visionInfoItem)
+
+        let supportInfoItem = NSMenuItem(title: "  Support: \(GeminiModels.liteSupport)", action: nil, keyEquivalent: "")
+        supportInfoItem.state = .off
+        supportInfoItem.isEnabled = false
+        modelMenu.addItem(supportInfoItem)
 
         let modelItem = NSMenuItem(title: "Model", action: nil, keyEquivalent: "")
         modelItem.submenu = modelMenu
@@ -301,7 +303,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         let captureMenu = NSMenu()
         captureItems.removeAll(keepingCapacity: true)
-        for (title, value) in [("3s", 3.0), ("5s", 5.0), ("10s", 10.0), ("30s", 30.0)] {
+        for (title, value) in [("1s", 1.0), ("3s", 3.0), ("5s", 5.0), ("10s", 10.0), ("30s", 30.0)] {
             let item = NSMenuItem(title: title, action: #selector(selectCaptureInterval(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = value
@@ -341,7 +343,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
-        let createdSetAPIKeyItem = NSMenuItem(title: "Set API Key...", action: #selector(handleShowOnboarding), keyEquivalent: "")
+        let createdSetAPIKeyItem = NSMenuItem(title: "Connect...", action: #selector(handleShowOnboarding), keyEquivalent: "")
         createdSetAPIKeyItem.target = self
         setAPIKeyItem = createdSetAPIKeyItem
         menu.addItem(createdSetAPIKeyItem)
@@ -574,11 +576,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         guard let setAPIKeyItem else { return }
         if apiKeyNeedsAttention {
             setAPIKeyItem.attributedTitle = NSAttributedString(
-                string: "Set API Key...",
+                string: "Connect...",
                 attributes: [.foregroundColor: NSColor.systemRed]
             )
         } else {
-            setAPIKeyItem.attributedTitle = NSAttributedString(string: "Set API Key...")
+            setAPIKeyItem.attributedTitle = NSAttributedString(string: "Connect...")
         }
     }
 

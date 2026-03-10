@@ -15,7 +15,7 @@ func TestParseSetup(t *testing.T) {
 	}{
 		{
 			name:    "valid json",
-			input:   `{"type":"setup","config":{"voice":"Zephyr","liveModel":"gemini-2.0-flash-live-001"}}`,
+			input:   `{"type":"setup","config":{"voice":"Zephyr","liveModel":"gemini-2.5-flash-native-audio-preview-12-2025"}}`,
 			wantErr: false,
 		},
 		{
@@ -102,11 +102,11 @@ func TestBuildLiveConfig(t *testing.T) {
 				if ad.EndOfSpeechSensitivity != genai.EndSensitivityLow {
 					t.Fatalf("EndOfSpeechSensitivity = %v, want %v", ad.EndOfSpeechSensitivity, genai.EndSensitivityLow)
 				}
-				if ad.PrefixPaddingMs == nil || *ad.PrefixPaddingMs != 500 {
-					t.Fatalf("PrefixPaddingMs = %v, want 500", ad.PrefixPaddingMs)
+				if ad.PrefixPaddingMs == nil || *ad.PrefixPaddingMs != 20 {
+					t.Fatalf("PrefixPaddingMs = %v, want 20", ad.PrefixPaddingMs)
 				}
-				if ad.SilenceDurationMs == nil || *ad.SilenceDurationMs != 500 {
-					t.Fatalf("SilenceDurationMs = %v, want 500", ad.SilenceDurationMs)
+				if ad.SilenceDurationMs == nil || *ad.SilenceDurationMs != 300 {
+					t.Fatalf("SilenceDurationMs = %v, want 300", ad.SilenceDurationMs)
 				}
 			},
 		},

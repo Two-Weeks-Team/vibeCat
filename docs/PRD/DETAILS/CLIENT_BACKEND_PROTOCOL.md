@@ -16,15 +16,15 @@
 ## 2. Authentication Flow
 
 ### 2.1 First-Time Setup
-1. User enters Gemini API key in client menu
-2. Client → `POST /api/v1/auth/register` with `{"apiKey": "AI..."}`
-3. Backend validates key via Gemini API
-4. Backend stores key in Secret Manager
+1. Client opens onboarding / connect UI when backend session is not established
+2. Client → `POST /api/v1/auth/register` with `{"deviceId": "<stable-device-id>"}`
+3. Backend issues an application session token
+4. Backend uses the server-side Gemini key from Secret Manager / environment
 5. Backend returns `{"sessionToken": "tok_...", "expiresAt": "ISO8601"}`
-6. Client stores session token in Keychain
+6. Client uses the session token for WebSocket and REST requests
 
 ### 2.2 Normal Session Start
-1. Client reads session token from Keychain
+1. Client requests or reuses a valid session token
 2. Client opens WebSocket with `Authorization: Bearer {token}`
 3. Gateway validates token
 4. Gateway initializes Gemini Live API session
@@ -45,15 +45,11 @@
   "config": {
     "voice": "Zephyr",
     "language": "ko",
-    "liveModel": "gemini-2.5-flash-native-audio-latest",
-    "visionModel": "gemini-3-flash-preview",
-    "googleSearch": true,
+    "liveModel": "gemini-2.5-flash-native-audio-preview-12-2025",
     "proactiveAudio": true,
+    "searchEnabled": true,
     "affectiveDialog": true,
-    "thinkingLevel": "minimal",
-    "mediaResolution": "MEDIA_RESOLUTION_HIGH",
-    "character": "cat",
-    "chattiness": "normal"
+    "deviceId": "device-uuid"
   }
 }
 ```
@@ -61,9 +57,19 @@
 #### `audio` — Binary frame
 Raw PCM 16kHz 16-bit mono
 
-#### `text`
+#### `clientContent`
 ```json
-{"type": "text", "content": "user message text"}
+{
+  "clientContent": {
+    "turnComplete": true,
+    "turns": [
+      {
+        "role": "user",
+        "parts": [{"text": "user message text"}]
+      }
+    ]
+  }
+}
 ```
 
 #### `screenCapture`
@@ -71,11 +77,7 @@ Raw PCM 16kHz 16-bit mono
 {
   "type": "screenCapture",
   "image": "<base64 JPEG>",
-  "context": {
-    "appName": "Xcode",
-    "windowTitle": "MyProject.swift",
-    "captureType": "region"
-  }
+  "context": "[app=Xcode target=window_under_cursor window=MyProject.swift]"
 }
 ```
 
@@ -84,8 +86,13 @@ Raw PCM 16kHz 16-bit mono
 {
   "type": "forceCapture",
   "image": "<base64 JPEG>",
-  "context": {"appName": "Xcode", "captureType": "fullWindow"}
+  "context": "[app=Xcode target=frontmost_window window=MyProject.swift]"
 }
+```
+
+#### `bargeIn`
+```json
+{"type": "bargeIn"}
 ```
 
 #### `settingsUpdate`

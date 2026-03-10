@@ -1,16 +1,14 @@
 import AppKit
 import VibeCatCore
 
-/// First-launch onboarding panel for API key entry.
-/// Stores the key in Keychain on successful submission.
+/// First-launch onboarding panel for gateway connection.
 @MainActor
 final class OnboardingWindowController: NSObject {
     private var window: NSWindow?
-    private var apiKeyField: NSSecureTextField?
     private var errorLabel: NSTextField?
     private var connectButton: NSButton?
 
-    var onConnect: ((String) -> Void)?
+    var onConnect: (() -> Void)?
 
     func show() {
         if window == nil {
@@ -38,7 +36,7 @@ final class OnboardingWindowController: NSObject {
 
     private func buildWindow() {
         let width: CGFloat = 400
-        let height: CGFloat = 200
+        let height: CGFloat = 190
         let rect = NSRect(x: 0, y: 0, width: width, height: height)
 
         let w = NSWindow(
@@ -55,28 +53,23 @@ final class OnboardingWindowController: NSObject {
 
         guard let contentView = w.contentView else { return }
 
-        let titleLabel = NSTextField(labelWithString: "Enter your Gemini API Key")
+        let titleLabel = NSTextField(labelWithString: "Connect to VibeCat")
         titleLabel.font = NSFont.boldSystemFont(ofSize: 14)
         titleLabel.frame = NSRect(x: 20, y: 150, width: 360, height: 24)
         contentView.addSubview(titleLabel)
 
-        let subtitleLabel = NSTextField(labelWithString: "Your key is stored securely in Keychain and never sent to third parties.")
+        let subtitleLabel = NSTextField(labelWithString: "Gemini calls run through the VibeCat backend. No Gemini API key is stored on this Mac.")
         subtitleLabel.font = NSFont.systemFont(ofSize: 11)
         subtitleLabel.textColor = .secondaryLabelColor
-        subtitleLabel.frame = NSRect(x: 20, y: 128, width: 360, height: 18)
+        subtitleLabel.frame = NSRect(x: 20, y: 126, width: 360, height: 32)
+        subtitleLabel.lineBreakMode = .byWordWrapping
+        subtitleLabel.maximumNumberOfLines = 2
         contentView.addSubview(subtitleLabel)
-
-        let field = NSSecureTextField(frame: NSRect(x: 20, y: 90, width: 360, height: 28))
-        field.placeholderString = "AIza..."
-        field.target = self
-        field.action = #selector(connectPressed)
-        contentView.addSubview(field)
-        self.apiKeyField = field
 
         let errLabel = NSTextField(labelWithString: "")
         errLabel.font = NSFont.systemFont(ofSize: 11)
         errLabel.textColor = .systemRed
-        errLabel.frame = NSRect(x: 20, y: 68, width: 360, height: 18)
+        errLabel.frame = NSRect(x: 20, y: 82, width: 360, height: 18)
         errLabel.isHidden = true
         contentView.addSubview(errLabel)
         self.errorLabel = errLabel
@@ -97,21 +90,9 @@ final class OnboardingWindowController: NSObject {
     }
 
     @objc private func connectPressed() {
-        let key = apiKeyField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !key.isEmpty else {
-            showError("Please enter your API key.")
-            return
-        }
         clearError()
-        // Store in Keychain
-        do {
-            try KeychainHelper.save(key, forKey: "vibecat-api-key")
-        } catch {
-            showError("Failed to save key: \(error.localizedDescription)")
-            return
-        }
         hide()
-        onConnect?(key)
+        onConnect?()
     }
 
     @objc private func cancelPressed() {

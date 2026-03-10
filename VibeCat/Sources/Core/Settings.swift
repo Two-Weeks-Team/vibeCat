@@ -41,13 +41,13 @@ public final class AppSettings: @unchecked Sendable {
     public var captureInterval: Double {
         get {
             let v = defaults.double(forKey: Key.captureInterval.rawValue)
-            return v > 0 ? v : 1.0
+            return v >= 1.0 ? v : 1.0
         }
         set { defaults.set(newValue, forKey: Key.captureInterval.rawValue) }
     }
 
     public var liveModel: String {
-        get { defaults.string(forKey: Key.liveModel.rawValue) ?? "gemini-2.5-flash-native-audio-latest" }
+        get { defaults.string(forKey: Key.liveModel.rawValue) ?? GeminiModels.liveNativeAudio }
         set { defaults.set(newValue, forKey: Key.liveModel.rawValue) }
     }
 

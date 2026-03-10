@@ -16,12 +16,11 @@ import (
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 
+	"vibecat/adk-orchestrator/internal/geminiconfig"
 	"vibecat/adk-orchestrator/internal/lang"
 	"vibecat/adk-orchestrator/internal/models"
 	"vibecat/adk-orchestrator/internal/prompts"
 )
-
-const visionModel = "gemini-3.1-flash-lite-preview"
 
 func buildSystemPrompt(character, soul, language string) string {
 	var sb strings.Builder
@@ -160,7 +159,7 @@ func (a *Agent) analyze(ctx context.Context, req *models.AnalysisRequest) *model
 	sysPrompt := buildSystemPrompt(req.Character, req.Soul, language)
 
 	slog.Info("[VISION] calling Gemini",
-		"model", visionModel,
+		"model", geminiconfig.VisionModel,
 		"character", req.Character,
 		"context", req.Context,
 		"image_bytes", len(decoded),
@@ -168,7 +167,7 @@ func (a *Agent) analyze(ctx context.Context, req *models.AnalysisRequest) *model
 	)
 
 	startTime := time.Now()
-	resp, err := a.genaiClient.Models.GenerateContent(ctx, visionModel, []*genai.Content{
+	resp, err := a.genaiClient.Models.GenerateContent(ctx, geminiconfig.VisionModel, []*genai.Content{
 		{Parts: parts, Role: genai.RoleUser},
 	}, &genai.GenerateContentConfig{
 		ResponseMIMEType: "application/json",
@@ -179,7 +178,7 @@ func (a *Agent) analyze(ctx context.Context, req *models.AnalysisRequest) *model
 	})
 	elapsed := time.Since(startTime)
 	if err != nil {
-		slog.Warn("[VISION] Gemini call FAILED", "error", err, "model", visionModel, "elapsed", elapsed.String())
+		slog.Warn("[VISION] Gemini call FAILED", "error", err, "model", geminiconfig.VisionModel, "elapsed", elapsed.String())
 		return &models.VisionAnalysis{Significance: 3, Content: "Screen analysis unavailable", Emotion: "neutral"}
 	}
 

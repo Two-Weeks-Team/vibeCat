@@ -37,8 +37,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var isPaused = false
     private var isMuted = false
-    private var storedAPIKey: String?
     private var pendingTranscription = ""
+    private var lastSpeechEndTime: Date = .distantPast
+    private let minimumSpeechGap: TimeInterval = 3.0
 
     private enum SpeechState: CustomStringConvertible {
         case idle
@@ -195,14 +196,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             sbc?.setLastErrorDescription(message)
         }
 
-        let existingKey = try? KeychainHelper.load(forKey: "vibecat-api-key")
-        if let key = existingKey, !key.isEmpty {
-            storedAPIKey = key
-            gateway.connect(apiKey: key)
-            analyzer.start()
-        } else {
-            showOnboarding()
-        }
+        gateway.connect()
+        analyzer.start()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -246,7 +241,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 voice.setLiveConnected(false)
                 statusBarController?.updateConnectionStatus(.disconnected)
                 statusBarController?.setLastErrorDescription(gateway.lastErrorDescription)
-                let attention = gateway.lastErrorDescription?.contains("API key") == true
+                let attention = gateway.lastErrorDescription != nil
                 statusBarController?.setAPIKeyNeedsAttention(attention)
                 if let error = gateway.lastErrorDescription {
                     ErrorReporter.shared.report(error, context: "Gateway")
@@ -282,6 +277,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             switch message {
             case .companionSpeech(let text, let emotionStr, let urgency):
                 NSLog("[GW-IN] onMessage: companionSpeech, textLength=%lu, emotion=%@, chatModeActive=%d", text.count, emotionStr, self.chatModeActive)
+                let timeSinceLastSpeech = Date().timeIntervalSince(self.lastSpeechEndTime)
+                if self.speechState == .modelSpeaking || self.speechState == .cooldown {
+                    NSLog("[GW-IN] companionSpeech SKIPPED: already speaking (state=%@)", self.speechState.description)
+                    return
+                }
+                if timeSinceLastSpeech < self.minimumSpeechGap {
+                    NSLog("[GW-IN] companionSpeech SKIPPED: too soon (%.1fs < %.1fs gap)", timeSinceLastSpeech, self.minimumSpeechGap)
+                    return
+                }
                 self.transitionSpeech(to: .modelSpeaking)
                 let emotion = CompanionEmotion(rawValue: emotionStr) ?? .neutral
                 if self.chatModeActive {
@@ -299,12 +303,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         chatPanel?.updateListeningText(text)
                     }
                 } else if !text.isEmpty {
-                    // Reject late transcription arriving after TTS started
-                    guard !self.ttsActive else {
-                        NSLog("[GW-IN] transcription REJECTED: ttsActive, discarding late fragment")
-                        if finished { self.pendingTranscription = "" }
-                        return
-                    }
                     self.transitionSpeech(to: .modelSpeaking)
                     var displayText = text
                     if let parsed = AudioMessageParser.parseEmotionTag(from: text) {
@@ -332,7 +330,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .turnComplete:
                 NSLog("[GW-IN] onMessage: turnComplete")
                 self.catVoice?.flush()
-                self.transitionSpeech(to: .idle)
+                self.lastSpeechEndTime = Date()
+                if self.speechState != .cooldown {
+                    self.transitionSpeech(to: .idle)
+                }
                 self.pendingTranscription = ""
             case .interrupted:
                 NSLog("[GW-IN] onMessage: interrupted")
@@ -362,6 +363,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             case .ttsEnd:
                 NSLog("[GW-IN] onMessage: ttsEnd")
+                guard self.speechState == .modelSpeaking else {
+                    self.pendingTranscription = ""
+                    return
+                }
+                self.lastSpeechEndTime = Date()
                 self.transitionSpeech(to: .cooldown)
                 Task { @MainActor [weak self] in
                     try? await Task.sleep(nanoseconds: 1_000_000_000)
@@ -404,11 +410,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showOnboarding() {
         let controller = OnboardingWindowController()
-        controller.onConnect = { [weak self] key in
+        controller.onConnect = { [weak self] in
             guard let self else { return }
             self.onboardingController = nil
-            self.storedAPIKey = key
-            self.gatewayClient?.connect(apiKey: key)
+            self.gatewayClient?.connect()
             self.screenAnalyzer?.start()
         }
         controller.show()
@@ -416,17 +421,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleReconnect() {
-        if let key = storedAPIKey, !key.isEmpty {
-            gatewayClient?.reconnect(apiKey: key)
-            return
-        }
-
-        guard let key = try? KeychainHelper.load(forKey: "vibecat-api-key"), !key.isEmpty else {
-            showOnboarding()
-            return
-        }
-        storedAPIKey = key
-        gatewayClient?.reconnect(apiKey: key)
+        gatewayClient?.reconnect()
     }
 
     private func handlePause() {
@@ -491,6 +486,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func wireSpeechCapture(speechRecognizer: SpeechRecognizer, gateway: GatewayClient) {
+        speechRecognizer.onBargeInDetected = { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.handleUserBargeIn()
+            }
+        }
+
         speechRecognizer.onAudioBufferCaptured = { [weak self] buffer in
             guard let converter = self?.audioConverter else {
                 NSLog("[AUDIO-PIPE] buffer dropped: audioConverter is nil")
@@ -520,6 +521,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 ErrorReporter.shared.report("Failed to initialize audio converter", context: "SpeechRecognizer")
             }
         }
+    }
+
+    private func handleUserBargeIn() {
+        guard speechState == .modelSpeaking else { return }
+        NSLog("[SPEECH] local barge-in detected")
+        gatewayClient?.sendBargeIn()
+        catVoice?.stop()
+        pendingTranscription = ""
+        catPanel?.hideBubble()
+        transitionSpeech(to: .idle)
     }
 
     nonisolated private static func convertAudioBufferToPCM16k(buffer: AVAudioPCMBuffer, converter: AVAudioConverter) -> Data? {

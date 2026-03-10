@@ -18,10 +18,10 @@ func TestRegisterHandler(t *testing.T) {
 		body       string
 		wantStatus int
 	}{
-		{name: "post success", method: http.MethodPost, body: `{"apiKey":"abc"}`, wantStatus: http.StatusOK},
-		{name: "wrong method", method: http.MethodGet, body: `{"apiKey":"abc"}`, wantStatus: http.StatusMethodNotAllowed},
-		{name: "empty body", method: http.MethodPost, body: ``, wantStatus: http.StatusBadRequest},
-		{name: "empty api key", method: http.MethodPost, body: `{"apiKey":""}`, wantStatus: http.StatusBadRequest},
+		{name: "post success with empty body", method: http.MethodPost, body: ``, wantStatus: http.StatusOK},
+		{name: "post success with device id", method: http.MethodPost, body: `{"deviceId":"mac-mini"}`, wantStatus: http.StatusOK},
+		{name: "wrong method", method: http.MethodGet, body: `{"deviceId":"mac-mini"}`, wantStatus: http.StatusMethodNotAllowed},
+		{name: "invalid json", method: http.MethodPost, body: `{`, wantStatus: http.StatusBadRequest},
 	}
 
 	for _, tc := range tests {
