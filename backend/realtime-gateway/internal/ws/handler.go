@@ -477,17 +477,6 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client, ttsCli
 							return
 						}
 
-						if result != nil && result.Vision != nil && result.Vision.Content != "" {
-							if sess := ls.getSession(); sess != nil {
-								contextMsg := fmt.Sprintf("[Screen Context] %s", result.Vision.Content)
-								if sendErr := sess.SendText(contextMsg); sendErr != nil {
-									slog.Debug("inject screen context failed", "conn_id", c.ID, "error", sendErr)
-								} else {
-									slog.Info("[HANDLER] injected screen context into live session", "conn_id", c.ID, "content_len", len(result.Vision.Content))
-								}
-							}
-						}
-
 						shouldSpeak := result != nil && result.Decision != nil && result.Decision.ShouldSpeak
 						reason := ""
 						urgency := ""
@@ -547,6 +536,15 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client, ttsCli
 								}
 							} else {
 								slog.Info("[HANDLER] bubble-only mode (low urgency)", "conn_id", c.ID, "urgency", urgency, "text_len", len(result.SpeechText))
+							}
+						} else if result != nil && result.Vision != nil && result.Vision.Content != "" {
+							if sess := ls.getSession(); sess != nil {
+								contextMsg := fmt.Sprintf("[Screen Context] %s", result.Vision.Content)
+								if sendErr := sess.SendText(contextMsg); sendErr != nil {
+									slog.Debug("inject screen context failed", "conn_id", c.ID, "error", sendErr)
+								} else {
+									slog.Info("[HANDLER] injected screen context into live session (no ADK speech)", "conn_id", c.ID, "content_len", len(result.Vision.Content))
+								}
 							}
 						}
 					}()

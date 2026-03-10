@@ -108,10 +108,18 @@ final class ScreenAnalyzer {
 
     // MARK: - Capture Scheduling
 
+    private let initialStabilizationDelay: UInt64 = 10_000_000_000
+
     private func startCaptureLoop() {
         captureLoopTask?.cancel()
         captureLoopTask = Task { @MainActor [weak self] in
             guard let self else { return }
+
+            NSLog("[CAPTURE] stabilization delay: waiting 10s before first capture")
+            try? await Task.sleep(nanoseconds: self.initialStabilizationDelay)
+            guard !Task.isCancelled else { return }
+            NSLog("[CAPTURE] stabilization complete — starting capture loop")
+
             while self.isRunning && !Task.isCancelled {
                 if !self.isAnalyzing {
                     await self.runAnalysisCycle(forceSmartPath: false)
