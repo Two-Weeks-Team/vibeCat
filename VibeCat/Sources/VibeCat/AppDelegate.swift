@@ -38,9 +38,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var isPaused = false
     private var isMuted = false
     private var storedAPIKey: String?
-    private var isTurnActive = false
-    private var ttsActive = false
     private var pendingTranscription = ""
+
+    private enum SpeechState: CustomStringConvertible {
+        case idle
+        case modelSpeaking
+        case cooldown
+
+        var description: String {
+            switch self {
+            case .idle: return "idle"
+            case .modelSpeaking: return "modelSpeaking"
+            case .cooldown: return "cooldown"
+            }
+        }
+    }
+    private var speechState: SpeechState = .idle
+    private var isTurnActive: Bool { speechState == .modelSpeaking }
+    private var ttsActive: Bool { speechState == .modelSpeaking }
+
+    private func transitionSpeech(to newState: SpeechState) {
+        let old = speechState
+        guard old != newState else { return }
+        speechState = newState
+        NSLog("[SPEECH] transition: %@ -> %@", old.description, newState.description)
+        switch newState {
+        case .idle:
+            speechRecognizer?.setModelSpeaking(false)
+            catPanel?.setTurnActive(false)
+        case .modelSpeaking:
+            speechRecognizer?.setModelSpeaking(true)
+            catPanel?.setTurnActive(true)
+        case .cooldown:
+            speechRecognizer?.setModelSpeaking(false)
+            catPanel?.setTurnActive(false)
+        }
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -249,7 +282,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             switch message {
             case .companionSpeech(let text, let emotionStr, let urgency):
                 NSLog("[GW-IN] onMessage: companionSpeech, textLength=%lu, emotion=%@, chatModeActive=%d", text.count, emotionStr, self.chatModeActive)
-                self.isTurnActive = true
+                self.transitionSpeech(to: .modelSpeaking)
                 let emotion = CompanionEmotion(rawValue: emotionStr) ?? .neutral
                 if self.chatModeActive {
                     chatPanel?.updateLastAssistantMessage(text)
@@ -258,7 +291,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     analyzer?.handleCompanionSpeech(event)
                 }
             case .transcription(let text, let finished):
-                NSLog("[GW-IN] onMessage: transcription, textLength=%lu, finished=%d, chatModeActive=%d", text.count, finished, self.chatModeActive)
+                NSLog("[GW-IN] onMessage: transcription, textLength=%lu, finished=%d, chatModeActive=%d, ttsActive=%d", text.count, finished, self.chatModeActive, self.ttsActive)
                 if self.chatModeActive {
                     if finished {
                         chatPanel?.finalizeListeningText(text)
@@ -266,7 +299,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         chatPanel?.updateListeningText(text)
                     }
                 } else if !text.isEmpty {
-                    self.isTurnActive = true
+                    // Reject late transcription arriving after TTS started
+                    guard !self.ttsActive else {
+                        NSLog("[GW-IN] transcription REJECTED: ttsActive, discarding late fragment")
+                        if finished { self.pendingTranscription = "" }
+                        return
+                    }
+                    self.transitionSpeech(to: .modelSpeaking)
                     var displayText = text
                     if let parsed = AudioMessageParser.parseEmotionTag(from: text) {
                         displayText = parsed.cleanText
@@ -293,18 +332,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .turnComplete:
                 NSLog("[GW-IN] onMessage: turnComplete")
                 self.catVoice?.flush()
-                self.speechRecognizer?.setModelSpeaking(false)
-                self.isTurnActive = false
+                self.transitionSpeech(to: .idle)
                 self.pendingTranscription = ""
-                panel?.setTurnActive(false)
             case .interrupted:
                 NSLog("[GW-IN] onMessage: interrupted")
                 self.catVoice?.stop()
-                self.speechRecognizer?.setModelSpeaking(false)
-                self.isTurnActive = false
+                self.transitionSpeech(to: .idle)
                 self.pendingTranscription = ""
                 panel?.hideBubble()
-                panel?.setTurnActive(false)
             case .sessionResumptionUpdate(let handle):
                 NSLog("[GW-IN] onMessage: sessionResumptionUpdate, handleLength=%lu", handle.count)
             case .liveSessionReconnecting(let attempt, let max):
@@ -319,25 +354,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NSLog("[GW-IN] onMessage: pong")
             case .ttsStart(let text):
                 NSLog("[GW-IN] onMessage: ttsStart, hasText=%d", text != nil ? 1 : 0)
-                self.ttsActive = true
-                self.speechRecognizer?.setModelSpeaking(true)
+                self.transitionSpeech(to: .modelSpeaking)
                 self.catVoice?.stop()
                 if let text, !text.isEmpty {
                     self.pendingTranscription = ""
                     panel?.showBubble(text: text)
                 }
-                panel?.setTurnActive(true)
             case .ttsEnd:
                 NSLog("[GW-IN] onMessage: ttsEnd")
-                self.ttsActive = false
-                panel?.setTurnActive(false)
+                self.transitionSpeech(to: .cooldown)
                 Task { @MainActor [weak self] in
-                    try? await Task.sleep(nanoseconds: 500_000_000)
-                    self?.speechRecognizer?.setModelSpeaking(false)
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    guard let self, self.speechState == .cooldown else { return }
+                    self.transitionSpeech(to: .idle)
                 }
                 Task { @MainActor [weak self] in
                     try? await Task.sleep(nanoseconds: 2_000_000_000)
-                    guard let self, !self.ttsActive, !self.isTurnActive else { return }
+                    guard let self, self.speechState == .idle else { return }
                     self.spriteAnimator?.setState(.idle)
                 }
             case .error(let code, let message):

@@ -232,12 +232,10 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client, ttsCli
 			case websocket.BinaryMessage:
 				if isJPEG(data) {
 					if sess := ls.getSession(); sess != nil {
-						if !ls.isModelSpeaking() {
-							if sendErr := sess.SendVideo(data); sendErr != nil {
-								slog.Warn("send video to gemini failed", "conn_id", c.ID, "error", sendErr)
-							} else {
-								slog.Debug("video frame sent to gemini", "conn_id", c.ID, "bytes", len(data))
-							}
+						if sendErr := sess.SendVideo(data); sendErr != nil {
+							slog.Warn("send video to gemini failed", "conn_id", c.ID, "error", sendErr)
+						} else {
+							slog.Debug("video frame sent to gemini", "conn_id", c.ID, "bytes", len(data))
 						}
 					}
 				} else {

@@ -53,7 +53,7 @@ final class ScreenAnalyzer {
         guard !isRunning else { return }
         isRunning = true
         sessionStartTime = Date()
-        scheduleNextCapture()
+        startCaptureTimer()
         observeAppSwitches()
     }
 
@@ -67,7 +67,7 @@ final class ScreenAnalyzer {
     func resume() {
         guard !isRunning else { return }
         isRunning = true
-        scheduleNextCapture()
+        startCaptureTimer()
         observeAppSwitches()
     }
 
@@ -108,11 +108,13 @@ final class ScreenAnalyzer {
 
     // MARK: - Capture Scheduling
 
-    private func scheduleNextCapture() {
+    private func startCaptureTimer() {
+        analysisTimer?.invalidate()
         let interval = AppSettings.shared.captureInterval
-        analysisTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
+        analysisTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-                await self?.runAnalysisCycle(forceSmartPath: false)
+                guard let self, self.isRunning, !self.isAnalyzing else { return }
+                await self.runAnalysisCycle(forceSmartPath: false)
             }
         }
     }
@@ -125,27 +127,12 @@ final class ScreenAnalyzer {
     }
 
     private func runAnalysisCycle(forceSmartPath: Bool) async {
-        let speechActive = isSpeechActive
-        NSLog("[CAPTURE] runAnalysisCycle: isRunning=%d, isAnalyzing=%d, isConnected=%d, speechActive=%d",
-              isRunning, isAnalyzing, gatewayClient.isConnected, speechActive)
-        guard isRunning, !isAnalyzing else {
-            if isRunning { scheduleNextCapture() }
-            return
-        }
-        guard gatewayClient.isConnected else {
-            if isRunning { scheduleNextCapture() }
-            return
-        }
+        NSLog("[CAPTURE] runAnalysisCycle: isRunning=%d, isAnalyzing=%d, isConnected=%d",
+              isRunning, isAnalyzing, gatewayClient.isConnected)
+        guard isRunning, !isAnalyzing else { return }
+        guard gatewayClient.isConnected else { return }
         isAnalyzing = true
-        defer {
-            isAnalyzing = false
-            if isRunning { scheduleNextCapture() }
-        }
-
-        if speechActive {
-            NSLog("[CAPTURE] suppressed — speech active (audio/tts/cooldown)")
-            return
-        }
+        defer { isAnalyzing = false }
 
         let result = await captureService.captureAroundCursor()
         switch result {
@@ -165,22 +152,27 @@ final class ScreenAnalyzer {
                 lastFastPathSend = now
             }
 
-            let smartPathReady = forceSmartPath || now.timeIntervalSince(lastSmartPathSend) >= smartPathCooldown
-            if smartPathReady {
-                await sendSmartPath(image: image, highSignificance: forceSmartPath)
-                lastSmartPathSend = now
+            let speechActive = isSpeechActive
+            if !speechActive {
+                let smartPathReady = forceSmartPath || now.timeIntervalSince(lastSmartPathSend) >= smartPathCooldown
+                if smartPathReady {
+                    await sendSmartPath(image: image, highSignificance: forceSmartPath)
+                    lastSmartPathSend = now
+                }
             }
         }
     }
 
     func forceAnalysis() async {
-        guard gatewayClient.isConnected, !isSpeechActive else { return }
+        guard gatewayClient.isConnected else { return }
         let result = await captureService.forceCapture()
         if case .captured(let image) = result {
             sendFastPath(image: image)
             lastFastPathSend = Date()
-            await sendSmartPath(image: image, highSignificance: true)
-            lastSmartPathSend = Date()
+            if !isSpeechActive {
+                await sendSmartPath(image: image, highSignificance: true)
+                lastSmartPathSend = Date()
+            }
         }
     }
 
