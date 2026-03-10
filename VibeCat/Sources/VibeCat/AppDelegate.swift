@@ -254,12 +254,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusBarController?.updateConnectionStatus(.reconnecting(attempt: attempt, max: 30))
             statusBarController?.setLastErrorDescription(gateway.lastErrorDescription)
         }
-        gateway.onDisconnected = { [weak statusBarController] in
+        gateway.onDisconnected = { [weak self, weak statusBarController, weak panel] in
             statusBarController?.updateConnectionStatus(.disconnected)
             statusBarController?.setLastErrorDescription(gateway.lastErrorDescription)
             if let error = gateway.lastErrorDescription {
                 ErrorReporter.shared.report(error, context: "Gateway")
             }
+            if let self {
+                self.transitionSpeech(to: .idle)
+                self.pendingTranscription = ""
+            }
+            panel?.hideBubble()
+            panel?.setEmotionIndicator(nil)
         }
         gateway.onReconnectExhausted = { [weak statusBarController] in
             statusBarController?.updateConnectionStatus(.disconnected)
@@ -276,13 +282,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             switch message {
             case .companionSpeech(let text, let emotionStr, let urgency):
-                NSLog("[GW-IN] onMessage: companionSpeech, textLength=%lu, emotion=%@, chatModeActive=%d", text.count, emotionStr, self.chatModeActive)
-                let timeSinceLastSpeech = Date().timeIntervalSince(self.lastSpeechEndTime)
-                if self.speechState == .modelSpeaking || self.speechState == .cooldown {
-                    NSLog("[GW-IN] companionSpeech SKIPPED: already speaking (state=%@)", self.speechState.description)
-                    return
+                NSLog("[GW-IN] onMessage: companionSpeech, textLength=%lu, emotion=%@, chatModeActive=%d, state=%@", text.count, emotionStr, self.chatModeActive, self.speechState.description)
+                // If model is already speaking (e.g. Gemini Live reacted to injected screen context),
+                // ADK's companionSpeech has higher priority — interrupt the current playback.
+                if self.speechState == .modelSpeaking {
+                    NSLog("[GW-IN] companionSpeech: interrupting current playback for ADK response")
+                    self.catVoice?.stop()
+                    self.pendingTranscription = ""
                 }
-                if timeSinceLastSpeech < self.minimumSpeechGap {
+                if self.speechState == .cooldown {
+                    NSLog("[GW-IN] companionSpeech: overriding cooldown for ADK response")
+                }
+                let timeSinceLastSpeech = Date().timeIntervalSince(self.lastSpeechEndTime)
+                if self.speechState == .idle && timeSinceLastSpeech < self.minimumSpeechGap {
                     NSLog("[GW-IN] companionSpeech SKIPPED: too soon (%.1fs < %.1fs gap)", timeSinceLastSpeech, self.minimumSpeechGap)
                     return
                 }
