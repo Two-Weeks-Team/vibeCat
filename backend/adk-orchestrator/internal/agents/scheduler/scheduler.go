@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"iter"
+	"sync"
 	"time"
 
 	"google.golang.org/adk/agent"
@@ -15,6 +16,7 @@ import (
 )
 
 type Agent struct {
+	mu            sync.Mutex
 	utterances    int
 	interruptions int
 	lastUpdate    time.Time
@@ -32,6 +34,9 @@ func New() *Agent {
 
 func (a *Agent) Run(ctx agent.InvocationContext) iter.Seq2[*session.Event, error] {
 	return func(yield func(*session.Event, error) bool) {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+
 		userContent := ctx.UserContent()
 		if userContent == nil {
 			yield(nil, fmt.Errorf("scheduler: no user content"))

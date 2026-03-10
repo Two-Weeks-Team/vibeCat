@@ -13,6 +13,8 @@ import (
 	"google.golang.org/adk/tool/functiontool"
 	"google.golang.org/adk/tool/geminitool"
 	"google.golang.org/genai"
+
+	"vibecat/adk-orchestrator/internal/lang"
 )
 
 // FormatSearchResultInput is the typed input for the format_search_result function tool.
@@ -82,7 +84,7 @@ func NewLLMSearchAgent(apiKey string, language string) (agent.Agent, error) {
 		return nil, fmt.Errorf("failed to create gemini model for search: %w", err)
 	}
 
-	lang := normalizeLanguage(language)
+	lang := lang.NormalizeLanguage(language)
 
 	searchAgent, err := llmagent.New(llmagent.Config{
 		Name:        "llm_search_buddy",

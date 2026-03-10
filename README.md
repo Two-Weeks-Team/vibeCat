@@ -20,11 +20,11 @@
 
 <p align="center">
   <a href="#architecture">Architecture</a> &#8226;
-  <a href="#9-agents">9 Agents</a> &#8226;
+  <a href="#data-flow">Data Flow</a> &#8226;
+  <a href="#9-agent-graph">9-Agent Graph</a> &#8226;
   <a href="#characters">Characters</a> &#8226;
   <a href="#quick-start">Quick Start</a> &#8226;
-  <a href="#deployment">Deployment</a> &#8226;
-  <a href="#documentation">Documentation</a>
+  <a href="#deployment">Deployment</a>
 </p>
 
 ---
@@ -43,60 +43,162 @@ It is not a chatbot that waits for your question. It is a colleague that watches
 
 ## Architecture
 
+### Three-Layer Split
+
 ```mermaid
 flowchart LR
     U["User (Voice + Screen)"] --> C[macOS Client<br/>Swift 6 / SwiftUI]
-    C -->|WebSocket| RG[Realtime Gateway<br/>Go + GenAI SDK<br/>Cloud Run]
-    RG -->|Live API| GL[Gemini Live API]
-    RG -->|HTTP POST /analyze| AO[ADK Orchestrator<br/>Go + ADK Go SDK<br/>Cloud Run]
-    AO --> W1["Wave 1 ∥<br/>Vision + Memory"]
-    AO --> W2["Wave 2 ∥<br/>Mood + Celebration"]
-    AO --> W3["Wave 3 →<br/>Mediator → Scheduler<br/>→ Engagement → Search"]
-    W1 & W3 --> FS[(Firestore)]
-    W3 --> GS[Google Search]
+    C -->|WebSocket<br/>PCM 16kHz + JPEG| RG[Realtime Gateway<br/>Go + GenAI SDK v1.48<br/>Cloud Run 512Mi]
+    RG -->|Live API| GL["Gemini Live API<br/>gemini-2.5-flash-native-audio"]
+    RG -->|HTTP POST /analyze| AO["ADK Orchestrator<br/>Go + ADK Go SDK<br/>Cloud Run 1Gi"]
+    AO --> W1["Wave 1 (Parallel)<br/>Vision + Memory"]
+    AO --> W2["Wave 2 (Parallel)<br/>Mood + Celebration"]
+    AO --> W3["Wave 3 (Sequential)<br/>Mediator → Scheduler<br/>→ Engagement → Search"]
+    W1 & W3 --> FS[(Firestore<br/>6 collections)]
+    W3 --> GS[Google Search<br/>Grounding]
     RG --> SM[Secret Manager]
+    RG -->|TTS| TTS["gemini-2.5-flash-preview-tts"]
     RG & AO --> OBS[Cloud Trace +<br/>Cloud Logging +<br/>ADK Telemetry]
 ```
 
-### Three-Layer Split
-
-| Layer | Technology | Location | Role |
-|-------|-----------|----------|------|
-| **macOS Client** | Swift 6 / SwiftUI | `VibeCat/` | UI, screen capture, audio playback, gestures |
-| **Realtime Gateway** | Go + `google.golang.org/genai` | `backend/realtime-gateway/` | WebSocket proxy to Gemini Live API |
-| **ADK Orchestrator** | Go + `google.golang.org/adk` | `backend/adk-orchestrator/` | 9-agent graph, decision-making |
-| **Persistence** | Firestore | GCP `asia-northeast3` | Sessions, metrics, memory |
+| Layer | Technology | Location | Port | Role |
+|-------|-----------|----------|------|------|
+| **macOS Client** | Swift 6, SwiftUI, SPM | `VibeCat/` | — | UI, screen capture, audio I/O, gestures, 60fps animation |
+| **Realtime Gateway** | Go 1.24 + GenAI SDK v1.48 | `backend/realtime-gateway/` | 8080 | WebSocket proxy to Gemini Live API, TTS streaming, session resumption |
+| **ADK Orchestrator** | Go 1.24 + ADK Go SDK | `backend/adk-orchestrator/` | 8080 | 9-agent graph with 3-wave execution, Firestore persistence |
+| **Persistence** | Firestore | GCP `asia-northeast3` | — | Sessions, metrics, memory, history, searches, users |
 
 ### Key Protocols
 
-- **Client ↔ Gateway**: WebSocket (`wss://{host}/ws/live`) + REST (`/api/v1/`)
-- **Gateway ↔ Orchestrator**: HTTP `POST /analyze`
-- **Audio**: PCM 16kHz 16-bit mono (client → server), PCM 24kHz (server → client)
-- **Auth**: Ephemeral tokens, API key in GCP Secret Manager (never on client)
+- **Client <-> Gateway**: WebSocket (`wss://{host}/ws/live`) + REST (`/api/v1/auth/{register,refresh}`)
+- **Gateway <-> Orchestrator**: HTTP `POST /analyze`, `POST /search` (Cloud Run ID token auth)
+- **Audio**: PCM 16kHz 16-bit mono (client -> server), PCM 24kHz (server -> client)
+- **Video**: JPEG frames via `SendRealtimeInput(Video)` (Fast Path), Base64 JPEG via `/analyze` (Smart Path)
+- **Auth**: Device UUID -> JWT (HS256, 24h), API key in GCP Secret Manager (never on client)
 
 ---
 
-## 9 Agents
+## Data Flow
+
+### Dual-Path Screen Capture
+
+```
+1Hz ScreenCaptureKit (cursor region, multi-monitor)
+       |
+       v
+  ImageDiffer (32x32 thumbnail, ~1ms)
+       |
+       |-- No change --> skip
+       |
+       |-- Fast Path (5s cooldown)
+       |     Background thread: JPEG encode
+       |       --> GatewayClient.sendVideoFrame()
+       |             --> session.SendRealtimeInput(Video: JPEG blob)
+       |                   --> Gemini Live API (realtime vision context)
+       |
+       '-- Smart Path (15s cooldown)
+             Background thread: base64 encode
+               --> GatewayClient.sendScreenCapture(base64)
+                     --> Gateway POST /analyze --> ADK Orchestrator
+                           --> 9-agent graph --> AnalysisResult
+                                 --> companionSpeech / mood / celebration
+```
+
+### Voice Pipeline
+
+```
+Microphone (AVAudioEngine, PCM 16kHz)
+       |
+       v
+  3-Layer Speech Protection
+       |
+       |-- Layer 1 (Client): rmsThreshold=0.01, bargeInThreshold=0.05
+       |-- Layer 2 (Gateway): modelSpeaking guard, JPEG gating
+       '-- Layer 3 (Live API): PrefixPaddingMs=500, Sensitivity=Low
+       |
+       v
+  GatewayClient.sendAudio() --> Gemini Live API
+       |
+       |-- PCM 24kHz audio response --> AudioPlayer (~20ms buffer)
+       |-- Transcription --> StatusBar
+       '-- Model turn complete --> ADK analysis trigger
+```
+
+### Reconnection
+
+Gateway reconnects to Gemini Live API with exponential backoff (1s, 2s, 4s) up to 3 attempts, using session resumption handles to preserve conversation context.
+
+---
+
+## 9-Agent Graph
 
 A chatbot answers. A colleague **sees, hears, judges, adapts, remembers, cares, celebrates, and helps**.
 
-| Agent | Colleague Role | What It Does |
-|-------|---------------|-------------|
-| **VAD** | Natural conversation | Barge-in interruption, real-time turn-taking |
-| **VisionAgent** | Second pair of eyes | Analyzes screen captures for errors and context |
-| **Mediator** | Social awareness | Decides when to speak and when to stay quiet |
-| **AdaptiveScheduler** | Rhythm awareness | Adjusts timing based on interaction patterns |
-| **EngagementAgent** | Initiative | Reaches out when you've been quiet too long |
-| **MemoryAgent** | Long-term memory | Remembers past sessions, unresolved issues |
-| **MoodDetector** | Emotional awareness | Senses frustration, suggests breaks, offers help |
-| **CelebrationTrigger** | Cheerleader | Detects success moments and celebrates with you |
-| **SearchBuddy** | Research assistant | Searches for solutions when you're stuck |
+### Graph Structure (3 Waves)
+
+```
+SEQUENTIAL: vibecat_graph
+|
+|-- PARALLEL: Wave 1 - Perception
+|   |-- VisionAgent         gemini-3.1-flash-lite    Screen -> significance (0-10)
+|   '-- MemoryAgent         gemini-3.1-pro           Cross-session context retrieval
+|
+|-- PARALLEL: Wave 2 - Emotion
+|   |-- MoodDetector        Rule-based               Frustration / stuck / idle
+|   '-- CelebrationTrigger  gemini-3.1-flash-lite    Success detection (10min cooldown)
+|
+'-- SEQUENTIAL: Wave 3 - Decision
+    |-- Mediator            gemini-3.1-flash-lite    Speech gating (cooldown, dedup)
+    |-- AdaptiveScheduler   Rule-based               Dynamic timing adjustment
+    |-- EngagementAgent     gemini-3.1-flash-lite    Proactive check-in (180s silence)
+    '-- LOOP: SearchBuddy   gemini-3.1-pro           Google Search grounding (max 2 iter)
+              + LLM Search  gemini-3.1-flash-lite    llmagent + GoogleSearch + FunctionTool
+```
+
+### Agent Details
+
+| Agent | Model | Role | Key Behavior |
+|-------|-------|------|-------------|
+| **VisionAgent** | `gemini-3.1-flash-lite-preview` | Screen analysis | Scores significance 0-10, detects errors/success, respects character persona |
+| **MemoryAgent** | `gemini-3.1-pro-preview` | Long-term memory | Reads/writes Firestore `memory` collection, generates session summaries |
+| **MoodDetector** | Rule-based | Emotional awareness | Error count tracking, silence detection, voice tone fusion |
+| **CelebrationTrigger** | `gemini-3.1-flash-lite-preview` | Success detection | Triggers on significance >= 9, 10-minute cooldown, message deduplication |
+| **Mediator** | `gemini-3.1-flash-lite-preview` | Speech gating | Default 10s cooldown, mood-aware 180s, significance thresholds (error=7+, focused=9+) |
+| **AdaptiveScheduler** | Rule-based | Timing adjustment | Rate > 2/min: increase cooldown; Rate < 0.5/min: decrease cooldown |
+| **EngagementAgent** | `gemini-3.1-flash-lite-preview` | Proactive outreach | 180s silence trigger, 50-minute rest reminder |
+| **SearchBuddy** | `gemini-3.1-pro-preview` | Research assistant | Google Search grounding, mood-based triggers (stuck/frustrated) |
+| **LLM SearchBuddy** | `gemini-3.1-flash-lite-preview` | Search refinement | ADK `llmagent` + `geminitool.GoogleSearch` + `functiontool` |
+
+### ADK SDK Usage
+
+```go
+// Workflow orchestration
+sequentialagent.New()    // Wave 3, main graph
+parallelagent.New()      // Wave 1, Wave 2
+loopagent.New()          // Search refinement (max 2 iterations)
+
+// Agent types
+agent.New()              // Custom agents with Run functions
+llmagent.New()           // LLM agent with native tool use
+
+// Runner
+runner.New(runner.Config{
+    Agent:          agentGraph,
+    SessionService: session.InMemoryService(),
+    MemoryService:  memory.InMemoryService(),
+    PluginConfig:   runner.PluginConfig{Plugins: [retryandreflect]},
+})
+
+// Tools
+geminitool.GoogleSearch{}     // Native Google Search grounding
+functiontool.New()            // Custom function tools
+```
 
 ---
 
 ## Characters
 
-6 animated characters with unique voices and personalities. Each has a [`soul.md`](Assets/Sprites/cat/soul.md) defining their persona:
+6 animated characters with unique voices and personalities. Each has a [`preset.json`](Assets/Sprites/cat/preset.json) for voice config and a [`soul.md`](Assets/Sprites/cat/soul.md) defining their persona (injected server-side into system prompts):
 
 | Character | Role | Voice | Tone |
 |-----------|------|-------|------|
@@ -106,6 +208,8 @@ A chatbot answers. A colleague **sees, hears, judges, adapts, remembers, cares, 
 | <img src="Assets/Sprites/kimjongun/idle_01.png" width="32"> **kimjongun** | Supreme debugger (comedy) | Schedar | authoritative-warm |
 | <img src="Assets/Sprites/saja/idle_01.png" width="32"> **saja** | Zen mentor from folklore | Zubenelgenubi | calm-deep, archaic |
 | <img src="Assets/Sprites/trump/idle_01.png" width="32"> **trump** | Bombastic hype-man (comedy) | Fenrir | energetic-superlative |
+
+Each character has 16 sprite frames (4 states x 4 frames: idle, happy, surprised, thinking).
 
 ---
 
@@ -121,10 +225,10 @@ A chatbot answers. A colleague **sees, hears, judges, adapts, remembers, cares, 
 ### Build & Run (Client)
 
 ```bash
-make build   # Build Swift package
+make build   # Build Swift package (SPM, swift-tools-version 6.2)
 make sign    # Codesign for dev
 make run     # Build + sign + run
-make test    # Run Swift tests
+make test    # Run Swift tests (31 tests)
 ```
 
 ### Build & Run (Backend)
@@ -135,8 +239,8 @@ cd backend/realtime-gateway && go run .
 cd backend/adk-orchestrator && go run .
 
 # Run tests
-cd backend/realtime-gateway && go test ./...
-cd backend/adk-orchestrator && go test ./...
+cd backend/realtime-gateway && go test ./...   # 6 packages
+cd backend/adk-orchestrator && go test ./...   # 13 packages
 ```
 
 ---
@@ -146,45 +250,50 @@ cd backend/adk-orchestrator && go test ./...
 ### One-Time GCP Setup
 
 ```bash
-./infra/setup.sh    # Enable APIs, create Firestore, Secret Manager, Artifact Registry, IAM
+./infra/setup.sh    # Enable 9 APIs, create Firestore, Secret Manager, Artifact Registry, IAM
 ```
 
 ### Deploy to Cloud Run
 
 ```bash
-./infra/deploy.sh     # Build + deploy both services to asia-northeast3
-./infra/teardown.sh   # Remove deployment
+./infra/deploy.sh     # Cloud Build + deploy both services to asia-northeast3
+./infra/teardown.sh   # Remove Cloud Run services
 ```
 
 ### GCP Resources
 
-| Resource | Service |
-|----------|---------|
-| **Cloud Run** | `realtime-gateway`, `adk-orchestrator` |
-| **Firestore** | Session data, metrics, cross-session memory |
-| **Secret Manager** | `vibecat-gemini-api-key`, `vibecat-gateway-auth-secret` |
-| **Artifact Registry** | `vibecat-images` container repo |
-| **Cloud Build** | Automated build pipeline |
-| **Observability** | Cloud Logging, Monitoring, Trace |
+| Resource | Service | Config |
+|----------|---------|--------|
+| **Cloud Run** | `realtime-gateway` | 512Mi, 0-10 instances, public, session affinity |
+| **Cloud Run** | `adk-orchestrator` | 1Gi, 0-10 instances, internal only |
+| **Firestore** | 6 collections | sessions, metrics, history, searches, users, memory |
+| **Secret Manager** | 2 secrets | `vibecat-gemini-api-key`, `vibecat-gateway-auth-secret` |
+| **Artifact Registry** | `vibecat-images` | Docker container repo |
+| **Cloud Build** | 2 pipelines | Test -> build -> push -> deploy per service |
+| **Observability** | Cloud Logging, Monitoring, Trace | Structured logs, OpenTelemetry spans, ADK Telemetry |
+
+### CI/CD
+
+| Pipeline | Trigger | Jobs |
+|----------|---------|------|
+| **CI** (`ci.yml`) | Push / PR to master | Go build+test (both services), Swift build+test (self-hosted macOS), Docker build |
+| **CD** (`cd.yml`) | Manual dispatch | Deploy to Cloud Run via Workload Identity Federation, smoke test |
 
 ---
 
-## Documentation
+## GenAI SDK Features Used
 
-| Document | Description |
-|----------|-------------|
-| [Master PRD](docs/PRD/LIVE_AGENTS_PRD.md) | Business model, agent philosophy, architecture |
-| [Document Index](docs/PRD/INDEX.md) | Complete document map |
-| [Implementation Tasks (Client)](docs/PRD/DETAILS/END_TO_END_IMPLEMENTATION_TASKS.md) | T-001 ~ T-099 (64 tasks) |
-| [Implementation Tasks (Backend)](docs/PRD/DETAILS/BACKEND_IMPLEMENTATION_TASKS.md) | T-100 ~ T-175 (58 tasks) |
-| [Backend Architecture](docs/PRD/DETAILS/BACKEND_ARCHITECTURE.md) | 9-agent graph, Firestore schema, service contracts |
-| [Client-Backend Protocol](docs/PRD/DETAILS/CLIENT_BACKEND_PROTOCOL.md) | WebSocket/REST spec, message types, error codes |
-| [Deployment & Operations](docs/PRD/DETAILS/DEPLOYMENT_AND_OPERATIONS.md) | GCP Cloud Run, observability, security |
-| [Implementation Execution Plan](docs/PRD/DETAILS/IMPLEMENTATION_EXECUTION_PLAN.md) | Build sequence, module dependencies |
-| [TDD Verification Plan](docs/PRD/DETAILS/TDD_VERIFICATION_PLAN.md) | Red-Green-Refactor implementation order |
-| [Asset Migration Plan](docs/PRD/DETAILS/ASSET_MIGRATION_PLAN.md) | Asset inventory, counts, verification |
-| [Submission & Demo Plan](docs/PRD/DETAILS/SUBMISSION_AND_DEMO_PLAN.md) | Demo flow, submission artifacts |
-| [CloudBuild Spec](docs/PRD/DETAILS/CLOUDBUILD_SPEC.md) | Cloud Build YAML specs |
+| Feature | Configuration |
+|---------|--------------|
+| **Live API** | `gemini-2.5-flash-native-audio-latest` — bidirectional audio + video streaming |
+| **VAD** | `AutomaticActivityDetection` — PrefixPadding 500ms, Silence 500ms, Sensitivity Low |
+| **Barge-in** | `StartOfActivityInterrupts` + `TurnIncludesOnlyActivity` |
+| **Affective Dialog** | `EnableAffectiveDialog: true` — emotional tone awareness |
+| **Proactive Audio** | `ProactiveAudio: true` — model-initiated speech |
+| **Session Resumption** | `SessionResumptionConfig{Handle}` — survives reconnection |
+| **Context Window Compression** | Trigger 100K tokens -> Sliding window target 50K tokens |
+| **TTS** | `gemini-2.5-flash-preview-tts` — streaming audio with voice selection |
+| **Video Frames** | `SendRealtimeInput(Video: JPEG blob)` — realtime screen context |
 
 ---
 
@@ -193,27 +302,72 @@ cd backend/adk-orchestrator && go test ./...
 ```
 vibeCat/
 ├── VibeCat/
-│   ├── Package.swift              # SPM manifest (swift-tools-version 6.2)
-│   ├── Sources/Core/              # Pure Swift modules (no UI deps)
-│   ├── Sources/VibeCat/           # macOS app (UI, capture, transport)
-│   └── Tests/VibeCatTests/
+│   ├── Package.swift                    # SPM manifest (swift-tools-version 6.2)
+│   ├── Sources/
+│   │   ├── Core/                        # Pure Swift library (no UI deps)
+│   │   │   ├── Models.swift             #   ChatMessage, Emotion, Mood, SpeechEvent
+│   │   │   ├── AudioMessageParser.swift #   ServerMessage enum (17 types)
+│   │   │   ├── ImageProcessor.swift     #   JPEG encode, resize, base64
+│   │   │   ├── ImageDiffer.swift        #   32x32 screen change detection
+│   │   │   ├── PCMConverter.swift       #   Int16/Float32 audio conversion
+│   │   │   ├── Settings.swift           #   AppSettings (UserDefaults)
+│   │   │   └── KeychainHelper.swift     #   Secure API key storage
+│   │   └── VibeCat/                     # macOS app (20 files)
+│   │       ├── AppDelegate.swift        #   Main orchestrator (597 lines)
+│   │       ├── GatewayClient.swift      #   WebSocket + reconnection (686 lines)
+│   │       ├── ScreenAnalyzer.swift     #   Dual-path capture (Fast + Smart)
+│   │       ├── ScreenCaptureService.swift #  ScreenCaptureKit wrapper
+│   │       ├── CatPanel.swift           #   Overlay window + sprite + bubble
+│   │       ├── CatViewModel.swift       #   60fps mouse tracking
+│   │       ├── SpriteAnimator.swift     #   Animation state machine
+│   │       ├── ChatBubbleView.swift     #   Speech bubble with spring animation
+│   │       ├── SpeechRecognizer.swift   #   Mic capture + VAD + barge-in
+│   │       ├── AudioPlayer.swift        #   PCM playback (~20ms buffer)
+│   │       ├── StatusBarController.swift #  Menu bar UI (608 lines)
+│   │       └── ...                      #   CircleGesture, Onboarding, HUD, etc.
+│   └── Tests/VibeCatTests/              # 31 tests
 ├── backend/
-│   ├── realtime-gateway/          # Go + GenAI SDK (Live API WebSocket proxy)
-│   └── adk-orchestrator/          # Go + ADK Go SDK (9-agent graph)
+│   ├── realtime-gateway/                # Go + GenAI SDK (12 source files)
+│   │   ├── main.go                      #   Entry: Trace, Logging, JWT, GenAI, routes
+│   │   ├── internal/live/               #   Gemini Live API session management
+│   │   ├── internal/ws/                 #   WebSocket handler (773 lines)
+│   │   ├── internal/adk/               #   ADK Orchestrator HTTP client
+│   │   ├── internal/auth/              #   JWT auth (register, refresh, middleware)
+│   │   ├── internal/tts/               #   TTS streaming via GenAI SDK
+│   │   ├── internal/secrets/           #   GCP Secret Manager
+│   │   └── cmd/videotest/              #   Live API testing tool (21+ tests)
+│   └── adk-orchestrator/               # Go + ADK Go SDK (17 source files)
+│       ├── main.go                      #   Entry: Runner, HTTP handlers, observability
+│       ├── internal/agents/graph/       #   9-agent graph (3-wave structure)
+│       ├── internal/agents/vision/      #   VisionAgent (screen analysis)
+│       ├── internal/agents/memory/      #   MemoryAgent (Firestore)
+│       ├── internal/agents/mood/        #   MoodDetector (rule-based)
+│       ├── internal/agents/celebration/ #   CelebrationTrigger
+│       ├── internal/agents/mediator/    #   Mediator (speech gating)
+│       ├── internal/agents/scheduler/   #   AdaptiveScheduler
+│       ├── internal/agents/engagement/  #   EngagementAgent
+│       ├── internal/agents/search/      #   SearchBuddy + LLM Search + Classifier
+│       ├── internal/models/             #   Request/response types
+│       ├── internal/prompts/            #   Prompt templates
+│       └── internal/store/              #   Firestore client (6 collections)
 ├── infra/
-│   ├── setup.sh                   # One-time GCP project bootstrap
-│   ├── deploy.sh                  # Build + deploy to Cloud Run
-│   └── teardown.sh                # Remove Cloud Run services
+│   ├── setup.sh                         # One-time GCP bootstrap (9 APIs, IAM)
+│   ├── deploy.sh                        # Cloud Build + deploy both services
+│   └── teardown.sh                      # Remove Cloud Run services
 ├── Assets/
-│   ├── Sprites/{character}/       # 6 characters, ~16 frames each
-│   │   ├── preset.json            # Voice, size, persona config
-│   │   └── soul.md                # Character personality prompt
-│   ├── TrayIcons/                 # Menu bar animation frames
-│   └── Music/                     # Background lo-fi tracks
+│   ├── Sprites/{character}/             # 6 characters, 16 frames each (97 PNGs)
+│   │   ├── preset.json                  #   Voice, persona config
+│   │   └── soul.md                      #   Character personality prompt
+│   ├── TrayIcons_Clean/                 # Menu bar icons (24 PNGs, 8 frames x 3 scales)
+│   └── Music/                           # Lo-fi background tracks (2 files)
 ├── docs/
-│   ├── PRD/                       # Product requirements (15+ docs)
-│   └── reference/                 # External SDK/GCP reference (~40 files)
-└── voice_samples/                 # Voice sample files
+│   ├── PRD/                             # Product requirements (15+ docs)
+│   ├── FINAL_ARCHITECTURE.md            # Complete architecture reference
+│   └── reference/                       # External SDK/GCP reference (~40 files)
+├── .github/workflows/
+│   ├── ci.yml                           # CI: Go + Swift + Docker
+│   └── cd.yml                           # CD: Cloud Run deploy + smoke test
+└── voice_samples/                       # 13 voice sample files
 ```
 
 ---
@@ -222,34 +376,31 @@ vibeCat/
 
 | Category | Technology |
 |----------|-----------|
-| **Client** | Swift 6, SwiftUI, SPM, CoreGraphics, AVFoundation |
-| **Backend** | Go 1.24+, `google.golang.org/genai`, `google.golang.org/adk` |
-| **AI Models** | `gemini-2.5-flash-native-audio-latest` (Live), `gemini-2.5-flash-preview-tts` (TTS), `gemini-3.1-flash-lite-preview` (Vision) |
-| **GenAI SDK** | Live API (VAD, Barge-in, AffectiveDialog, SessionResumption, ContextWindowCompression, OutputTranscription) |
-| **ADK** | Runner, ParallelAgent, SequentialAgent, LLMAgent, Session State, InMemoryService (memory + session), Telemetry, FunctionTool, GeminiTool (GoogleSearch) |
-| **Agent Graph** | 9 agents in 3 waves: Perception (Vision∥Memory) → Emotion (Mood∥Celebration) → Decision (Mediator→Scheduler→Engagement→Search) |
-| **Infrastructure** | GCP Cloud Run (2 services), Firestore, Secret Manager, Artifact Registry |
-| **Observability** | Cloud Trace (OpenTelemetry spans), Cloud Logging (structured), ADK Telemetry |
-| **Auth** | Device UUID (zero-onboarding, no client-side API keys) |
-| **CI/CD** | Cloud Build, `infra/deploy.sh` |
+| **Client** | Swift 6, SwiftUI, SPM, AppKit, AVFoundation, ScreenCaptureKit, CoreGraphics |
+| **Backend** | Go 1.24+, `google.golang.org/genai` v1.48, `google.golang.org/adk` |
+| **AI Models** | `gemini-2.5-flash-native-audio-latest` (Live), `gemini-2.5-flash-preview-tts` (TTS), `gemini-3.1-flash-lite-preview` (Vision/Classification), `gemini-3.1-pro-preview` (Memory/Search) |
+| **GenAI SDK** | Live API, VAD, Barge-in, AffectiveDialog, ProactiveAudio, SessionResumption, ContextWindowCompression, SendRealtimeInput(Video), TTS Streaming |
+| **ADK** | Runner, ParallelAgent, SequentialAgent, LoopAgent, LLMAgent, InMemoryService (session + memory), RetryAndReflect Plugin, FunctionTool, GeminiTool (GoogleSearch), Telemetry |
+| **Agent Graph** | 9 agents in 3 waves: Perception (Vision \|\| Memory) -> Emotion (Mood \|\| Celebration) -> Decision (Mediator -> Scheduler -> Engagement -> Search Loop) |
+| **Infrastructure** | GCP Cloud Run (2 services), Firestore (6 collections), Secret Manager, Artifact Registry, Cloud Build |
+| **Observability** | Cloud Trace (OpenTelemetry), Cloud Logging (structured JSON), Cloud Monitoring, ADK Telemetry |
+| **Auth** | Device UUID -> JWT (HS256, 24h), Workload Identity Federation (CI/CD), Cloud Run ID tokens (service-to-service) |
+| **CI/CD** | GitHub Actions (CI) + Cloud Build (CD), self-hosted macOS runner for Swift |
 
 ---
 
-## Contributing
+## Documentation
 
-See the [GitHub Issues](https://github.com/Two-Weeks-Team/vibeCat/issues) for all 122 implementation tasks with detailed specs and document references.
-
-Each issue includes:
-- Goal and implementation steps
-- Clickable links to reference documents
-- Verification / acceptance criteria
-- Task dependencies
-
-Filter by label to find work in your area:
-- [`client`](https://github.com/Two-Weeks-Team/vibeCat/labels/client) — macOS Swift app (64 tasks)
-- [`backend`](https://github.com/Two-Weeks-Team/vibeCat/labels/backend) — Go backend services (58 tasks)
-- [`backend:gateway`](https://github.com/Two-Weeks-Team/vibeCat/labels/backend%3Agateway) — Realtime Gateway
-- [`backend:orchestrator`](https://github.com/Two-Weeks-Team/vibeCat/labels/backend%3Aorchestrator) — ADK Orchestrator
+| Document | Description |
+|----------|-------------|
+| [Final Architecture](docs/FINAL_ARCHITECTURE.md) | Complete system architecture with all layers, agents, data flows, and config |
+| [Master PRD](docs/PRD/LIVE_AGENTS_PRD.md) | Business model, agent philosophy, architecture |
+| [Document Index](docs/PRD/INDEX.md) | Complete document map |
+| [Backend Architecture](docs/PRD/DETAILS/BACKEND_ARCHITECTURE.md) | 9-agent graph, Firestore schema, service contracts |
+| [Client-Backend Protocol](docs/PRD/DETAILS/CLIENT_BACKEND_PROTOCOL.md) | WebSocket/REST spec, message types, error codes |
+| [Deployment & Operations](docs/PRD/DETAILS/DEPLOYMENT_AND_OPERATIONS.md) | GCP Cloud Run, observability, security |
+| [Implementation Execution Plan](docs/PRD/DETAILS/IMPLEMENTATION_EXECUTION_PLAN.md) | Build sequence, module dependencies |
+| [Submission & Demo Plan](docs/PRD/DETAILS/SUBMISSION_AND_DEMO_PLAN.md) | Demo flow, submission artifacts |
 
 ---
 

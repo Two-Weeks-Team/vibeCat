@@ -302,6 +302,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.speechRecognizer?.setModelSpeaking(false)
                 self.isTurnActive = false
                 self.pendingTranscription = ""
+                panel?.hideBubble()
                 panel?.setTurnActive(false)
             case .sessionResumptionUpdate(let handle):
                 NSLog("[GW-IN] onMessage: sessionResumptionUpdate, handleLength=%lu", handle.count)

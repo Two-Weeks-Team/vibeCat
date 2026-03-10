@@ -15,6 +15,7 @@ import (
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 
+	"vibecat/adk-orchestrator/internal/lang"
 	"vibecat/adk-orchestrator/internal/models"
 )
 
@@ -310,7 +311,7 @@ func (a *Agent) generateMoodMessage(ctx agent.InvocationContext, mood *models.Mo
 }
 
 func (a *Agent) generateDynamic(ctx agent.InvocationContext, mood *models.MoodState, vision *models.VisionAnalysis, language string) string {
-	lang := normalizeLanguage(language)
+	lang := lang.NormalizeLanguage(language)
 
 	var context strings.Builder
 	context.WriteString(fmt.Sprintf("Developer mood: %s\n", mood.Mood))
@@ -375,22 +376,6 @@ Rules:
 		return ""
 	}
 	return text
-}
-
-func normalizeLanguage(language string) string {
-	trimmed := strings.TrimSpace(language)
-	if trimmed == "" {
-		return "Korean"
-	}
-	lower := strings.ToLower(trimmed)
-	switch lower {
-	case "ko", "kr", "korean", "korean language", "한국어":
-		return "Korean"
-	case "en", "eng", "english", "english language":
-		return "English"
-	default:
-		return trimmed
-	}
 }
 
 func fallbackSupportiveMessage(mood, language string) string {

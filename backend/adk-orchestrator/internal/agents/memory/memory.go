@@ -15,6 +15,7 @@ import (
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 
+	"vibecat/adk-orchestrator/internal/lang"
 	"vibecat/adk-orchestrator/internal/models"
 	"vibecat/adk-orchestrator/internal/store"
 )
@@ -59,7 +60,7 @@ func (a *Agent) Run(ctx agent.InvocationContext) iter.Seq2[*session.Event, error
 		if userID == "" {
 			userID = "default"
 		}
-		language := normalizeLanguage(req.Language)
+		language := lang.NormalizeLanguage(req.Language)
 
 		// Retrieve memory context for this user
 		memCtx := a.retrieveMemory(ctx, userID, language)
@@ -168,9 +169,9 @@ Session events:
 %s
 
 Return ONLY valid JSON in this schema: {"summary":"..."}.
-Respond in %s.`, combined, normalizeLanguage(language))
+Respond in %s.`, combined, lang.NormalizeLanguage(language))
 
-	resp, err := a.genaiClient.Models.GenerateContent(ctx, "gemini-3.1-pro-preview", []*genai.Content{
+	resp, err := a.genaiClient.Models.GenerateContent(ctx, "gemini-3.1-flash-lite-preview", []*genai.Content{
 		{Parts: []*genai.Part{{Text: prompt}}, Role: genai.RoleUser},
 	}, &genai.GenerateContentConfig{ResponseMIMEType: "application/json"})
 	if err != nil {
@@ -198,22 +199,6 @@ Respond in %s.`, combined, normalizeLanguage(language))
 	}
 
 	return text
-}
-
-func normalizeLanguage(language string) string {
-	trimmed := strings.TrimSpace(language)
-	if trimmed == "" {
-		return "Korean"
-	}
-	lower := strings.ToLower(trimmed)
-	switch lower {
-	case "ko", "kr", "korean", "korean language", "한국어":
-		return "Korean"
-	case "en", "eng", "english", "english language":
-		return "English"
-	default:
-		return trimmed
-	}
 }
 
 // extractUnresolvedIssues looks for error patterns in history that were never resolved.

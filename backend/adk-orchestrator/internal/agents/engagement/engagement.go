@@ -6,6 +6,7 @@ import (
 	"iter"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"google.golang.org/adk/agent"
@@ -13,6 +14,7 @@ import (
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 
+	"vibecat/adk-orchestrator/internal/lang"
 	"vibecat/adk-orchestrator/internal/models"
 )
 
@@ -24,6 +26,7 @@ const (
 )
 
 type Agent struct {
+	mu               sync.Mutex
 	genaiClient      *genai.Client
 	lastActivity     time.Time
 	lastRestReminder time.Time
@@ -35,6 +38,9 @@ func New(genaiClient *genai.Client) *Agent {
 
 func (a *Agent) Run(ctx agent.InvocationContext) iter.Seq2[*session.Event, error] {
 	return func(yield func(*session.Event, error) bool) {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+
 		userContent := ctx.UserContent()
 		if userContent == nil {
 			yield(nil, fmt.Errorf("engagement: no user content"))
@@ -159,7 +165,7 @@ func (a *Agent) generateSilenceMessage(ctx agent.InvocationContext, language str
 
 func (a *Agent) generateRestMessage(ctx agent.InvocationContext, language string, minutes int) string {
 	if a.genaiClient != nil {
-		lang := normalizeLanguage(language)
+		lang := lang.NormalizeLanguage(language)
 		prompt := fmt.Sprintf(`You are VibeCat, a caring coding companion.
 The developer has been working for %d minutes straight without a break.
 Generate ONE short rest reminder (under 80 characters).
@@ -193,7 +199,7 @@ Rules:
 }
 
 func (a *Agent) generateDynamic(ctx agent.InvocationContext, language string) string {
-	lang := normalizeLanguage(language)
+	lang := lang.NormalizeLanguage(language)
 
 	prompt := fmt.Sprintf(`You are VibeCat, a coding companion for solo developers.
 The developer has been quiet for a while. Generate ONE short check-in message (under 80 characters).
@@ -229,20 +235,4 @@ Rules:
 		return ""
 	}
 	return text
-}
-
-func normalizeLanguage(language string) string {
-	trimmed := strings.TrimSpace(language)
-	if trimmed == "" {
-		return "Korean"
-	}
-	lower := strings.ToLower(trimmed)
-	switch lower {
-	case "ko", "kr", "korean", "korean language":
-		return "Korean"
-	case "en", "eng", "english", "english language":
-		return "English"
-	default:
-		return trimmed
-	}
 }

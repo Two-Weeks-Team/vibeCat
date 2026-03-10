@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strings"
+	"sync"
 
 	"google.golang.org/genai"
+
+	"vibecat/realtime-gateway/internal/lang"
 )
 
 const defaultModel = "gemini-2.5-flash-native-audio-latest"
@@ -29,6 +31,7 @@ type Config struct {
 
 // Session wraps a Gemini Live API session.
 type Session struct {
+	mu               sync.Mutex
 	ID               string
 	gemini           *genai.Session
 	cancel           context.CancelFunc
@@ -81,6 +84,8 @@ func (m *Manager) Connect(ctx context.Context, cfg Config, resumptionHandle stri
 
 // SendAudio forwards a PCM audio chunk to Gemini.
 func (s *Session) SendAudio(pcmData []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.gemini.SendRealtimeInput(genai.LiveRealtimeInput{
 		Audio: &genai.Blob{
 			MIMEType: "audio/pcm;rate=16000",
@@ -90,6 +95,8 @@ func (s *Session) SendAudio(pcmData []byte) error {
 }
 
 func (s *Session) SendVideo(jpegData []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.gemini.SendRealtimeInput(genai.LiveRealtimeInput{
 		Video: &genai.Blob{
 			MIMEType: "image/jpeg",
@@ -99,18 +106,24 @@ func (s *Session) SendVideo(jpegData []byte) error {
 }
 
 func (s *Session) SendText(text string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.gemini.SendRealtimeInput(genai.LiveRealtimeInput{
 		Text: text,
 	})
 }
 
 // Receive reads the next message from Gemini.
+// Not mutex-protected: runs in a single dedicated goroutine and blocks until
+// a message arrives. Locking here would block all Send operations.
 func (s *Session) Receive() (*genai.LiveServerMessage, error) {
 	return s.gemini.Receive()
 }
 
 // Close terminates the Gemini Live session.
 func (s *Session) Close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.cancel()
 	_ = s.gemini.Close()
 }
@@ -208,28 +221,12 @@ func buildLiveConfig(cfg Config) *genai.LiveConnectConfig {
 	if cfg.Soul != "" {
 		instruction = commonLivePrompt + "\n\n=== CHARACTER PERSONA ===\n" + cfg.Soul
 	}
-	instruction += "\n\nRespond in " + normalizeLanguage(cfg.Language) + "."
+	instruction += "\n\nRespond in " + lang.NormalizeLanguage(cfg.Language) + "."
 	lc.SystemInstruction = &genai.Content{
 		Parts: []*genai.Part{{Text: instruction}},
 	}
 
 	return lc
-}
-
-func normalizeLanguage(language string) string {
-	trimmed := strings.TrimSpace(language)
-	if trimmed == "" {
-		return "Korean"
-	}
-	lower := strings.ToLower(trimmed)
-	switch lower {
-	case "ko", "kr", "korean", "korean language", "한국어":
-		return "Korean"
-	case "en", "eng", "english", "english language":
-		return "English"
-	default:
-		return trimmed
-	}
 }
 
 // SetupMessage is the client "setup" JSON frame.

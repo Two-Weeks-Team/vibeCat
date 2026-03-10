@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"vibecat/adk-orchestrator/internal/lang"
 )
 
 const ProjectPurpose = "VibeCat is a macOS desktop AI companion for solo developers. It watches your screen, listens to your voice, remembers context across sessions, and speaks up only when it matters."
@@ -35,7 +37,7 @@ type CharacterPersona struct {
 }
 
 func BuildSystemPrompt(persona CharacterPersona, language string) string {
-	return persona.SystemPrompt + "\n\n" + CommonBehavior + "\n\n" + ProjectPurpose + "\nRespond in " + normalizeLanguage(language) + "."
+	return persona.SystemPrompt + "\n\n" + CommonBehavior + "\n\n" + ProjectPurpose + "\nRespond in " + lang.NormalizeLanguage(language) + "."
 }
 
 func LoadPersonaFromFile(soulMdPath string) (string, error) {
@@ -57,20 +59,4 @@ func LoadCharacterPersona(name, voice, soulMdPath string) (CharacterPersona, err
 		Voice:        voice,
 		SystemPrompt: systemPrompt,
 	}, nil
-}
-
-func normalizeLanguage(language string) string {
-	trimmed := strings.TrimSpace(language)
-	if trimmed == "" {
-		return "Korean"
-	}
-	lower := strings.ToLower(trimmed)
-	switch lower {
-	case "ko", "kr", "korean", "korean language", "한국어":
-		return "Korean"
-	case "en", "eng", "english", "english language":
-		return "English"
-	default:
-		return trimmed
-	}
 }

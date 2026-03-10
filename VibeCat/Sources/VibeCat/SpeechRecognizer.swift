@@ -76,8 +76,8 @@ final class SpeechAudioCapture: @unchecked Sendable {
     private(set) var isVoiceProcessingActive = false
     private var streamingCallback: (@Sendable (AVAudioPCMBuffer) -> Void)?
 
-    private let rmsThreshold: Float = 0.01
-    private let bargeInThreshold: Float = 0.05
+    private let rmsThreshold: Float = 0.03
+    private let bargeInThreshold: Float = 0.08
     private let _speakingLock = NSLock()
     private var _modelSpeaking: Bool = false
     var modelSpeaking: Bool {
@@ -95,8 +95,8 @@ final class SpeechAudioCapture: @unchecked Sendable {
         let inputNode = engine.inputNode
 
         do {
-            try inputNode.setVoiceProcessingEnabled(false)
-            isVoiceProcessingActive = false
+            try inputNode.setVoiceProcessingEnabled(true)
+            isVoiceProcessingActive = true
         } catch {
             isVoiceProcessingActive = false
         }
@@ -131,7 +131,13 @@ final class SpeechAudioCapture: @unchecked Sendable {
             let rms = sqrtf(sumSquares / Float(max(frames, 1)))
             // During model speech, use higher threshold to block echo while allowing barge-in
             let threshold = self.modelSpeaking ? self.bargeInThreshold : self.rmsThreshold
-            guard rms >= threshold else { return }
+            if rms >= threshold {
+                self.consecutiveAboveCount += 1
+                guard self.consecutiveAboveCount >= self.consecutiveThreshold else { return }
+            } else {
+                self.consecutiveAboveCount = 0
+                return
+            }
 
             guard let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) else { return }
             copy.frameLength = buffer.frameLength

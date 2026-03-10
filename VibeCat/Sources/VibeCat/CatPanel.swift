@@ -108,6 +108,15 @@ final class CatPanel: NSPanel {
         ensureSmartHidePolling()
     }
 
+    func hideBubble() {
+        bubbleView.hide()
+        currentBubbleText = nil
+        hideCountdownTimer?.invalidate()
+        hideCountdownTimer = nil
+        smartHideTimer?.invalidate()
+        smartHideTimer = nil
+    }
+
     func setTurnActive(_ active: Bool) {
         turnActive = active
         if !active {
@@ -299,7 +308,7 @@ final class CatPanel: NSPanel {
 
     private func updateBubbleFrame(for text: String) {
         guard let screenFrame = screen?.visibleFrame ?? NSScreen.main?.visibleFrame,
-              let contentView else { return }
+              let _ = contentView else { return }
 
         let size = bubbleView.preferredSize(for: text)
         let catFrame = imageView.frame

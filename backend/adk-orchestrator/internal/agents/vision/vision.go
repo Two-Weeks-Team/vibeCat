@@ -16,6 +16,7 @@ import (
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 
+	"vibecat/adk-orchestrator/internal/lang"
 	"vibecat/adk-orchestrator/internal/models"
 	"vibecat/adk-orchestrator/internal/prompts"
 )
@@ -24,7 +25,7 @@ const visionModel = "gemini-3.1-flash-lite-preview"
 
 func buildSystemPrompt(character, soul, language string) string {
 	var sb strings.Builder
-	language = normalizeLanguage(language)
+	language = lang.NormalizeLanguage(language)
 
 	sb.WriteString(prompts.ProjectPurpose)
 	sb.WriteString("\nYou are the screen analysis agent in this system.\n\n")
@@ -119,7 +120,7 @@ func (a *Agent) Run(ctx agent.InvocationContext) iter.Seq2[*session.Event, error
 			Actions: session.EventActions{
 				StateDelta: map[string]any{
 					"vision_analysis": string(data),
-					"language":        normalizeLanguage(req.Language),
+					"language":        lang.NormalizeLanguage(req.Language),
 				},
 			},
 			LLMResponse: model.LLMResponse{
@@ -155,7 +156,7 @@ func (a *Agent) analyze(ctx context.Context, req *models.AnalysisRequest) *model
 		},
 	})
 
-	language := normalizeLanguage(req.Language)
+	language := lang.NormalizeLanguage(req.Language)
 	sysPrompt := buildSystemPrompt(req.Character, req.Soul, language)
 
 	slog.Info("[VISION] calling Gemini",
@@ -297,20 +298,4 @@ func min(a, b int) int {
 		return a
 	}
 	return b
-}
-
-func normalizeLanguage(language string) string {
-	trimmed := strings.TrimSpace(language)
-	if trimmed == "" {
-		return "Korean"
-	}
-	lower := strings.ToLower(trimmed)
-	switch lower {
-	case "ko", "kr", "korean", "korean language", "한국어":
-		return "Korean"
-	case "en", "eng", "english", "english language":
-		return "English"
-	default:
-		return trimmed
-	}
 }

@@ -13,6 +13,7 @@ import (
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 
+	"vibecat/adk-orchestrator/internal/lang"
 	"vibecat/adk-orchestrator/internal/models"
 	"vibecat/adk-orchestrator/internal/prompts"
 )
@@ -158,9 +159,9 @@ func (a *Agent) search(ctx agent.InvocationContext, query string, result models.
 		}
 	}
 
-	prompt := fmt.Sprintf("Search for solutions to this developer problem: %s\n\nProvide a concise, actionable answer. Respond in %s.", query, normalizeLanguage(language))
+	prompt := fmt.Sprintf("Search for solutions to this developer problem: %s\n\nProvide a concise, actionable answer. Respond in %s.", query, lang.NormalizeLanguage(language))
 
-	resp, err := a.genaiClient.Models.GenerateContent(ctx, "gemini-3.1-pro-preview", []*genai.Content{
+	resp, err := a.genaiClient.Models.GenerateContent(ctx, "gemini-3.1-flash-lite-preview", []*genai.Content{
 		{Parts: []*genai.Part{{Text: prompt}}, Role: genai.RoleUser},
 	}, &genai.GenerateContentConfig{
 		ResponseMIMEType: "application/json",
@@ -212,7 +213,7 @@ func (a *Agent) DirectSearch(ctx context.Context, query, language string) *model
 	if a.genaiClient == nil {
 		return nil
 	}
-	lang := normalizeLanguage(language)
+	lang := lang.NormalizeLanguage(language)
 
 	if !a.classifier.NeedsSearch(ctx, query) {
 		slog.Info("[SEARCH] classifier rejected", "query", truncateText(query, 60))
@@ -280,7 +281,7 @@ Return JSON with:
 - sources: relevant URLs (up to 3)
 
 Respond in %s.
-Return only valid JSON without markdown.`, prompts.ProjectPurpose, normalizeLanguage(language))
+Return only valid JSON without markdown.`, prompts.ProjectPurpose, lang.NormalizeLanguage(language))
 }
 
 func readLanguageFromState(ctx agent.InvocationContext) string {
@@ -299,20 +300,4 @@ func readLanguageFromState(ctx agent.InvocationContext) string {
 		}
 	}
 	return "Korean"
-}
-
-func normalizeLanguage(language string) string {
-	trimmed := strings.TrimSpace(language)
-	if trimmed == "" {
-		return "Korean"
-	}
-	lower := strings.ToLower(trimmed)
-	switch lower {
-	case "ko", "kr", "korean", "korean language", "한국어":
-		return "Korean"
-	case "en", "eng", "english", "english language":
-		return "English"
-	default:
-		return trimmed
-	}
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"iter"
 	"log/slog"
+	"sync"
 	"time"
 
 	"google.golang.org/adk/agent"
@@ -16,6 +17,7 @@ import (
 )
 
 type Agent struct {
+	mu              sync.Mutex
 	errorCount      int
 	lastErrorTime   time.Time
 	lastInteraction time.Time
@@ -28,6 +30,9 @@ func New() *Agent {
 
 func (a *Agent) Run(ctx agent.InvocationContext) iter.Seq2[*session.Event, error] {
 	return func(yield func(*session.Event, error) bool) {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+
 		vision := readVisionFromState(ctx)
 		if vision == nil {
 			vision = readVisionFromUserContent(ctx)

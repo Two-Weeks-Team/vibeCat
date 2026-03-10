@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math/rand"
 	"strings"
+	"sync"
 	"time"
 
 	"google.golang.org/adk/agent"
@@ -14,6 +15,7 @@ import (
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 
+	"vibecat/adk-orchestrator/internal/lang"
 	"vibecat/adk-orchestrator/internal/models"
 )
 
@@ -23,6 +25,7 @@ const (
 )
 
 type Agent struct {
+	mu              sync.Mutex
 	genaiClient     *genai.Client
 	lastCelebration time.Time
 	recentMessages  []string
@@ -34,6 +37,9 @@ func New(genaiClient *genai.Client) *Agent {
 
 func (a *Agent) Run(ctx agent.InvocationContext) iter.Seq2[*session.Event, error] {
 	return func(yield func(*session.Event, error) bool) {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+
 		vision := readVisionFromState(ctx)
 		if vision == nil {
 			vision = readVisionFromUserContent(ctx)
@@ -209,7 +215,7 @@ func (a *Agent) generateCelebrationMessage(ctx agent.InvocationContext, vision *
 }
 
 func (a *Agent) generateDynamic(ctx agent.InvocationContext, vision *models.VisionAnalysis, language string) string {
-	lang := normalizeLanguage(language)
+	lang := lang.NormalizeLanguage(language)
 	screenContext := ""
 	if vision != nil && vision.Content != "" {
 		screenContext = fmt.Sprintf("\nScreen context: %s", truncate(vision.Content, 150))
@@ -263,22 +269,6 @@ func fallbackCelebrationMessage(language string) string {
 		return "Great job!"
 	}
 	return msgs[rand.Intn(len(msgs))]
-}
-
-func normalizeLanguage(language string) string {
-	trimmed := strings.TrimSpace(language)
-	if trimmed == "" {
-		return "Korean"
-	}
-	lower := strings.ToLower(trimmed)
-	switch lower {
-	case "ko", "kr", "korean", "korean language":
-		return "Korean"
-	case "en", "eng", "english", "english language":
-		return "English"
-	default:
-		return trimmed
-	}
 }
 
 func truncate(s string, maxLen int) string {
