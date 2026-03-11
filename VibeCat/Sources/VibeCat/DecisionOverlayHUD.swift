@@ -6,11 +6,11 @@ final class DecisionOverlayHUD: NSPanel {
     private let stackView = NSStackView()
     private var hudVisible = false
 
-    private let triggerLabel = NSTextField(labelWithString: "Trigger: —")
-    private let visionLabel = NSTextField(labelWithString: "Vision: —")
-    private let mediatorLabel = NSTextField(labelWithString: "Mediator: —")
-    private let moodLabel = NSTextField(labelWithString: "Mood: —")
-    private let cooldownLabel = NSTextField(labelWithString: "Cooldown: —")
+    private let triggerLabel = NSTextField(labelWithString: VibeCatL10n.decisionTrigger("—"))
+    private let visionLabel = NSTextField(labelWithString: VibeCatL10n.decisionVision("—"))
+    private let mediatorLabel = NSTextField(labelWithString: VibeCatL10n.decisionMediator("—"))
+    private let moodLabel = NSTextField(labelWithString: VibeCatL10n.decisionMood("—"))
+    private let cooldownLabel = NSTextField(labelWithString: VibeCatL10n.decisionCooldown("—"))
 
     init() {
         let size = NSSize(width: 280, height: 160)
@@ -74,10 +74,10 @@ final class DecisionOverlayHUD: NSPanel {
     }
 
     func update(trigger: String, vision: String, mediator: String, mood: String, cooldown: String) {
-        triggerLabel.stringValue = "Trigger: \(trigger)"
-        visionLabel.stringValue = "Vision: \(vision)"
-        mediatorLabel.stringValue = "Mediator: \(mediator)"
-        moodLabel.stringValue = "Mood: \(mood)"
-        cooldownLabel.stringValue = "Cooldown: \(cooldown)"
+        triggerLabel.stringValue = VibeCatL10n.decisionTrigger(trigger)
+        visionLabel.stringValue = VibeCatL10n.decisionVision(vision)
+        mediatorLabel.stringValue = VibeCatL10n.decisionMediator(mediator)
+        moodLabel.stringValue = VibeCatL10n.decisionMood(mood)
+        cooldownLabel.stringValue = VibeCatL10n.decisionCooldown(cooldown)
     }
 }

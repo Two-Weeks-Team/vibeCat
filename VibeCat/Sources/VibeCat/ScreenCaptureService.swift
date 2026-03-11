@@ -285,7 +285,7 @@ final class ScreenCaptureService {
         case noDisplay
 
         var errorDescription: String? {
-            "No display available for capture"
+            VibeCatL10n.captureErrorNoDisplay()
         }
     }
 }

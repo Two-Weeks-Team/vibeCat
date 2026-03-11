@@ -1,4 +1,5 @@
 import AppKit
+import VibeCatCore
 
 private final class ChatInputPanel: NSPanel {
     override var canBecomeKey: Bool { true }
@@ -52,6 +53,10 @@ final class CompanionChatPanel: NSObject, NSTextFieldDelegate, NSWindowDelegate 
         inputField.stringValue = ""
     }
 
+    func refreshLocalizedText() {
+        inputField.placeholderString = VibeCatL10n.companionInputPlaceholder()
+    }
+
     func addUserMessage(_ text: String) {
         appendMessage(text: text, isUser: true)
     }
@@ -76,8 +81,9 @@ final class CompanionChatPanel: NSObject, NSTextFieldDelegate, NSWindowDelegate 
     }
 
     func updateListeningText(_ text: String) {
-        let prefixed = "Listening: \(text)"
-        if let idx = messageViews.lastIndex(where: { $0.isUser && $0.textField.stringValue.hasPrefix("Listening:") }) {
+        let prefix = VibeCatL10n.companionListeningPrefix()
+        let prefixed = prefix + text
+        if let idx = messageViews.lastIndex(where: { $0.isUser && $0.textField.stringValue.hasPrefix(prefix) }) {
             let entry = messageViews[idx]
             entry.textField.stringValue = prefixed
             layoutMessage(entry.textField, in: entry.bubble)
@@ -88,7 +94,8 @@ final class CompanionChatPanel: NSObject, NSTextFieldDelegate, NSWindowDelegate 
     }
 
     func finalizeListeningText(_ text: String) {
-        if let idx = messageViews.lastIndex(where: { $0.isUser && $0.textField.stringValue.hasPrefix("Listening:") }) {
+        let prefix = VibeCatL10n.companionListeningPrefix()
+        if let idx = messageViews.lastIndex(where: { $0.isUser && $0.textField.stringValue.hasPrefix(prefix) }) {
             let entry = messageViews[idx]
             entry.textField.stringValue = text
             layoutMessage(entry.textField, in: entry.bubble)
@@ -160,7 +167,7 @@ final class CompanionChatPanel: NSObject, NSTextFieldDelegate, NSWindowDelegate 
         scrollView.documentView = document
 
         inputField.frame = NSRect(x: 12, y: 12, width: panelSize.width - 24, height: 32)
-        inputField.placeholderString = "Type a message and press Return"
+        refreshLocalizedText()
         inputField.focusRingType = .none
         inputField.delegate = self
 

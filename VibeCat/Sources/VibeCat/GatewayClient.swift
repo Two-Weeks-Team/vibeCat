@@ -243,7 +243,7 @@ final class GatewayClient {
 
     private func registerAndConnect() async {
         guard let baseURL = restBaseURL() else {
-            lastErrorDescription = "Gateway URL invalid — check Settings"
+            lastErrorDescription = VibeCatL10n.gatewayInvalidURL()
             state = .failed(GatewayError.invalidURL)
             return
         }
@@ -254,7 +254,7 @@ final class GatewayClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         let body: [String: String] = ["deviceId": Self.deviceIdentifier()]
         guard let bodyData = try? JSONSerialization.data(withJSONObject: body) else {
-            lastErrorDescription = "Gateway registration failed — retry connection"
+            lastErrorDescription = VibeCatL10n.gatewayRegistrationFailedRetry()
             state = .failed(GatewayError.registrationFailed)
             return
         }
@@ -264,7 +264,7 @@ final class GatewayClient {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse,
                   (200...299).contains(httpResponse.statusCode) else {
-                lastErrorDescription = "Gateway registration failed — check backend connection"
+                lastErrorDescription = VibeCatL10n.gatewayRegistrationFailedCheckBackend()
                 state = .failed(GatewayError.registrationFailed)
                 return
             }
@@ -272,7 +272,7 @@ final class GatewayClient {
             let decoded = try JSONDecoder().decode(RegisterResponse.self, from: data)
             let token = decoded.sessionToken.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !token.isEmpty else {
-                lastErrorDescription = "Gateway registration failed — empty session token"
+                lastErrorDescription = VibeCatL10n.gatewayRegistrationEmptySession()
                 state = .failed(GatewayError.registrationFailed)
                 return
             }
@@ -280,7 +280,7 @@ final class GatewayClient {
             currentSessionToken = token
             establishConnection(token: token)
         } catch {
-            lastErrorDescription = "Gateway registration failed — check backend connection"
+            lastErrorDescription = VibeCatL10n.gatewayRegistrationFailedCheckBackend()
             state = .failed(GatewayError.registrationFailed)
         }
     }
@@ -294,7 +294,7 @@ final class GatewayClient {
         sessionId = nil
 
         guard var urlComponents = URLComponents(string: settings.gatewayURL) else {
-            lastErrorDescription = "Gateway URL invalid — check Settings"
+            lastErrorDescription = VibeCatL10n.gatewayInvalidURL()
             state = .failed(GatewayError.invalidURL)
             return
         }
@@ -308,7 +308,7 @@ final class GatewayClient {
         }
 
         guard let url = urlComponents.url else {
-            lastErrorDescription = "Gateway URL invalid — check Settings"
+            lastErrorDescription = VibeCatL10n.gatewayInvalidURL()
             state = .failed(GatewayError.invalidURL)
             return
         }
@@ -549,7 +549,7 @@ final class GatewayClient {
         guard case .connected = state, let ws = webSocketTask else { return }
 
         if awaitingPong, let lastPongAt, Date().timeIntervalSince(lastPongAt) > pongTimeout {
-            lastErrorDescription = "Connection timed out — Reconnecting…"
+            lastErrorDescription = VibeCatL10n.connectionTimeoutReconnecting()
             handleConnectionDropped(error: GatewayError.pongTimeout)
             return
         }
@@ -595,7 +595,7 @@ final class GatewayClient {
 
         if rapidFailureCount >= 3 {
             circuitBreakerOpen = true
-            lastErrorDescription = "Connection keeps failing — check gateway URL or backend status"
+            lastErrorDescription = VibeCatL10n.connectionKeepsFailing()
             onReconnectExhausted?()
             state = .disconnected
             return
@@ -657,7 +657,7 @@ final class GatewayClient {
         isNetworkAvailable = path.status == .satisfied
 
         guard isNetworkAvailable else {
-            lastErrorDescription = "No internet connection — will reconnect when available"
+            lastErrorDescription = VibeCatL10n.noInternetReconnecting()
             if case .connected = state {
                 handleConnectionDropped(error: GatewayError.networkUnavailable)
             } else {
@@ -710,20 +710,20 @@ final class GatewayClient {
         var errorDescription: String? {
             switch self {
             case .invalidURL:
-                return "Gateway URL invalid — check Settings"
+                return VibeCatL10n.gatewayInvalidURL()
             case .registrationFailed:
-                return "Gateway registration failed — check backend connection"
+                return VibeCatL10n.gatewayRegistrationFailedCheckBackend()
             case .pongTimeout:
-                return "Connection timed out — Reconnecting…"
+                return VibeCatL10n.connectionTimeoutReconnecting()
             case .networkUnavailable:
-                return "No internet connection — will reconnect when available"
+                return VibeCatL10n.noInternetReconnecting()
             }
         }
     }
 
     private func friendlyErrorDescription(for error: Error) -> String {
         if let gatewayError = error as? GatewayError {
-            return gatewayError.errorDescription ?? "Connection error"
+            return gatewayError.errorDescription ?? VibeCatL10n.connectionError()
         }
 
         let nsError = error as NSError
@@ -735,11 +735,11 @@ final class GatewayClient {
                  NSURLErrorDataNotAllowed,
                  NSURLErrorCannotFindHost,
                  NSURLErrorCannotConnectToHost:
-                return "No internet connection — will reconnect when available"
+                return VibeCatL10n.noInternetReconnecting()
             default:
                 break
             }
         }
-        return "Connection timed out — Reconnecting…"
+        return VibeCatL10n.connectionTimeoutReconnecting()
     }
 }

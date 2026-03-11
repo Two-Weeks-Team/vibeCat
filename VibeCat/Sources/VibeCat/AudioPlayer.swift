@@ -4,8 +4,8 @@ import VibeCatCore
 
 @MainActor
 final class AudioPlayer {
-    private let engine = AVAudioEngine()
-    private let playerNode = AVAudioPlayerNode()
+    private var engine = AVAudioEngine()
+    private var playerNode = AVAudioPlayerNode()
     private let outputFormat: AVAudioFormat
 
     private(set) var isPlaying = false
@@ -64,6 +64,11 @@ final class AudioPlayer {
         isMuted = false
     }
 
+    func handleAudioDeviceChange(reason: String) {
+        NSLog("[AUDIO] audio device change detected: %@", reason)
+        rebuildEngine(reason: reason)
+    }
+
     private func scheduleAccumulatedSamples() {
         let data = pendingBytes
         pendingBytes.removeAll(keepingCapacity: true)
@@ -107,6 +112,28 @@ final class AudioPlayer {
             NSLog("[AUDIO] setupEngine: success")
         } catch {
             NSLog("[AUDIO] setupEngine: failed - %@", error.localizedDescription)
+        }
+    }
+
+    private func rebuildEngine(reason: String) {
+        let buffered = pendingBytes
+        pendingBytes.removeAll(keepingCapacity: true)
+        playerNode.stop()
+        playerNode.reset()
+        engine.stop()
+        engine.detach(playerNode)
+
+        engine = AVAudioEngine()
+        playerNode = AVAudioPlayerNode()
+        scheduledBufferCount = 0
+        isPlaying = false
+
+        NSLog("[AUDIO] rebuilding engine after device change: %@", reason)
+        setupEngine()
+
+        if !buffered.isEmpty && !isMuted {
+            pendingBytes = buffered
+            scheduleAccumulatedSamples()
         }
     }
 

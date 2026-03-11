@@ -111,6 +111,8 @@ func NormalizeLanguageCode(lang string) string {
 		return "ko-KR"
 	case "en", "eng", "english", "english language":
 		return "en-US"
+	case "ja", "jp", "jpn", "japanese", "japanese language", "日本語":
+		return "ja-JP"
 	default:
 		return trimmed
 	}

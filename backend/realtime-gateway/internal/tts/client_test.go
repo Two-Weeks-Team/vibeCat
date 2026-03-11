@@ -33,6 +33,8 @@ func TestBuildConfig_LanguageCode(t *testing.T) {
 		{"한국어", "ko-KR"},
 		{"English", "en-US"},
 		{"en", "en-US"},
+		{"ja", "ja-JP"},
+		{"Japanese", "ja-JP"},
 		{"", "ko-KR"},
 	}
 	for _, tt := range tests {
@@ -53,6 +55,9 @@ func TestNormalizeLanguageCode(t *testing.T) {
 		{"en", "en-US"},
 		{"English", "en-US"},
 		{"eng", "en-US"},
+		{"ja", "ja-JP"},
+		{"Japanese", "ja-JP"},
+		{"日本語", "ja-JP"},
 		{"", "ko-KR"},
 		{"  ", "ko-KR"},
 		{"ja-JP", "ja-JP"},

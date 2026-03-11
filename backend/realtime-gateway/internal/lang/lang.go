@@ -13,6 +13,8 @@ func NormalizeLanguage(language string) string {
 		return "Korean"
 	case "en", "eng", "english", "english language":
 		return "English"
+	case "ja", "jp", "jpn", "japanese", "japanese language", "日本語":
+		return "Japanese"
 	default:
 		return trimmed
 	}

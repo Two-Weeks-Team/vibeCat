@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import VibeCatCore
 
 /// FD kept open for process lifetime — OS releases the flock() on exit/crash.
 nonisolated(unsafe) private var singleInstanceFD: Int32 = -1
@@ -28,14 +29,14 @@ struct VibeCatApp {
         let mainMenu = NSMenu()
 
         let editMenuItem = NSMenuItem()
-        let editMenu = NSMenu(title: "Edit")
-        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
-        editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        let editMenu = NSMenu(title: VibeCatL10n.appMenuEditTitle())
+        editMenu.addItem(withTitle: VibeCatL10n.menuUndo(), action: Selector(("undo:")), keyEquivalent: "z")
+        editMenu.addItem(withTitle: VibeCatL10n.menuRedo(), action: Selector(("redo:")), keyEquivalent: "Z")
         editMenu.addItem(.separator())
-        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenu.addItem(withTitle: VibeCatL10n.menuCut(), action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: VibeCatL10n.menuCopy(), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: VibeCatL10n.menuPaste(), action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: VibeCatL10n.menuSelectAll(), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         editMenuItem.submenu = editMenu
 
         mainMenu.addItem(editMenuItem)

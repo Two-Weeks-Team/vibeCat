@@ -6,11 +6,7 @@ public enum CaptureTargetMode: String, CaseIterable, Sendable {
     case display = "display"
 
     public var menuTitle: String {
-        switch self {
-        case .windowUnderCursor: return "Window Under Cursor"
-        case .frontmostWindow: return "Frontmost Window"
-        case .display: return "Display"
-        }
+        VibeCatL10n.captureTargetModeTitle(self)
     }
 }
 
@@ -34,8 +30,8 @@ public final class AppSettings: @unchecked Sendable {
     }
 
     public var language: String {
-        get { defaults.string(forKey: Key.language.rawValue) ?? "ko" }
-        set { defaults.set(newValue, forKey: Key.language.rawValue) }
+        get { AppLanguage.resolve(defaults.string(forKey: Key.language.rawValue)).rawValue }
+        set { defaults.set(AppLanguage.resolve(newValue).rawValue, forKey: Key.language.rawValue) }
     }
 
     public var voice: String {

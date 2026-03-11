@@ -38,6 +38,7 @@ final class ChatBubbleView: NSView {
     private let maxBubbleWidth: CGFloat = 380
     private let maxBubbleHeight: CGFloat = 500
     private let minBubbleWidth: CGFloat = 80
+    private let textWidthSlack: CGFloat = 10
 
     var isShowingStatus: Bool { displayMode == .status }
 
@@ -214,8 +215,8 @@ final class ChatBubbleView: NSView {
         let primaryFont = primaryLabel.font ?? .systemFont(ofSize: 13, weight: .medium)
         let metaFont = metaLabel.font ?? .systemFont(ofSize: 11, weight: .medium)
 
-        let primarySingleWidth = ceil(NSString(string: primary).size(withAttributes: [.font: primaryFont]).width)
-        let metaSingleWidth = ceil(NSString(string: meta ?? "").size(withAttributes: [.font: metaFont]).width)
+        let primarySingleWidth = measuredTextWidth(primary, font: primaryFont)
+        let metaSingleWidth = measuredTextWidth(meta ?? "", font: metaFont)
         let estimatedContentWidth = max(
             primarySingleWidth + (showsSpinner ? spinnerSize.width + spinnerTextGap : 0),
             metaSingleWidth
@@ -392,7 +393,7 @@ final class ChatBubbleView: NSView {
         }
 
         if showsSpinner {
-            let primarySingleWidth = ceil(NSString(string: primary).size(withAttributes: [.font: primaryFont]).width)
+            let primarySingleWidth = measuredTextWidth(primary, font: primaryFont)
             let rowWidth = min(bodyRect.width - horizontalPadding * 2, spinnerSize.width + spinnerTextGap + max(primarySingleWidth, 40))
             let rowX = bodyRect.minX + max(horizontalPadding, floor((bodyRect.width - rowWidth) / 2))
             let spinnerFrame = NSRect(
@@ -428,6 +429,17 @@ final class ChatBubbleView: NSView {
             attributes: [.font: font]
         )
         return ceil(textBounds.height)
+    }
+
+    private func measuredTextWidth(_ text: String, font: NSFont) -> CGFloat {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return 0 }
+        let textBounds = NSString(string: trimmed).boundingRect(
+            with: NSSize(width: maxBubbleWidth, height: maxBubbleHeight),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: font]
+        )
+        return ceil(textBounds.width) + textWidthSlack
     }
 
     func debugLayoutSnapshot(primary: String, meta: String?, showsSpinner: Bool, size: NSSize) -> (body: NSRect, primary: NSRect, meta: NSRect, spinner: NSRect?) {

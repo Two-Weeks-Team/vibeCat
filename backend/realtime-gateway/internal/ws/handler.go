@@ -18,6 +18,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/genai"
 	"vibecat/realtime-gateway/internal/adk"
+	"vibecat/realtime-gateway/internal/lang"
 	"vibecat/realtime-gateway/internal/live"
 )
 
@@ -461,29 +462,104 @@ func toolDisplayName(tool adk.ToolKind) string {
 	}
 }
 
-func toolStatusDetail(tool adk.ToolKind) string {
+func uiLanguage(language string) string {
+	switch lang.NormalizeLanguage(language) {
+	case "English":
+		return "en"
+	case "Japanese":
+		return "ja"
+	default:
+		return "ko"
+	}
+}
+
+func localizedText(language, ko, en, ja string) string {
+	switch uiLanguage(language) {
+	case "en":
+		return en
+	case "ja":
+		return ja
+	default:
+		return ko
+	}
+}
+
+func toolRunningLabel(language string) string {
+	return localizedText(language, "도구 실행 중...", "Running tool...", "ツール実行中...")
+}
+
+func responsePreparingLabel(language string) string {
+	return localizedText(language, "답변 정리 중...", "Preparing response...", "回答を整理中...")
+}
+
+func screenAnalyzingLabel(language string) string {
+	return localizedText(language, "화면 읽는 중...", "Reading screen...", "画面を読み取り中...")
+}
+
+func screenAnalyzingDetail(language string) string {
+	return localizedText(language, "현재 창 분석 중", "Analyzing current window", "現在のウィンドウを分析中")
+}
+
+func currentWindowPreparingDetail(language string) string {
+	return localizedText(language, "현재 창 기준으로 정리 중", "Preparing response from current window", "現在のウィンドウを基準に整理中")
+}
+
+func searchingLabel(language string) string {
+	return localizedText(language, "검색 중...", "Searching...", "検索中...")
+}
+
+func searchDetail(language string) string {
+	return localizedText(language, "Google Search 확인 중", "Checking Google Search", "Google Searchを確認中")
+}
+
+func groundingLabel(language string) string {
+	return localizedText(language, "근거 확인 중...", "Checking sources...", "根拠を確認中...")
+}
+
+func groundingDetail(language string, sourceCount int) string {
+	if sourceCount > 0 {
+		switch uiLanguage(language) {
+		case "en":
+			return fmt.Sprintf("Google Search · checking %d sources", sourceCount)
+		case "ja":
+			return fmt.Sprintf("Google Search · 根拠 %d件を確認中", sourceCount)
+		default:
+			return fmt.Sprintf("Google Search · 근거 %d개 확인", sourceCount)
+		}
+	}
+	return searchDetail(language)
+}
+
+func toolStatusDetail(tool adk.ToolKind, language string) string {
 	switch tool {
 	case adk.ToolKindMaps:
-		return "Google Maps 확인 중"
+		return localizedText(language, "Google Maps 확인 중", "Checking Google Maps", "Google Mapsを確認中")
 	case adk.ToolKindURLContext:
-		return "URL 내용 읽는 중"
+		return localizedText(language, "URL 내용 읽는 중", "Reading URL content", "URL内容を読み取り中")
 	case adk.ToolKindCodeExecution:
-		return "Code Execution 확인 중"
+		return localizedText(language, "Code Execution 확인 중", "Checking Code Execution", "Code Executionを確認中")
 	case adk.ToolKindFileSearch:
-		return "File Search 확인 중"
+		return localizedText(language, "File Search 확인 중", "Checking File Search", "File Searchを確認中")
 	case adk.ToolKindSearch:
-		return "Google Search 확인 중"
+		return searchDetail(language)
 	default:
 		return ""
 	}
 }
 
-func toolPreparingDetail(tool adk.ToolKind) string {
+func toolPreparingDetail(tool adk.ToolKind, language string) string {
 	name := toolDisplayName(tool)
 	if name == "" {
-		return "도구 결과 정리 중"
+		return localizedText(language, "도구 결과 정리 중", "Preparing tool results", "ツール結果を整理中")
 	}
-	return name + " 결과 정리 중"
+	switch uiLanguage(language) {
+	case "en":
+		return "Preparing " + name + " results"
+	case "ja":
+		return name + " の結果を整理中"
+	default:
+		return name + " 결과 정리 중"
+	}
 }
 
 func memoryContextCacheKey(userID, language string) string {
@@ -670,12 +746,13 @@ func maybeResolveTool(ctx context.Context, c *Conn, ls *liveSessionState, adkCli
 
 	userID, sessionID, _ := runtime.snapshot()
 	sendTraceEvent(c, "tool", traceID, "tool_lookup_start", rootAt, fmt.Sprintf("query_len=%d", len(query)))
-	sendProcessingState(c, "tool", traceID, "tool_running", "도구 실행 중...", toolStatusDetail(requestedTool), string(requestedTool), 0, true)
+	cfg := ls.getConfig()
+	sendProcessingState(c, "tool", traceID, "tool_running", toolRunningLabel(cfg.Language), toolStatusDetail(requestedTool, cfg.Language), string(requestedTool), 0, true)
 	toolCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
 	result, err := adkClient.Tool(toolCtx, adk.ToolRequest{
 		Query:     query,
-		Language:  ls.getConfig().Language,
+		Language:  cfg.Language,
 		SessionID: sessionID,
 		UserID:    userID,
 		TraceID:   traceID,
@@ -683,12 +760,12 @@ func maybeResolveTool(ctx context.Context, c *Conn, ls *liveSessionState, adkCli
 	if err != nil {
 		slog.Warn("[HANDLER] tool request failed", "conn_id", c.ID, "query", truncateText(query, 80), "error", err)
 		sendTraceEvent(c, "tool", traceID, "tool_lookup_failed", rootAt, err.Error())
-		sendProcessingState(c, "tool", traceID, "tool_running", "도구 실행 중...", toolStatusDetail(requestedTool), string(requestedTool), 0, false)
+		sendProcessingState(c, "tool", traceID, "tool_running", toolRunningLabel(cfg.Language), toolStatusDetail(requestedTool, cfg.Language), string(requestedTool), 0, false)
 		return false
 	}
 	if result == nil || strings.TrimSpace(result.Summary) == "" {
 		sendTraceEvent(c, "tool", traceID, "tool_lookup_empty", rootAt, "")
-		sendProcessingState(c, "tool", traceID, "tool_running", "도구 실행 중...", toolStatusDetail(requestedTool), string(requestedTool), 0, false)
+		sendProcessingState(c, "tool", traceID, "tool_running", toolRunningLabel(cfg.Language), toolStatusDetail(requestedTool, cfg.Language), string(requestedTool), 0, false)
 		return false
 	}
 	sendTraceEvent(c, "tool", traceID, "tool_lookup_done", rootAt, fmt.Sprintf("tool=%s summary_len=%d", result.Tool, len(result.Summary)))
@@ -710,15 +787,15 @@ func maybeResolveTool(ctx context.Context, c *Conn, ls *liveSessionState, adkCli
 	if liveSess == nil {
 		slog.Warn("[HANDLER] grounded tool prompt dropped: no live session", "conn_id", c.ID)
 		sendTraceEvent(c, "tool", traceID, "tool_prompt_dropped", rootAt, "no_live_session")
-		sendProcessingState(c, "tool", traceID, "response_preparing", "답변 정리 중...", toolPreparingDetail(result.Tool), string(result.Tool), len(result.Sources), false)
+		sendProcessingState(c, "tool", traceID, "response_preparing", responsePreparingLabel(cfg.Language), toolPreparingDetail(result.Tool, cfg.Language), string(result.Tool), len(result.Sources), false)
 		return true
 	}
 	ls.queueTurnTrace(traceID, "tool", rootAt)
-	sendProcessingState(c, "tool", traceID, "response_preparing", "답변 정리 중...", toolPreparingDetail(result.Tool), string(result.Tool), len(result.Sources), true)
+	sendProcessingState(c, "tool", traceID, "response_preparing", responsePreparingLabel(cfg.Language), toolPreparingDetail(result.Tool, cfg.Language), string(result.Tool), len(result.Sources), true)
 	if err := liveSess.SendText(buildToolPrompt(ls.getConfig(), result)); err != nil {
 		slog.Warn("[HANDLER] grounded tool prompt injection failed", "conn_id", c.ID, "error", err)
 		sendTraceEvent(c, "tool", traceID, "tool_prompt_injection_failed", rootAt, err.Error())
-		sendProcessingState(c, "tool", traceID, "response_preparing", "답변 정리 중...", toolPreparingDetail(result.Tool), string(result.Tool), len(result.Sources), false)
+		sendProcessingState(c, "tool", traceID, "response_preparing", responsePreparingLabel(cfg.Language), toolPreparingDetail(result.Tool, cfg.Language), string(result.Tool), len(result.Sources), false)
 		return false
 	}
 
@@ -1035,8 +1112,9 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client) http.H
 							"character", captureMsg.Character,
 							"has_soul", captureMsg.Soul != "",
 						)
+						cfg := ls.getConfig()
 						sendTraceEvent(c, "proactive", traceID, "adk_analyze_start", rootAt, "")
-						sendProcessingState(c, "proactive", traceID, "screen_analyzing", "화면 읽는 중...", "현재 창 분석 중", "", 0, true)
+						sendProcessingState(c, "proactive", traceID, "screen_analyzing", screenAnalyzingLabel(cfg.Language), screenAnalyzingDetail(cfg.Language), "", 0, true)
 						analyzeCtx, analyzeCancel := context.WithTimeout(ctx, 30*time.Second)
 						defer analyzeCancel()
 						tracer := otel.Tracer("vibecat/gateway")
@@ -1061,7 +1139,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client) http.H
 						if analyzeErr != nil {
 							slog.Warn("[HANDLER] <<< ADK analyze FAILED", "conn_id", c.ID, "error", analyzeErr, "elapsed", elapsed.String())
 							sendTraceEvent(c, "proactive", traceID, "adk_analyze_failed", rootAt, analyzeErr.Error())
-							sendProcessingState(c, "proactive", traceID, "screen_analyzing", "화면 읽는 중...", "현재 창 분석 중", "", 0, false)
+							sendProcessingState(c, "proactive", traceID, "screen_analyzing", screenAnalyzingLabel(cfg.Language), screenAnalyzingDetail(cfg.Language), "", 0, false)
 							return
 						}
 
@@ -1106,27 +1184,27 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client) http.H
 							runtime.append("assistant: " + truncateText(result.SpeechText, 240))
 						}
 
-						allowProactiveSpeech := captureMsg.Type == "forceCapture" || ls.getConfig().ProactiveAudio
+						allowProactiveSpeech := captureMsg.Type == "forceCapture" || cfg.ProactiveAudio
 
 						if shouldSpeak && result.SpeechText != "" && allowProactiveSpeech {
-							sendProcessingState(c, "proactive", traceID, "response_preparing", "답변 정리 중...", "현재 창 기준으로 정리 중", "", 0, true)
+							sendProcessingState(c, "proactive", traceID, "response_preparing", responsePreparingLabel(cfg.Language), currentWindowPreparingDetail(cfg.Language), "", 0, true)
 							sess := ls.getSession()
 							switch {
 							case sess == nil:
 								slog.Warn("[HANDLER] proactive prompt dropped: no live session", "conn_id", c.ID)
 								sendTraceEvent(c, "proactive", traceID, "live_prompt_dropped", rootAt, "no_live_session")
-								sendProcessingState(c, "proactive", traceID, "response_preparing", "답변 정리 중...", "현재 창 기준으로 정리 중", "", 0, false)
+								sendProcessingState(c, "proactive", traceID, "response_preparing", responsePreparingLabel(cfg.Language), currentWindowPreparingDetail(cfg.Language), "", 0, false)
 							case ls.isModelSpeaking():
 								slog.Info("[HANDLER] proactive prompt dropped: model already speaking", "conn_id", c.ID)
 								sendTraceEvent(c, "proactive", traceID, "live_prompt_dropped", rootAt, "model_already_speaking")
-								sendProcessingState(c, "proactive", traceID, "response_preparing", "답변 정리 중...", "현재 창 기준으로 정리 중", "", 0, false)
+								sendProcessingState(c, "proactive", traceID, "response_preparing", responsePreparingLabel(cfg.Language), currentWindowPreparingDetail(cfg.Language), "", 0, false)
 							default:
-								prompt := buildProactivePrompt(ls.getConfig(), result)
+								prompt := buildProactivePrompt(cfg, result)
 								ls.queueTurnTrace(traceID, "proactive", rootAt)
 								if sendErr := sess.SendText(prompt); sendErr != nil {
 									slog.Warn("[HANDLER] proactive prompt injection failed", "conn_id", c.ID, "error", sendErr)
 									sendTraceEvent(c, "proactive", traceID, "live_prompt_injection_failed", rootAt, sendErr.Error())
-									sendProcessingState(c, "proactive", traceID, "response_preparing", "답변 정리 중...", "현재 창 기준으로 정리 중", "", 0, false)
+									sendProcessingState(c, "proactive", traceID, "response_preparing", responsePreparingLabel(cfg.Language), currentWindowPreparingDetail(cfg.Language), "", 0, false)
 								} else {
 									slog.Info("[HANDLER] proactive prompt injected into live session",
 										"conn_id", c.ID,
@@ -1144,15 +1222,15 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client) http.H
 								if sendErr := sess.SendText(contextMsg); sendErr != nil {
 									slog.Debug("inject screen context failed", "conn_id", c.ID, "error", sendErr)
 									sendTraceEvent(c, "context", traceID, "context_injection_failed", rootAt, sendErr.Error())
-									sendProcessingState(c, "context", traceID, "screen_analyzing", "화면 읽는 중...", "현재 창 분석 중", "", 0, false)
+									sendProcessingState(c, "context", traceID, "screen_analyzing", screenAnalyzingLabel(cfg.Language), screenAnalyzingDetail(cfg.Language), "", 0, false)
 								} else {
 									slog.Info("[HANDLER] injected screen context into live session (no ADK speech)", "conn_id", c.ID, "content_len", len(result.Vision.Content))
 									sendTraceEvent(c, "context", traceID, "context_injected", rootAt, fmt.Sprintf("content_len=%d", len(result.Vision.Content)))
-									sendProcessingState(c, "context", traceID, "screen_analyzing", "화면 읽는 중...", "현재 창 분석 중", "", 0, false)
+									sendProcessingState(c, "context", traceID, "screen_analyzing", screenAnalyzingLabel(cfg.Language), screenAnalyzingDetail(cfg.Language), "", 0, false)
 								}
 							}
 						} else {
-							sendProcessingState(c, "proactive", traceID, "screen_analyzing", "화면 읽는 중...", "현재 창 분석 중", "", 0, false)
+							sendProcessingState(c, "proactive", traceID, "screen_analyzing", screenAnalyzingLabel(cfg.Language), screenAnalyzingDetail(cfg.Language), "", 0, false)
 						}
 					}()
 
@@ -1196,7 +1274,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client) http.H
 									}
 								case queryRouteLiveSearch:
 									sendTraceEvent(c, "text", traceID, "live_native_search_enabled", rootAt, "google_search")
-									sendProcessingState(c, "text", traceID, "searching", "검색 중...", "Google Search 확인 중", "google_search", 0, true)
+									sendProcessingState(c, "text", traceID, "searching", searchingLabel(ls.getConfig().Language), searchDetail(ls.getConfig().Language), "google_search", 0, true)
 								}
 								slog.Info("[HANDLER] >>> forwarding clientContent to Gemini",
 									"conn_id", c.ID,
@@ -1249,7 +1327,7 @@ func receiveFromGemini(ctx context.Context, c *Conn, sess *live.Session, ls *liv
 			switch route.Kind {
 			case queryRouteLiveSearch:
 				sendTraceEvent(c, flow, traceID, "live_native_search_enabled", rootAt, "google_search")
-				sendProcessingState(c, flow, traceID, "searching", "검색 중...", "Google Search 확인 중", "google_search", 0, true)
+				sendProcessingState(c, flow, traceID, "searching", searchingLabel(cfg.Language), searchDetail(cfg.Language), "google_search", 0, true)
 			case queryRouteADKTool:
 				if adkClient == nil {
 					slog.Warn("[HANDLER] grounded tool lookup skipped: no adk client", "conn_id", c.ID)
@@ -1285,7 +1363,7 @@ func receiveFromGemini(ctx context.Context, c *Conn, sess *live.Session, ls *liv
 				ls.setModelSpeaking(false)
 				if traceID, flow, rootAt, ok := ls.finishCurrentTurnTrace(); ok {
 					sendTraceEvent(c, flow, traceID, "turn_failed", rootAt, err.Error())
-					sendProcessingState(c, flow, traceID, "response_preparing", "답변 정리 중...", "", "", 0, false)
+					sendProcessingState(c, flow, traceID, "response_preparing", responsePreparingLabel(ls.getConfig().Language), "", "", 0, false)
 				}
 				sendTurnState(c, "idle", "live")
 			}
@@ -1402,11 +1480,7 @@ func receiveFromGemini(ctx context.Context, c *Conn, sess *live.Session, ls *liv
 				detail := describeGroundingMetadata(sc.GroundingMetadata)
 				sourceCount := len(extractGroundingSources(sc.GroundingMetadata))
 				sendTraceEvent(c, flow, traceID, "grounding_metadata", rootAt, detail)
-				groundingDetail := "Google Search 확인 중"
-				if sourceCount > 0 {
-					groundingDetail = fmt.Sprintf("Google Search · 근거 %d개 확인", sourceCount)
-				}
-				sendProcessingState(c, flow, traceID, "grounding", "근거 확인 중...", groundingDetail, "google_search", sourceCount, true)
+				sendProcessingState(c, flow, traceID, "grounding", groundingLabel(ls.getConfig().Language), groundingDetail(ls.getConfig().Language, sourceCount), "google_search", sourceCount, true)
 				if detail != "" {
 					runtime.append("grounding: " + truncateText(detail, 240))
 				}
@@ -1426,7 +1500,7 @@ func receiveFromGemini(ctx context.Context, c *Conn, sess *live.Session, ls *liv
 				}
 				if traceID, flow, rootAt, ok := ls.finishCurrentTurnTrace(); ok {
 					sendTraceEvent(c, flow, traceID, "turn_complete", rootAt, "")
-					sendProcessingState(c, flow, traceID, "response_preparing", "답변 정리 중...", "", "", 0, false)
+					sendProcessingState(c, flow, traceID, "response_preparing", responsePreparingLabel(ls.getConfig().Language), "", "", 0, false)
 				}
 				lockedSendJSON(c, map[string]string{"type": "turnComplete"})
 				firstOutputEventSent = false
@@ -1442,7 +1516,7 @@ func receiveFromGemini(ctx context.Context, c *Conn, sess *live.Session, ls *liv
 				}
 				if traceID, flow, rootAt, ok := ls.finishCurrentTurnTrace(); ok {
 					sendTraceEvent(c, flow, traceID, "turn_interrupted", rootAt, "")
-					sendProcessingState(c, flow, traceID, "response_preparing", "답변 정리 중...", "", "", 0, false)
+					sendProcessingState(c, flow, traceID, "response_preparing", responsePreparingLabel(ls.getConfig().Language), "", "", 0, false)
 				}
 				lockedSendJSON(c, map[string]string{"type": "interrupted"})
 				firstOutputEventSent = false

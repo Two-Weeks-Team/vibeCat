@@ -10,6 +10,7 @@ enum AudioForwardMode: Sendable {
 final class SpeechRecognizer {
     var onAudioBufferCaptured: (@Sendable (AVAudioPCMBuffer, AudioForwardMode) -> Void)?
     var onBargeInDetected: (@Sendable () -> Void)?
+    var onRecordingFormatChanged: ((AVAudioFormat?) -> Void)?
     private(set) var currentAudioFormat: AVAudioFormat?
     private(set) var isListening = false
 
@@ -47,12 +48,14 @@ final class SpeechRecognizer {
 
             currentAudioFormat = capture.recordingFormat
             isListening = true
+            onRecordingFormatChanged?(currentAudioFormat)
             NSLog("[SPEECH] startListening: success, format=%@, isListening=%d", String(describing: currentAudioFormat), isListening ? 1 : 0)
         } catch {
             NSLog("[SPEECH] startListening: FAILED error=%@", String(describing: error))
             audioCapture.stop()
             currentAudioFormat = nil
             isListening = false
+            onRecordingFormatChanged?(nil)
         }
     }
 
@@ -61,6 +64,7 @@ final class SpeechRecognizer {
         audioCapture.stop()
         currentAudioFormat = nil
         isListening = false
+        onRecordingFormatChanged?(nil)
     }
 
     func resumeListening() {
@@ -70,6 +74,16 @@ final class SpeechRecognizer {
 
     func setModelSpeaking(_ speaking: Bool) {
         audioCapture.modelSpeaking = speaking
+    }
+
+    func handleAudioDeviceChange() async {
+        guard isListening else {
+            NSLog("[SPEECH] audio device change ignored: recognizer already stopped")
+            return
+        }
+        NSLog("[SPEECH] audio device change detected; restarting capture")
+        stopListening()
+        await startListening()
     }
 }
 

@@ -82,6 +82,37 @@ final class VibeCatTests: XCTestCase {
         XCTAssertEqual(settings.captureInterval, 1.0)
     }
 
+    func testLanguageSettingNormalizesSupportedCodes() {
+        let settings = AppSettings.shared
+
+        settings.language = "Japanese"
+        XCTAssertEqual(settings.language, "ja")
+
+        settings.language = "EN"
+        XCTAssertEqual(settings.language, "en")
+    }
+
+    func testLocalizationUsesSelectedLanguage() {
+        let settings = AppSettings.shared
+
+        settings.language = "en"
+        XCTAssertEqual(VibeCatL10n.screenReadingTitle(), "Reading screen...")
+        XCTAssertEqual(VibeCatL10n.listeningTitle(), "Listening...")
+        XCTAssertEqual(VibeCatL10n.captureTargetModeTitle(.frontmostWindow), "Frontmost Window")
+        XCTAssertEqual(VibeCatL10n.processingStateLabel(stage: "searching"), "Searching...")
+        XCTAssertEqual(VibeCatL10n.processingStateDetail(stage: "tool_running", tool: "maps"), "Checking Google Maps")
+
+        settings.language = "ja"
+        XCTAssertEqual(VibeCatL10n.screenReadingTitle(), "画面を読み取り中...")
+        XCTAssertEqual(VibeCatL10n.listeningDetail(), "話を聞いています")
+        XCTAssertEqual(VibeCatL10n.characterName("cat"), "猫")
+        XCTAssertEqual(VibeCatL10n.toolDisplayName("file_search"), "ファイル検索")
+
+        settings.language = "ko"
+        XCTAssertEqual(VibeCatL10n.sourceCount(3), "근거 3개")
+        XCTAssertEqual(VibeCatL10n.processingStateDetail(stage: "grounding", tool: "search", sourceCount: 2), "Google 검색 · 근거 2개 확인")
+    }
+
     private func clearSettings() {
         let defaults = UserDefaults.standard
         for key in settingsKeys {

@@ -25,6 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var catViewModel: CatViewModel?
     private var backgroundMusicPlayer: BackgroundMusicPlayer?
     private var speechRecognizer: SpeechRecognizer?
+    private var audioDeviceMonitor: AudioDeviceMonitor?
     private var circleGestureDetector: CircleGestureDetector?
     private var recentSpeechStore = RecentSpeechStore()
     private var emotionTransitionStore = EmotionTransitionStore()
@@ -37,7 +38,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var isPaused = false
     private var isMuted = false
-    private var pendingTranscription = ""
+    private var assistantTranscription = AssistantTranscriptionAssembler()
+    private var pendingTranscription: String { assistantTranscription.currentText }
     private var lastSpeechEndTime: Date = .distantPast
     private let minimumSpeechGap: TimeInterval = 3.0
 
@@ -84,6 +86,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var bubbleLockedByTTS = false
     private var cooldownTask: Task<Void, Never>?
     private var spriteIdleTask: Task<Void, Never>?
+    private var transcriptionFinalizeTask: Task<Void, Never>?
+    private var listeningStatusArmed = false
     private var activeTraceContext: (flow: String, traceId: String)?
     private var traceReadyForClear = false
     private var activeProcessingTraceID: String?
@@ -101,27 +105,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func normalizeToolName(_ raw: String) -> String {
-        switch raw.lowercased() {
-        case "google_search", "search":
-            return "Google Search"
-        case "maps":
-            return "Google Maps"
-        case "url_context":
-            return "URL Context"
-        case "code_execution":
-            return "Code Execution"
-        case "file_search":
-            return "File Search"
-        default:
-            return raw
-        }
+        VibeCatL10n.toolDisplayName(raw)
     }
 
     private func makeBubbleMeta(tool: String, sourceCount: Int?) -> String? {
         let normalizedTool = normalizeToolName(tool).trimmingCharacters(in: .whitespacesAndNewlines)
         let parts = [
             normalizedTool.isEmpty ? nil : normalizedTool,
-            sourceCount.map { "근거 \($0)개" }
+            sourceCount.map { VibeCatL10n.sourceCount($0) }
         ].compactMap { $0 }
         guard !parts.isEmpty else { return nil }
         return parts.joined(separator: " · ")
@@ -135,6 +126,165 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func clearPendingBubbleMeta() {
         pendingBubbleMeta = nil
+    }
+
+    private func statusBubbleSuppressionReason() -> String? {
+        if chatModeActive {
+            return "chat_mode"
+        }
+        if !pendingTranscription.isEmpty {
+            return "assistant_transcription_pending"
+        }
+        if speechState.isSpeaking {
+            return "assistant_speaking"
+        }
+        return nil
+    }
+
+    private func canShowStatusBubble() -> Bool {
+        statusBubbleSuppressionReason() == nil
+    }
+
+    private func showStatusBubbleIfAllowed(panel: CatPanel?, text: String, detail: String?, context: String = "status") {
+        guard let panel else {
+            NSLog("[BUBBLE] status skipped (%@): panel_missing text=%@ detail=%@", context, text, detail ?? "")
+            return
+        }
+        if let reason = statusBubbleSuppressionReason() {
+            NSLog("[BUBBLE] status suppressed (%@): reason=%@ text=%@ detail=%@", context, reason, text, detail ?? "")
+            return
+        }
+        NSLog("[BUBBLE] status show (%@): text=%@ detail=%@", context, text, detail ?? "")
+        panel.showStatusBubble(text: text, detail: detail)
+    }
+
+    private func listeningStatusDetail(for text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? VibeCatL10n.listeningDetail() : trimmed
+    }
+
+    private func armListeningStatus(panel: CatPanel?) {
+        listeningStatusArmed = true
+        showStatusBubbleIfAllowed(
+            panel: panel,
+            text: VibeCatL10n.listeningTitle(),
+            detail: VibeCatL10n.listeningDetail(),
+            context: "listening_arm"
+        )
+    }
+
+    private func disarmListeningStatus() {
+        listeningStatusArmed = false
+    }
+
+    private func commitAssistantTranscription(_ text: String, reason: String) {
+        recentSpeechStore.add(text, speaker: .assistant)
+        statusBarController?.recordInteraction()
+        NSLog("[GW-IN] transcription FINALIZED (%@): %@", reason, String(text.prefix(80)))
+    }
+
+    private func finalizePendingTranscriptionIfDue(reason: String) {
+        if let finalized = assistantTranscription.finalizeIfDue() {
+            commitAssistantTranscription(finalized, reason: reason)
+        }
+        if !assistantTranscription.hasPendingFinalization {
+            transcriptionFinalizeTask = nil
+        }
+    }
+
+    private func finalizePendingTranscriptionNow(reason: String) {
+        transcriptionFinalizeTask?.cancel()
+        transcriptionFinalizeTask = nil
+        if let finalized = assistantTranscription.finalizeNow() {
+            commitAssistantTranscription(finalized, reason: reason)
+        }
+    }
+
+    private func discardPendingTranscription(reason: String) {
+        transcriptionFinalizeTask?.cancel()
+        transcriptionFinalizeTask = nil
+        assistantTranscription.discard()
+        NSLog("[GW-IN] transcription DISCARDED (%@)", reason)
+    }
+
+    private func schedulePendingTranscriptionFinalization() {
+        transcriptionFinalizeTask?.cancel()
+        guard let delay = assistantTranscription.remainingFinalizationDelay(),
+              let deadline = assistantTranscription.scheduledFinalizationDeadline else {
+            transcriptionFinalizeTask = nil
+            return
+        }
+        guard delay > 0 else {
+            finalizePendingTranscriptionIfDue(reason: "merge_window_elapsed")
+            return
+        }
+
+        let delayNanoseconds = UInt64((delay * 1_000_000_000).rounded(.up))
+        transcriptionFinalizeTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: delayNanoseconds)
+            guard let self, !Task.isCancelled else { return }
+            guard self.assistantTranscription.scheduledFinalizationDeadline == deadline else { return }
+            self.transcriptionFinalizeTask = nil
+            self.finalizePendingTranscriptionIfDue(reason: "merge_window_elapsed")
+        }
+    }
+
+    private func appendPendingTranscription(_ text: String) -> String {
+        let combined = assistantTranscription.ingest(text)
+        if assistantTranscription.hasPendingFinalization {
+            schedulePendingTranscriptionFinalization()
+        }
+        return combined
+    }
+
+    private func markPendingTranscriptionBoundary(reason: String) {
+        guard assistantTranscription.markBoundary() else { return }
+        NSLog("[GW-IN] transcription BOUNDARY (%@): %@", reason, String(pendingTranscription.prefix(80)))
+        schedulePendingTranscriptionFinalization()
+    }
+
+    private func resolveProcessingStatePresentation(
+        stage: String,
+        label: String,
+        detail: String,
+        tool: String,
+        sourceCount: Int?
+    ) -> (label: String, detail: String?) {
+        let resolvedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? VibeCatL10n.processingStateLabel(stage: stage, tool: tool)
+            : label
+        let resolvedDetail = detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? (VibeCatL10n.processingStateDetail(stage: stage, tool: tool, sourceCount: sourceCount)
+                ?? makeBubbleMeta(tool: tool, sourceCount: sourceCount))
+            : detail
+        return (resolvedLabel, resolvedDetail)
+    }
+
+    private func updateAudioConverter(for inputFormat: AVAudioFormat?) {
+        guard let inputFormat,
+              let output = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true) else {
+            audioConverter = nil
+            NSLog("[AUDIO-PIPE] audio converter cleared")
+            return
+        }
+        audioConverter = AVAudioConverter(from: inputFormat, to: output)
+        NSLog("[AUDIO-PIPE] audio converter configured: in=%@ out=%@", String(describing: inputFormat), String(describing: output))
+    }
+
+    private func handleAudioDeviceChange(_ snapshot: AudioDeviceMonitor.Snapshot) async {
+        NSLog(
+            "[AUDIO-DEVICE] app handling change trigger=%@ input=%@(%u) output=%@(%u)",
+            snapshot.trigger.rawValue,
+            snapshot.inputDeviceName,
+            snapshot.inputDeviceID,
+            snapshot.outputDeviceName,
+            snapshot.outputDeviceID
+        )
+        audioPlayer?.handleAudioDeviceChange(reason: snapshot.trigger.rawValue)
+        if speechRecognizer?.isListening == true {
+            await speechRecognizer?.handleAudioDeviceChange()
+        }
+        updateAudioConverter(for: speechRecognizer?.currentAudioFormat)
     }
 
     private func transitionSpeech(to newState: SpeechState) {
@@ -197,6 +347,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let viewModel = CatViewModel()
         let music = BackgroundMusicPlayer()
         let speechRecognizer = SpeechRecognizer()
+        let audioDeviceMonitor = AudioDeviceMonitor()
         let circleGestureDetector = CircleGestureDetector()
         let companionChatPanel = CompanionChatPanel()
 
@@ -208,6 +359,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.catViewModel = viewModel
         self.backgroundMusicPlayer = music
         self.speechRecognizer = speechRecognizer
+        self.audioDeviceMonitor = audioDeviceMonitor
         self.circleGestureDetector = circleGestureDetector
         self.companionChatPanel = companionChatPanel
 
@@ -237,12 +389,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         gateway.setSoul(initialPreset.soul)
 
         circleGestureDetector.onCircleGesture = { [weak self] in
-            self?.catPanel?.showStatusBubble(text: "화면 읽는 중...", detail: "현재 창 분석 중")
+            self?.showStatusBubbleIfAllowed(
+                panel: self?.catPanel,
+                text: VibeCatL10n.screenReadingTitle(),
+                detail: VibeCatL10n.screenReadingDetail(),
+                context: "screen_capture_gesture"
+            )
             Task { @MainActor [weak self] in
                 await self?.screenAnalyzer?.forceAnalysis()
             }
         }
         circleGestureDetector.startMonitoring()
+
+        audioDeviceMonitor.onChange = { [weak self] snapshot in
+            Task { @MainActor [weak self] in
+                await self?.handleAudioDeviceChange(snapshot)
+            }
+        }
+        audioDeviceMonitor.start()
 
         companionChatPanel.onTextSubmitted = { [weak self] text in
             guard let self else { return }
@@ -288,6 +452,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         sbc.onProactiveAudioToggled = { [weak self] in
             self?.gatewayClient?.resendSetupPayloadIfConnected()
         }
+        sbc.onLanguageChanged = { [weak self] in
+            self?.gatewayClient?.resendSetupPayloadIfConnected()
+            self?.onboardingController?.refreshLocalizedText()
+            self?.companionChatPanel?.refreshLocalizedText()
+        }
         self.statusBarController = sbc
         self.trayAnimator = tray
 
@@ -320,6 +489,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         screenAnalyzer?.pause()
         gatewayClient?.disconnect()
         speechRecognizer?.stopListening()
+        audioDeviceMonitor?.stop()
         circleGestureDetector?.stopMonitoring()
         trayAnimator?.stop()
         spriteAnimator?.stop()
@@ -382,7 +552,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             if let self {
                 self.transitionSpeech(to: .idle)
-                self.pendingTranscription = ""
+                self.disarmListeningStatus()
+                self.discardPendingTranscription(reason: "gateway_disconnected")
             }
             panel?.hideBubble()
             panel?.setEmotionIndicator(nil)
@@ -403,6 +574,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             switch message {
             case .companionSpeech(let text, let emotionStr, let urgency):
                 NSLog("[GW-IN] onMessage: companionSpeech(legacy), textLength=%lu, emotion=%@, chatModeActive=%d, state=%@", text.count, emotionStr, self.chatModeActive, self.speechState.description)
+                self.disarmListeningStatus()
                 if self.speechState.isSpeaking || self.speechState.isCooldown {
                     NSLog("[GW-IN] companionSpeech DROPPED: speech active (state=%@)", self.speechState.description)
                     return
@@ -421,38 +593,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             case .transcription(let text, let finished):
                 NSLog("[GW-IN] onMessage: transcription, textLength=%lu, finished=%d, chatModeActive=%d, ttsActive=%d, bubbleLocked=%d", text.count, finished, self.chatModeActive, self.ttsActive, self.bubbleLockedByTTS)
+                self.disarmListeningStatus()
                 if self.chatModeActive {
                     if finished {
                         chatPanel?.finalizeListeningText(text)
                     } else {
                         chatPanel?.updateListeningText(text)
                     }
-                } else if !text.isEmpty {
+                } else {
                     var displayText = text
                     if let parsed = AudioMessageParser.parseEmotionTag(from: text) {
                         displayText = parsed.cleanText
                         analyzer?.handleCompanionSpeechEmotion(parsed.emotion)
                     }
                     if !displayText.isEmpty {
-                        self.pendingTranscription += displayText
+                        let combined = self.appendPendingTranscription(displayText)
                         if !self.bubbleLockedByTTS {
-                            panel?.showSpeechBubble(text: self.pendingTranscription, meta: self.pendingBubbleMeta)
+                            panel?.showSpeechBubble(text: combined, meta: self.pendingBubbleMeta)
                         }
                     }
                     if finished {
-                        if !self.pendingTranscription.isEmpty {
-                            self.recentSpeechStore.add(self.pendingTranscription, speaker: .assistant)
-                        }
-                        NSLog("[GW-IN] transcription COMPLETE: %@", String(self.pendingTranscription.prefix(80)))
-                        self.statusBarController?.recordInteraction()
-                        self.pendingTranscription = ""
-                        self.maybeActivateChatFromWakeWord(text)
+                        self.markPendingTranscriptionBoundary(reason: "output_transcription_finished")
+                        NSLog("[GW-IN] transcription COMPLETE marker: %@", String(self.pendingTranscription.prefix(80)))
+                        self.maybeActivateChatFromWakeWord(self.pendingTranscription.isEmpty ? displayText : self.pendingTranscription)
                     }
                 }
             case .turnState(let state, let source):
                 NSLog("[GW-IN] onMessage: turnState, state=%@, source=%@, current=%@", state, source, self.speechState.description)
                 switch state {
                 case "speaking":
+                    self.disarmListeningStatus()
                     let speechSource: SpeechSource = source == "tts" ? .tts : .live
                     if !self.speechState.isSpeaking {
                         self.transitionSpeech(to: .modelSpeaking(speechSource))
@@ -486,12 +656,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .processingState(let flow, let traceId, let stage, let label, let detail, let tool, let sourceCount, let active):
                 NSLog("[GW-IN] onMessage: processingState, flow=%@, trace=%@, stage=%@, active=%d, detail=%@, tool=%@, sources=%@",
                       flow, traceId, stage, active ? 1 : 0, detail, tool, sourceCount.map(String.init) ?? "-")
+                let presentation = self.resolveProcessingStatePresentation(
+                    stage: stage,
+                    label: label,
+                    detail: detail,
+                    tool: tool,
+                    sourceCount: sourceCount
+                )
                 self.updatePendingBubbleMeta(tool: tool, sourceCount: sourceCount)
                 if active {
                     self.activeProcessingTraceID = traceId
-                    if !self.chatModeActive && self.pendingTranscription.isEmpty && !self.speechState.isSpeaking {
-                        panel?.showStatusBubble(text: label, detail: detail.isEmpty ? self.makeBubbleMeta(tool: tool, sourceCount: sourceCount) : detail)
-                    }
+                    self.showStatusBubbleIfAllowed(
+                        panel: panel,
+                        text: presentation.label,
+                        detail: presentation.detail,
+                        context: "processing_\(stage)"
+                    )
                 } else if self.activeProcessingTraceID == traceId {
                     self.activeProcessingTraceID = nil
                     if self.pendingTranscription.isEmpty {
@@ -503,7 +683,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.updatePendingBubbleMeta(tool: tool, sourceCount: sources.count)
             case .inputTranscription(let text, let finished):
                 NSLog("[GW-IN] onMessage: inputTranscription, text=%@, finished=%d", String(text.prefix(60)), finished)
+                if !finished,
+                   !self.listeningStatusArmed,
+                   !self.chatModeActive,
+                   !self.speechState.isSpeaking,
+                   self.activeProcessingTraceID == nil {
+                    self.listeningStatusArmed = true
+                    NSLog("[BUBBLE] listening auto-armed from input transcription")
+                }
+                if !finished && self.listeningStatusArmed {
+                    self.showStatusBubbleIfAllowed(
+                        panel: panel,
+                        text: VibeCatL10n.listeningTitle(),
+                        detail: self.listeningStatusDetail(for: text),
+                        context: "input_transcription"
+                    )
+                }
                 if finished {
+                    self.disarmListeningStatus()
                     self.activeProcessingTraceID = nil
                     self.clearPendingBubbleMeta()
                     self.recentSpeechStore.add(text, speaker: .user)
@@ -516,27 +713,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if self.speechState.isSpeaking {
                     self.beginSpeechCooldown()
                 }
-                if !self.pendingTranscription.isEmpty {
-                    self.recentSpeechStore.add(self.pendingTranscription, speaker: .assistant)
-                }
                 self.activeProcessingTraceID = nil
-                self.pendingTranscription = ""
+                self.markPendingTranscriptionBoundary(reason: "turn_complete")
             case .interrupted:
                 NSLog("[GW-IN] onMessage: interrupted")
                 self.catVoice?.stop()
                 self.transitionSpeech(to: .idle)
                 self.activeProcessingTraceID = nil
                 self.clearPendingBubbleMeta()
-                self.pendingTranscription = ""
+                self.discardPendingTranscription(reason: "interrupted")
                 panel?.hideBubble()
+                self.armListeningStatus(panel: panel)
             case .sessionResumptionUpdate(let handle):
                 NSLog("[GW-IN] onMessage: sessionResumptionUpdate, handleLength=%lu", handle.count)
             case .liveSessionReconnecting(let attempt, let max):
                 NSLog("[GW-IN] onMessage: liveSessionReconnecting, attempt=%d/%d", attempt, max)
-                self.statusBarController?.setLastErrorDescription("Live session reconnecting (\(attempt)/\(max))")
-                if !self.chatModeActive && self.pendingTranscription.isEmpty {
-                    panel?.showStatusBubble(text: "다시 연결 중...", detail: "Live 세션 복구 중")
-                }
+                self.statusBarController?.setLastErrorDescription(VibeCatL10n.liveSessionReconnectingStatus(attempt: attempt, max: max))
+                self.showStatusBubbleIfAllowed(
+                    panel: panel,
+                    text: VibeCatL10n.reconnectingTitle(),
+                    detail: VibeCatL10n.liveSessionRecoveringDetail(),
+                    context: "live_session_reconnecting"
+                )
             case .liveSessionReconnected:
                 NSLog("[GW-IN] onMessage: liveSessionReconnected")
                 self.statusBarController?.setLastErrorDescription(nil)
@@ -545,25 +743,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NSLog("[GW-IN] onMessage: setupComplete, sessionId=%@", sessionId)
             case .goAway(let reason, let timeLeftMs):
                 NSLog("[GW-IN] onMessage: goAway, reason=%@, timeLeftMs=%d", reason, timeLeftMs)
-                if !self.chatModeActive && self.pendingTranscription.isEmpty {
-                    panel?.showStatusBubble(text: "다시 연결 중...", detail: "세션 재개 준비 중")
-                }
+                self.showStatusBubbleIfAllowed(
+                    panel: panel,
+                    text: VibeCatL10n.reconnectingTitle(),
+                    detail: VibeCatL10n.sessionResumePreparingDetail(),
+                    context: "session_resume_prepare"
+                )
             case .pong:
                 NSLog("[GW-IN] onMessage: pong")
             case .ttsStart(let text):
                 NSLog("[GW-IN] onMessage: ttsStart, hasText=%d, state=%@", text != nil ? 1 : 0, self.speechState.description)
+                self.disarmListeningStatus()
                 let source: SpeechSource = (text != nil && !text!.isEmpty) ? .tts : .live
                 self.transitionSpeech(to: .modelSpeaking(source))
                 self.catVoice?.stop()
                 if source == .tts, let text, !text.isEmpty {
+                    self.finalizePendingTranscriptionNow(reason: "tts_start")
                     self.bubbleLockedByTTS = true
-                    self.pendingTranscription = ""
                     panel?.showBubble(text: text)
                 }
             case .ttsEnd:
                 NSLog("[GW-IN] onMessage: ttsEnd")
                 guard self.speechState.isSpeaking else {
-                    self.pendingTranscription = ""
+                    self.discardPendingTranscription(reason: "tts_end_while_idle")
                     return
                 }
                 self.beginSpeechCooldown()
@@ -648,7 +850,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             switch event.charactersIgnoringModifiers?.lowercased() {
             case "v":
-                catPanel?.showStatusBubble(text: "화면 읽는 중...", detail: "현재 창 분석 중")
+                showStatusBubbleIfAllowed(
+                    panel: catPanel,
+                    text: VibeCatL10n.screenReadingTitle(),
+                    detail: VibeCatL10n.screenReadingDetail(),
+                    context: "screen_capture_hotkey"
+                )
                 Task { @MainActor [weak self] in
                     await self?.screenAnalyzer?.forceAnalysis()
                 }
@@ -674,6 +881,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func wireSpeechCapture(speechRecognizer: SpeechRecognizer, gateway: GatewayClient) {
+        speechRecognizer.onRecordingFormatChanged = { [weak self] format in
+            self?.updateAudioConverter(for: format)
+        }
+
         speechRecognizer.onBargeInDetected = { [weak self] in
             Task { @MainActor [weak self] in
                 self?.handleUserBargeIn()
@@ -700,7 +911,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         Task { @MainActor [weak self] in
-            guard let self else { return }
+            guard self != nil else { return }
             let granted = await speechRecognizer.requestPermissions()
             guard granted else {
                 ErrorReporter.shared.report("Microphone permission denied", context: "SpeechRecognizer")
@@ -708,10 +919,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             await speechRecognizer.startListening()
-            if let input = speechRecognizer.currentAudioFormat,
-               let output = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true) {
-                self.audioConverter = AVAudioConverter(from: input, to: output)
-            } else {
+            if speechRecognizer.currentAudioFormat == nil {
                 ErrorReporter.shared.report("Failed to initialize audio converter", context: "SpeechRecognizer")
             }
         }
@@ -722,9 +930,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSLog("[SPEECH] local barge-in detected")
         gatewayClient?.sendBargeIn()
         catVoice?.stop()
-        pendingTranscription = ""
+        discardPendingTranscription(reason: "local_barge_in")
         catPanel?.hideBubble()
         transitionSpeech(to: .idle)
+        armListeningStatus(panel: catPanel)
     }
 
     nonisolated private static func convertAudioBufferToPCM16k(buffer: AVAudioPCMBuffer, converter: AVAudioConverter) -> Data? {
@@ -818,21 +1027,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func localizedCharacterName(_ character: String) -> String {
-        switch character {
-        case "cat":
-            return "고양이"
-        case "derpy":
-            return "더피"
-        case "jinwoo":
-            return "진우"
-        case "kimjongun":
-            return "김정운"
-        case "saja":
-            return "사자"
-        case "trump":
-            return "트럼프"
-        default:
-            return character
-        }
+        VibeCatL10n.characterName(character)
     }
 }

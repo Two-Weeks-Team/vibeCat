@@ -302,7 +302,7 @@ final class CatPanel: NSPanel {
     }
 
     func beginCharacterTransition() {
-        showBubble(text: "캐릭터 변경 중...")
+        showBubble(text: VibeCatL10n.characterChanging())
         spinnerView.isHidden = false
         spinnerView.startAnimation(nil)
         layoutSpinner()
@@ -321,7 +321,7 @@ final class CatPanel: NSPanel {
             Task { @MainActor [weak self] in
                 self?.spinnerView.stopAnimation(nil)
                 self?.spinnerView.isHidden = true
-                self?.showBubble(text: "\(characterName) 등장!")
+                self?.showBubble(text: VibeCatL10n.characterAppeared(characterName))
             }
         }
     }

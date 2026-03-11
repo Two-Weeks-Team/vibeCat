@@ -41,9 +41,9 @@ final class RecentSpeechStore {
         var label: String {
             switch self {
             case .user:
-                return "You"
+                return VibeCatL10n.speakerLabel(isUser: true)
             case .assistant:
-                return "AI"
+                return VibeCatL10n.speakerLabel(isUser: false)
             }
         }
     }
@@ -128,6 +128,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     private var recentSpeechStore: RecentSpeechStore?
     private var emotionTransitionStore: EmotionTransitionStore?
+    private var isPausedState = false
+    private var isMutedState = false
 
     var onReconnect: (() -> Void)?
     var onPause: (() -> Void)?
@@ -138,6 +140,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     var onMusicToggled: ((Bool) -> Void)?
     var onSearchToggled: (() -> Void)?
     var onProactiveAudioToggled: (() -> Void)?
+    var onLanguageChanged: (() -> Void)?
 
     private(set) var connectionState: ConnectionState = .disconnected {
         didSet {
@@ -215,15 +218,15 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         let languageMenu = NSMenu()
         languageItems.removeAll(keepingCapacity: true)
-        for (title, code) in [("Korean", "ko"), ("English", "en"), ("Japanese", "ja")] {
-            let item = NSMenuItem(title: title, action: #selector(selectLanguage(_:)), keyEquivalent: "")
+        for code in ["ko", "en", "ja"] {
+            let item = NSMenuItem(title: VibeCatL10n.languageDisplayName(code), action: #selector(selectLanguage(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = code
             item.state = AppSettings.shared.language == code ? .on : .off
             languageMenu.addItem(item)
             languageItems.append(item)
         }
-        let languageItem = NSMenuItem(title: "Language", action: nil, keyEquivalent: "")
+        let languageItem = NSMenuItem(title: VibeCatL10n.menuLanguage(), action: nil, keyEquivalent: "")
         languageItem.submenu = languageMenu
         menu.addItem(languageItem)
 
@@ -237,45 +240,45 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             voiceMenu.addItem(item)
             voiceItems.append(item)
         }
-        let voiceItem = NSMenuItem(title: "Voice", action: nil, keyEquivalent: "")
+        let voiceItem = NSMenuItem(title: VibeCatL10n.menuVoice(), action: nil, keyEquivalent: "")
         voiceItem.submenu = voiceMenu
         menu.addItem(voiceItem)
 
         let chattinessMenu = NSMenu()
         chattinessItems.removeAll(keepingCapacity: true)
-        for (title, value) in [("Quiet", "quiet"), ("Normal", "normal"), ("Chatty", "chatty")] {
-            let item = NSMenuItem(title: title, action: #selector(selectChattiness(_:)), keyEquivalent: "")
+        for value in ["quiet", "normal", "chatty"] {
+            let item = NSMenuItem(title: VibeCatL10n.chattinessOptionTitle(value), action: #selector(selectChattiness(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = value
             item.state = AppSettings.shared.chattiness == value ? .on : .off
             chattinessMenu.addItem(item)
             chattinessItems.append(item)
         }
-        let chattinessItem = NSMenuItem(title: "Chattiness", action: nil, keyEquivalent: "")
+        let chattinessItem = NSMenuItem(title: VibeCatL10n.menuChattiness(), action: nil, keyEquivalent: "")
         chattinessItem.submenu = chattinessMenu
         menu.addItem(chattinessItem)
 
         let characterMenu = NSMenu()
         characterItems.removeAll(keepingCapacity: true)
         for char in ["cat", "derpy", "jinwoo", "kimjongun", "saja", "trump"] {
-            let item = NSMenuItem(title: char, action: #selector(selectCharacter(_:)), keyEquivalent: "")
+            let item = NSMenuItem(title: VibeCatL10n.characterName(char), action: #selector(selectCharacter(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = char
             item.state = AppSettings.shared.character == char ? .on : .off
             characterMenu.addItem(item)
             characterItems.append(item)
         }
-        let characterItem = NSMenuItem(title: "Character", action: nil, keyEquivalent: "")
+        let characterItem = NSMenuItem(title: VibeCatL10n.menuCharacter(), action: nil, keyEquivalent: "")
         characterItem.submenu = characterMenu
         menu.addItem(characterItem)
 
-        let recentSpeechItem = NSMenuItem(title: "Recent Speech", action: nil, keyEquivalent: "")
+        let recentSpeechItem = NSMenuItem(title: VibeCatL10n.menuRecentSpeech(), action: nil, keyEquivalent: "")
         let recentSubmenu = NSMenu()
         recentSpeechItem.submenu = recentSubmenu
         recentSpeechMenu = recentSubmenu
         menu.addItem(recentSpeechItem)
 
-        let emotionItem = NSMenuItem(title: "Emotion History", action: nil, keyEquivalent: "")
+        let emotionItem = NSMenuItem(title: VibeCatL10n.menuEmotionHistory(), action: nil, keyEquivalent: "")
         let emotionSubmenu = NSMenu()
         emotionItem.submenu = emotionSubmenu
         emotionHistoryMenu = emotionSubmenu
@@ -286,7 +289,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         let modelMenu = NSMenu()
         modelItems.removeAll(keepingCapacity: true)
 
-        let liveHeader = NSMenuItem(title: "Live API Model", action: nil, keyEquivalent: "")
+        let liveHeader = NSMenuItem(title: VibeCatL10n.menuLiveAPIModel(), action: nil, keyEquivalent: "")
         liveHeader.isEnabled = false
         modelMenu.addItem(liveHeader)
 
@@ -301,21 +304,21 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         modelMenu.addItem(NSMenuItem.separator())
 
-        let visionHeader = NSMenuItem(title: "Backend Analysis Models", action: nil, keyEquivalent: "")
+        let visionHeader = NSMenuItem(title: VibeCatL10n.menuBackendAnalysisModels(), action: nil, keyEquivalent: "")
         visionHeader.isEnabled = false
         modelMenu.addItem(visionHeader)
 
-        let visionInfoItem = NSMenuItem(title: "  Vision/Search: \(GeminiModels.vision)", action: nil, keyEquivalent: "")
+        let visionInfoItem = NSMenuItem(title: "  \(VibeCatL10n.menuVisionSearch()): \(GeminiModels.vision)", action: nil, keyEquivalent: "")
         visionInfoItem.state = .on
         visionInfoItem.isEnabled = false
         modelMenu.addItem(visionInfoItem)
 
-        let supportInfoItem = NSMenuItem(title: "  Support: \(GeminiModels.liteSupport)", action: nil, keyEquivalent: "")
+        let supportInfoItem = NSMenuItem(title: "  \(VibeCatL10n.menuSupport()): \(GeminiModels.liteSupport)", action: nil, keyEquivalent: "")
         supportInfoItem.state = .off
         supportInfoItem.isEnabled = false
         modelMenu.addItem(supportInfoItem)
 
-        let modelItem = NSMenuItem(title: "Model", action: nil, keyEquivalent: "")
+        let modelItem = NSMenuItem(title: VibeCatL10n.menuModel(), action: nil, keyEquivalent: "")
         modelItem.submenu = modelMenu
         menu.addItem(modelItem)
 
@@ -329,7 +332,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             captureMenu.addItem(item)
             captureItems.append(item)
         }
-        let captureItem = NSMenuItem(title: "Capture Interval", action: nil, keyEquivalent: "")
+        let captureItem = NSMenuItem(title: VibeCatL10n.menuCaptureInterval(), action: nil, keyEquivalent: "")
         captureItem.submenu = captureMenu
         menu.addItem(captureItem)
 
@@ -343,7 +346,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             captureTargetMenu.addItem(item)
             captureModeItems.append(item)
         }
-        let captureTargetItem = NSMenuItem(title: "Capture Target", action: nil, keyEquivalent: "")
+        let captureTargetItem = NSMenuItem(title: VibeCatL10n.menuCaptureTarget(), action: nil, keyEquivalent: "")
         captureTargetItem.submenu = captureTargetMenu
         menu.addItem(captureTargetItem)
 
@@ -351,31 +354,31 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         let advancedMenu = NSMenu()
 
-        let createdMusicItem = NSMenuItem(title: "Background Music", action: #selector(toggleMusic(_:)), keyEquivalent: "")
+        let createdMusicItem = NSMenuItem(title: VibeCatL10n.menuBackgroundMusic(), action: #selector(toggleMusic(_:)), keyEquivalent: "")
         createdMusicItem.target = self
         createdMusicItem.state = AppSettings.shared.musicEnabled ? .on : .off
         advancedMenu.addItem(createdMusicItem)
         musicItem = createdMusicItem
 
-        let createdSearchItem = NSMenuItem(title: "Google Search", action: #selector(toggleSearch(_:)), keyEquivalent: "")
+        let createdSearchItem = NSMenuItem(title: VibeCatL10n.menuGoogleSearch(), action: #selector(toggleSearch(_:)), keyEquivalent: "")
         createdSearchItem.target = self
         createdSearchItem.state = AppSettings.shared.searchEnabled ? .on : .off
         advancedMenu.addItem(createdSearchItem)
         searchItem = createdSearchItem
 
-        let createdProactiveItem = NSMenuItem(title: "Proactive Audio", action: #selector(toggleProactiveAudio(_:)), keyEquivalent: "")
+        let createdProactiveItem = NSMenuItem(title: VibeCatL10n.menuProactiveAudio(), action: #selector(toggleProactiveAudio(_:)), keyEquivalent: "")
         createdProactiveItem.target = self
         createdProactiveItem.state = AppSettings.shared.proactiveAudio ? .on : .off
         advancedMenu.addItem(createdProactiveItem)
         proactiveItem = createdProactiveItem
 
-        let advancedItem = NSMenuItem(title: "Advanced", action: nil, keyEquivalent: "")
+        let advancedItem = NSMenuItem(title: VibeCatL10n.menuAdvanced(), action: nil, keyEquivalent: "")
         advancedItem.submenu = advancedMenu
         menu.addItem(advancedItem)
 
         menu.addItem(NSMenuItem.separator())
 
-        let createdSetAPIKeyItem = NSMenuItem(title: "Connect...", action: #selector(handleShowOnboarding), keyEquivalent: "")
+        let createdSetAPIKeyItem = NSMenuItem(title: VibeCatL10n.menuConnect(), action: #selector(handleShowOnboarding), keyEquivalent: "")
         createdSetAPIKeyItem.target = self
         setAPIKeyItem = createdSetAPIKeyItem
         menu.addItem(createdSetAPIKeyItem)
@@ -383,27 +386,28 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
-        let reconnectItem = NSMenuItem(title: "Reconnect", action: #selector(handleReconnect), keyEquivalent: "r")
+        let reconnectItem = NSMenuItem(title: VibeCatL10n.menuReconnect(), action: #selector(handleReconnect), keyEquivalent: "r")
         reconnectItem.target = self
         menu.addItem(reconnectItem)
 
-        let pauseItem = NSMenuItem(title: "Pause", action: #selector(handlePause), keyEquivalent: "p")
+        let pauseItem = NSMenuItem(title: isPausedState ? VibeCatL10n.menuResume() : VibeCatL10n.menuPause(), action: #selector(handlePause), keyEquivalent: "p")
         pauseItem.target = self
         menu.addItem(pauseItem)
         self.pauseItem = pauseItem
 
-        let muteItem = NSMenuItem(title: "Mute", action: #selector(handleMute), keyEquivalent: "m")
+        let muteItem = NSMenuItem(title: isMutedState ? VibeCatL10n.menuUnmute() : VibeCatL10n.menuMute(), action: #selector(handleMute), keyEquivalent: "m")
         muteItem.target = self
         menu.addItem(muteItem)
         self.muteItem = muteItem
 
         menu.addItem(NSMenuItem.separator())
 
-        let quitItem = NSMenuItem(title: "Quit VibeCat", action: #selector(handleQuit), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: VibeCatL10n.menuQuit(), action: #selector(handleQuit), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
 
         statusItem.menu = menu
+        updateTooltip()
     }
 
     private func updateStatusTextItem() {
@@ -411,17 +415,19 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         switch connectionState {
         case .connected:
             attributed.append(NSAttributedString(string: "●", attributes: [.foregroundColor: NSColor.systemGreen]))
-            let latencyText = "\(sessionTracker.latencyMs ?? 0)ms"
             let sessionDuration = formatDuration(since: sessionTracker.sessionStartTime)
-            let interactions = sessionTracker.interactionCount
-            attributed.append(NSAttributedString(string: " Connected · \(latencyText) · \(interactions) interactions · \(sessionDuration)"))
+            attributed.append(NSAttributedString(string: VibeCatL10n.statusConnected(
+                latencyMs: sessionTracker.latencyMs ?? 0,
+                interactions: sessionTracker.interactionCount,
+                sessionDuration: sessionDuration
+            )))
         case .reconnecting(let attempt, let max):
             attributed.append(NSAttributedString(string: "●", attributes: [.foregroundColor: NSColor.systemYellow]))
-            attributed.append(NSAttributedString(string: " Reconnecting… (\(attempt)/\(max))"))
+            attributed.append(NSAttributedString(string: VibeCatL10n.statusReconnecting(attempt: attempt, max: max)))
         case .disconnected:
             attributed.append(NSAttributedString(string: "○", attributes: [.foregroundColor: NSColor.systemRed]))
             let seen = relativeTime(from: sessionTracker.lastSeenTime)
-            attributed.append(NSAttributedString(string: " Disconnected · Last seen: \(seen)"))
+            attributed.append(NSAttributedString(string: VibeCatL10n.statusDisconnected(lastSeen: seen)))
         }
 
         if let error = lastErrorDescription {
@@ -434,7 +440,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     @objc private func selectLanguage(_ sender: NSMenuItem) {
         guard let code = sender.representedObject as? String else { return }
         AppSettings.shared.language = code
-        refreshSubmenuChecks()
+        buildMenu()
+        onLanguageChanged?()
     }
 
     @objc private func selectVoice(_ sender: NSMenuItem) {
@@ -494,11 +501,13 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     func updatePauseState(_ isPaused: Bool) {
-        pauseItem?.title = isPaused ? "Resume" : "Pause"
+        isPausedState = isPaused
+        pauseItem?.title = isPaused ? VibeCatL10n.menuResume() : VibeCatL10n.menuPause()
     }
 
     func updateMuteState(_ isMuted: Bool) {
-        muteItem?.title = isMuted ? "Unmute" : "Mute"
+        isMutedState = isMuted
+        muteItem?.title = isMuted ? VibeCatL10n.menuUnmute() : VibeCatL10n.menuMute()
     }
 
     @objc private func handleReconnect() {
@@ -572,7 +581,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         recentSpeechMenu.removeAllItems()
         let entries = recentSpeechStore?.allEntries() ?? []
         if entries.isEmpty {
-            let empty = NSMenuItem(title: "No recent speech", action: nil, keyEquivalent: "")
+            let empty = NSMenuItem(title: VibeCatL10n.noRecentSpeech(), action: nil, keyEquivalent: "")
             empty.isEnabled = false
             recentSpeechMenu.addItem(empty)
             return
@@ -580,7 +589,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         for entry in entries {
             let relative = relativeTime(from: entry.timestamp)
-            let title = "[\(entry.speaker.label)] \(entry.text) (\(relative))"
+            let title = VibeCatL10n.recentSpeechEntry(speaker: entry.speaker.label, text: entry.text, relative: relative)
             let item = NSMenuItem(title: title, action: #selector(handleCopyRecentSpeech(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = entry.text
@@ -593,7 +602,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         emotionHistoryMenu.removeAllItems()
         let entries = emotionTransitionStore?.allEntries() ?? []
         if entries.isEmpty {
-            let empty = NSMenuItem(title: "No emotion transitions", action: nil, keyEquivalent: "")
+            let empty = NSMenuItem(title: VibeCatL10n.noEmotionTransitions(), action: nil, keyEquivalent: "")
             empty.isEnabled = false
             emotionHistoryMenu.addItem(empty)
             return
@@ -612,7 +621,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         case .connected:
             statusItem.button?.toolTip = "VibeCat"
         case .disconnected, .reconnecting:
-            statusItem.button?.toolTip = "Offline — reconnecting…"
+            statusItem.button?.toolTip = VibeCatL10n.tooltipOfflineReconnecting()
         }
     }
 
@@ -620,29 +629,24 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         guard let setAPIKeyItem else { return }
         if apiKeyNeedsAttention {
             setAPIKeyItem.attributedTitle = NSAttributedString(
-                string: "Connect...",
+                string: VibeCatL10n.menuConnect(),
                 attributes: [.foregroundColor: NSColor.systemRed]
             )
         } else {
-            setAPIKeyItem.attributedTitle = NSAttributedString(string: "Connect...")
+            setAPIKeyItem.attributedTitle = NSAttributedString(string: VibeCatL10n.menuConnect())
         }
     }
 
     private func formatDuration(since date: Date?) -> String {
-        guard let date else { return "0m 0s" }
+        guard let date else { return VibeCatL10n.duration(minutes: 0, seconds: 0) }
         let seconds = Int(Date().timeIntervalSince(date))
         let minutes = seconds / 60
         let remainder = seconds % 60
-        return "\(minutes)m \(remainder)s"
+        return VibeCatL10n.duration(minutes: minutes, seconds: remainder)
     }
 
     private func relativeTime(from date: Date?) -> String {
-        guard let date else { return "never" }
-        let delta = Int(Date().timeIntervalSince(date))
-        if delta < 10 { return "Just now" }
-        if delta < 60 { return "\(delta)s ago" }
-        if delta < 3600 { return "\(delta / 60)m ago" }
-        return "\(delta / 3600)h ago"
+        VibeCatL10n.relativeTime(from: date)
     }
 
     func menuWillOpen(_ menu: NSMenu) {
