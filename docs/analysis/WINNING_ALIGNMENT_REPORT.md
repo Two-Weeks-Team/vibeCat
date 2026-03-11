@@ -1,5 +1,7 @@
 # VibeCat Winning Alignment Report
 
+> Historical note (2026-03-11): this report optimizes for the former Live Agents framing. It is not the current submission-alignment source.
+
 Updated: 2026-03-10
 
 ## Goal

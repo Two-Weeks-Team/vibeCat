@@ -7,7 +7,7 @@
 
 ## OVERVIEW
 
-VibeCat is now an implemented and deployed macOS desktop companion for solo developers. The repository contains:
+VibeCat is now being repositioned for the **UI Navigator** track of the Gemini Live Agent Challenge. The repository still contains the implemented companion-era foundation, but the current submission direction is a **desktop UI navigator for developer workflows on macOS**. The repository contains:
 
 - a Swift 6 macOS client under `VibeCat/`
 - a Go Realtime Gateway under `backend/realtime-gateway/`
@@ -15,7 +15,7 @@ VibeCat is now an implemented and deployed macOS desktop companion for solo deve
 - deployed Cloud Run services in `asia-northeast3`
 - deployment scripts, CI/CD workflows, and E2E smoke tests
 
-The original project-planning documents remain useful for architecture intent, but they no longer describe the actual implementation state by themselves. For the current ground truth, start with `docs/CURRENT_STATUS_20260311.md` and the deployment evidence docs.
+The original project-planning documents remain useful for architecture intent, but many still reflect the older Live Agent framing. For the current ground truth, start with `README.md`, `docs/CURRENT_STATUS_20260311.md`, `docs/FINAL_ARCHITECTURE.md`, and the deployment evidence docs.
 
 ## CURRENT SNAPSHOT
 
@@ -28,6 +28,13 @@ The original project-planning documents remain useful for architecture intent, b
 - backend gateway: auth, Live API session handling, ADK routing, TTS client, structured logs
 - backend orchestrator: 9-agent graph, Firestore store, search grounding, mood/memory/vision logic
 - deployment: Cloud Run, Artifact Registry, Secret Manager, Firestore, GitHub Actions CI/CD
+
+### Submission Pivot
+
+- target category: `UI Navigator`
+- core contract: `acts when intent is clear, asks when it is not`
+- gold-tier workflow surfaces: `Antigravity IDE`, `Terminal`, `Chrome`
+- old proactive-companion docs should be treated as historical unless they were explicitly rewritten for the navigator pivot
 
 ### Live Deployment Baseline
 

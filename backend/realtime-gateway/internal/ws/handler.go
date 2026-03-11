@@ -41,6 +41,8 @@ const (
 	forcedAnalyzeTimeout    = 8 * time.Second
 )
 
+var proactiveContextHintDelay = 1200 * time.Millisecond
+
 type adkService interface {
 	Analyze(context.Context, adk.AnalysisRequest) (*adk.AnalysisResult, error)
 	Search(context.Context, adk.SearchRequest) (*adk.SearchResult, error)
@@ -529,6 +531,153 @@ func currentWindowPreparingDetail(language string) string {
 	return localizedText(language, "현재 창 기준으로 정리 중", "Preparing response from current window", "現在のウィンドウを基準に整理中")
 }
 
+type proactiveCaptureContext struct {
+	AppName     string
+	BundleID    string
+	WindowTitle string
+	TargetKind  string
+}
+
+func parseProactiveCaptureContext(raw string) proactiveCaptureContext {
+	trimmed := strings.TrimSpace(strings.Trim(raw, "[]"))
+	if trimmed == "" {
+		return proactiveCaptureContext{}
+	}
+	return proactiveCaptureContext{
+		AppName:     captureContextValue(trimmed, "app"),
+		BundleID:    captureContextValue(trimmed, "bundle"),
+		WindowTitle: captureContextValue(trimmed, "window"),
+		TargetKind:  captureContextValue(trimmed, "target"),
+	}
+}
+
+func captureContextValue(raw string, key string) string {
+	marker := key + "="
+	start := strings.Index(raw, marker)
+	if start < 0 {
+		return ""
+	}
+	start += len(marker)
+	end := len(raw)
+	for _, other := range []string{"app", "target", "bundle", "window"} {
+		if other == key {
+			continue
+		}
+		if idx := strings.Index(raw[start:], " "+other+"="); idx >= 0 && start+idx < end {
+			end = start + idx
+		}
+	}
+	return strings.TrimSpace(strings.Trim(raw[start:end], "[]"))
+}
+
+func proactiveContextHintText(language string, rawContext string) string {
+	ctx := parseProactiveCaptureContext(rawContext)
+	app := strings.TrimSpace(ctx.AppName)
+	window := strings.TrimSpace(ctx.WindowTitle)
+	subject := app
+	if window != "" {
+		subject = truncateText(window, 48)
+	} else if subject == "" {
+		subject = localizedText(language, "현재 화면", "this screen", "この画面")
+	}
+
+	appLower := strings.ToLower(app)
+	targetLower := strings.ToLower(ctx.TargetKind)
+
+	switch uiLanguage(language) {
+	case "en":
+		switch {
+		case strings.Contains(appLower, "xcode"):
+			return fmt.Sprintf("%s is open in Xcode. Re-run one failing test or inspect the first error line before we go wider.", subject)
+		case strings.Contains(appLower, "terminal") || strings.Contains(appLower, "iterm") || strings.Contains(appLower, "warp") || strings.Contains(appLower, "ghostty"):
+			return fmt.Sprintf("%s is in the terminal. Start from the latest error line and confirm the exact command that triggered it.", subject)
+		case strings.Contains(appLower, "cursor") || strings.Contains(appLower, "visual studio code") || strings.Contains(appLower, "code"):
+			return fmt.Sprintf("%s is in the editor. Narrow it to one changed function or one failing file first.", subject)
+		case strings.Contains(appLower, "chrome") || strings.Contains(appLower, "safari") || strings.Contains(appLower, "arc") || strings.Contains(appLower, "firefox"):
+			return fmt.Sprintf("%s is open in the browser. Keep one source tab and one work tab, then verify the next step from there.", subject)
+		case strings.Contains(targetLower, "display"):
+			return "The whole display changed. Lock onto the one window that actually matters, then I can follow with a deeper read."
+		default:
+			return fmt.Sprintf("%s is in front. Check the last thing that changed there, then I will follow with a deeper suggestion.", subject)
+		}
+	case "ja":
+		switch {
+		case strings.Contains(appLower, "xcode"):
+			return fmt.Sprintf("いま %s を Xcode で開いています。まず 1 件だけ失敗テストを再実行するか、最初のエラー行を確認しましょう。", subject)
+		case strings.Contains(appLower, "terminal") || strings.Contains(appLower, "iterm") || strings.Contains(appLower, "warp") || strings.Contains(appLower, "ghostty"):
+			return fmt.Sprintf("いま %s はターミナルです。最後のエラー行と、その直前のコマンドから先に確認しましょう。", subject)
+		case strings.Contains(appLower, "cursor") || strings.Contains(appLower, "visual studio code") || strings.Contains(appLower, "code"):
+			return fmt.Sprintf("いま %s はエディタです。変更した関数 1 つか、失敗しているファイル 1 つまで先に絞りましょう。", subject)
+		case strings.Contains(appLower, "chrome") || strings.Contains(appLower, "safari") || strings.Contains(appLower, "arc") || strings.Contains(appLower, "firefox"):
+			return fmt.Sprintf("いま %s はブラウザです。参照タブを 1 つに絞って、次の確認点だけ先に押さえましょう。", subject)
+		case strings.Contains(targetLower, "display"):
+			return "画面全体が変わっています。まず今重要なウィンドウ 1 つに絞ると、そのあと深く追えます。"
+		default:
+			return fmt.Sprintf("いま %s を見ています。そこで最後に変わった箇所 1 つから先に確認しましょう。", subject)
+		}
+	default:
+		switch {
+		case strings.Contains(appLower, "xcode"):
+			return fmt.Sprintf("지금 %s가 Xcode에 열려 있어. 실패한 테스트 하나만 다시 돌리거나 첫 에러 줄부터 바로 보자.", subject)
+		case strings.Contains(appLower, "terminal") || strings.Contains(appLower, "iterm") || strings.Contains(appLower, "warp") || strings.Contains(appLower, "ghostty"):
+			return fmt.Sprintf("지금 %s가 터미널이야. 마지막 에러 줄과 그 직전 명령부터 먼저 확인하자.", subject)
+		case strings.Contains(appLower, "cursor") || strings.Contains(appLower, "visual studio code") || strings.Contains(appLower, "code"):
+			return fmt.Sprintf("지금 %s가 에디터에 열려 있어. 방금 바꾼 함수 하나나 깨진 파일 하나부터 좁혀보자.", subject)
+		case strings.Contains(appLower, "chrome") || strings.Contains(appLower, "safari") || strings.Contains(appLower, "arc") || strings.Contains(appLower, "firefox"):
+			return fmt.Sprintf("지금 %s가 브라우저에 열려 있어. 참고 탭 하나만 남기고 다음 확인 포인트부터 잡자.", subject)
+		case strings.Contains(targetLower, "display"):
+			return "지금은 화면 전체가 바뀌었어. 먼저 중요한 창 하나만 딱 고르면 내가 그다음 흐름을 더 깊게 이어갈게."
+		default:
+			return fmt.Sprintf("지금 %s 쪽이야. 거기서 마지막으로 바뀐 지점 하나부터 먼저 확인하자.", subject)
+		}
+	}
+}
+
+func maybeStartProactiveContextHint(ctx context.Context, c *Conn, ls *liveSessionState, ttsClient ttsSpeaker, metrics *Metrics, captureType, captureContext, traceID string, rootAt time.Time) func() {
+	if ttsClient == nil || ls.isModelSpeaking() {
+		slog.Debug("[HANDLER] proactive context hint skipped", "conn_id", c.ID, "reason", "tts_unavailable_or_model_speaking")
+		return func() {}
+	}
+	if captureType != "forceCapture" && !ls.getConfig().ProactiveAudio {
+		slog.Debug("[HANDLER] proactive context hint skipped", "conn_id", c.ID, "reason", "proactive_audio_disabled")
+		return func() {}
+	}
+
+	done := make(chan struct{})
+	cfg := ls.getConfig()
+	hintText := strings.TrimSpace(proactiveContextHintText(cfg.Language, captureContext))
+	if hintText == "" {
+		slog.Debug("[HANDLER] proactive context hint skipped", "conn_id", c.ID, "reason", "empty_hint_text")
+		return func() {}
+	}
+
+	go func() {
+		timer := time.NewTimer(proactiveContextHintDelay)
+		defer timer.Stop()
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-done:
+			return
+		case <-timer.C:
+		}
+
+		slog.Info("[HANDLER] proactive context hint firing", "conn_id", c.ID, "trace_id", traceID, "hint_len", len(hintText))
+		sendTraceEvent(c, "proactive", traceID, "context_hint_start", rootAt, truncateText(hintText, 120))
+		if speakWithTTSFallback(ctx, c, ls, ttsClient, metrics, "proactive", traceID, rootAt, hintText, "proactive_context_hint") {
+			sendTraceEvent(c, "proactive", traceID, "context_hint_done", rootAt, "")
+		}
+	}()
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			close(done)
+		})
+	}
+}
+
 func searchingLabel(language string) string {
 	return localizedText(language, "검색 중...", "Searching...", "検索中...")
 }
@@ -674,6 +823,83 @@ func maybeResolveSearchFallback(
 	success := speakWithTTSFallback(ctx, c, ls, ttsClient, metrics, "text", traceID, rootAt, result.Summary, reason)
 	sendProcessingState(c, "text", traceID, "response_preparing", responsePreparingLabel(cfg.Language), toolPreparingDetail(adk.ToolKindSearch, cfg.Language), string(adk.ToolKindSearch), len(result.Sources), false)
 	return success
+}
+
+func handleUserTextQuery(
+	ctx context.Context,
+	c *Conn,
+	ls *liveSessionState,
+	adkClient adkService,
+	ttsClient ttsSpeaker,
+	metrics *Metrics,
+	runtime *sessionRuntime,
+	query string,
+	traceID string,
+	rootAt time.Time,
+) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return
+	}
+	if traceID == "" {
+		traceID = newTraceID("text")
+	}
+	if rootAt.IsZero() {
+		rootAt = time.Now()
+	}
+
+	runtime.append("user: " + truncateText(query, 240))
+	sendTraceEvent(c, "text", traceID, "text_received", rootAt, fmt.Sprintf("text_len=%d", len(query)))
+	route := resolveQueryRoute(ls.getConfig(), query)
+	switch route.Kind {
+	case queryRouteADKTool:
+		if maybeResolveTool(ctx, c, ls, adkClient, ttsClient, metrics, runtime, route.Tool, query, traceID, rootAt) {
+			slog.Info("[HANDLER] text handled via grounded tool", "conn_id", c.ID, "tool", route.Tool)
+			return
+		}
+	case queryRouteLiveSearch:
+		sendTraceEvent(c, "text", traceID, "live_native_search_enabled", rootAt, "google_search")
+		sendProcessingState(c, "text", traceID, "searching", searchingLabel(ls.getConfig().Language), searchDetail(ls.getConfig().Language), "google_search", 0, true)
+	}
+	sess := ls.getSession()
+	if sess == nil {
+		switch route.Kind {
+		case queryRouteLiveSearch:
+			if maybeResolveSearchFallback(ctx, c, ls, adkClient, ttsClient, metrics, runtime, query, traceID, rootAt, "live_search_no_session") {
+				return
+			}
+			sendProcessingState(c, "text", traceID, "searching", searchingLabel(ls.getConfig().Language), searchDetail(ls.getConfig().Language), "google_search", 0, false)
+		case queryRoutePlainLive:
+			if maybeSpeakLiveUnavailableNotice(ctx, c, ls, ttsClient, metrics, "text", traceID, rootAt, "live_query_no_session") {
+				return
+			}
+		}
+		slog.Warn("[HANDLER] text received but no live session", "conn_id", c.ID, "trace_id", traceID)
+		sendTraceEvent(c, "text", traceID, "live_text_forward_failed", rootAt, "no_live_session")
+		sendProcessingState(c, "text", traceID, "response_preparing", responsePreparingLabel(ls.getConfig().Language), "", "", 0, false)
+		return
+	}
+	slog.Info("[HANDLER] >>> forwarding text to Gemini", "conn_id", c.ID, "trace_id", traceID, "text_len", len(query))
+	ls.queueTurnTrace(traceID, "text", rootAt)
+	if sendErr := sess.SendText(query); sendErr != nil {
+		ls.clearPendingTurnTrace()
+		slog.Warn("[HANDLER] Gemini SendText failed", "conn_id", c.ID, "error", sendErr)
+		sendTraceEvent(c, "text", traceID, "live_text_forward_failed", rootAt, sendErr.Error())
+		switch route.Kind {
+		case queryRouteLiveSearch:
+			if maybeResolveSearchFallback(ctx, c, ls, adkClient, ttsClient, metrics, runtime, query, traceID, rootAt, "live_search_forward_failed") {
+				return
+			}
+			sendProcessingState(c, "text", traceID, "searching", searchingLabel(ls.getConfig().Language), searchDetail(ls.getConfig().Language), "google_search", 0, false)
+		case queryRoutePlainLive:
+			if maybeSpeakLiveUnavailableNotice(ctx, c, ls, ttsClient, metrics, "text", traceID, rootAt, "live_query_forward_failed") {
+				return
+			}
+		}
+		sendProcessingState(c, "text", traceID, "response_preparing", responsePreparingLabel(ls.getConfig().Language), "", "", 0, false)
+		return
+	}
+	sendTraceEvent(c, "text", traceID, "live_text_forwarded", rootAt, "")
 }
 
 func memoryContextCacheKey(userID, language string) string {
@@ -1032,6 +1258,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 
 		ls := &liveSessionState{errChan: make(chan error, 1)}
 		runtime := newSessionRuntime("default", c.ID)
+		navState := &navigatorSessionState{}
 
 		defer func() {
 			saveSessionMemory(context.Background(), adkClient, ls.getConfig(), runtime)
@@ -1257,6 +1484,218 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 					runtime.append("interrupt: user barge-in")
 					handleBargeIn(c, ls)
 
+				case "navigator.command":
+					var navMsg struct {
+						Command string           `json:"command"`
+						Context navigatorContext `json:"context"`
+						TraceID string           `json:"traceId"`
+					}
+					if parseErr := json.Unmarshal(data, &navMsg); parseErr != nil {
+						slog.Warn("parse navigator command failed", "conn_id", c.ID, "error", parseErr)
+						continue
+					}
+					traceID := strings.TrimSpace(navMsg.TraceID)
+					if traceID == "" {
+						traceID = newTraceID("navigator")
+					}
+					rootAt := time.Now()
+					sendTraceEvent(c, "navigator", traceID, "command_received", rootAt, truncateText(navMsg.Command, 120))
+					plan := planNavigatorCommand(navMsg.Command, navMsg.Context, false)
+					switch {
+					case plan.IntentClass == navigatorIntentAmbiguous:
+						navState.pendingClarificationCommand = navMsg.Command
+						lockedSendJSON(c, map[string]any{
+							"type":     "navigator.intentClarificationNeeded",
+							"command":  navMsg.Command,
+							"question": plan.ClarifyQuestion,
+						})
+					case plan.RiskQuestion != "":
+						navState.pendingRiskyCommand = navMsg.Command
+						lockedSendJSON(c, map[string]any{
+							"type":     "navigator.riskyActionBlocked",
+							"command":  navMsg.Command,
+							"question": plan.RiskQuestion,
+							"reason":   plan.RiskReason,
+						})
+					case plan.IntentClass == navigatorIntentAnalyzeOnly:
+						lockedSendJSON(c, map[string]any{
+							"type":             "navigator.commandAccepted",
+							"command":          navMsg.Command,
+							"intentClass":      plan.IntentClass,
+							"intentConfidence": plan.IntentConfidence,
+						})
+						handleUserTextQuery(ctx, c, ls, adkClient, ttsClient, metrics, runtime, navMsg.Command, traceID, rootAt)
+					case len(plan.Steps) == 0:
+						lockedSendJSON(c, map[string]any{
+							"type":        "navigator.guidedMode",
+							"reason":      "no_supported_step",
+							"instruction": "I can see the request, but I need a more specific target or a supported surface.",
+						})
+					default:
+						navState.startPlan(navMsg.Command, plan.Steps)
+						lockedSendJSON(c, map[string]any{
+							"type":             "navigator.commandAccepted",
+							"command":          navMsg.Command,
+							"intentClass":      plan.IntentClass,
+							"intentConfidence": plan.IntentConfidence,
+						})
+						if step, ok := navState.nextStep(); ok {
+							lockedSendJSON(c, map[string]any{
+								"type":    "navigator.stepPlanned",
+								"step":    step,
+								"message": navigatorMessageForStep(step),
+							})
+						}
+					}
+
+				case "navigator.confirmAmbiguousIntent":
+					var confirmMsg struct {
+						Command string           `json:"command"`
+						Answer  string           `json:"answer"`
+						Context navigatorContext `json:"context"`
+					}
+					if parseErr := json.Unmarshal(data, &confirmMsg); parseErr != nil {
+						slog.Warn("parse navigator clarification response failed", "conn_id", c.ID, "error", parseErr)
+						continue
+					}
+					command := strings.TrimSpace(confirmMsg.Command)
+					if command == "" {
+						command = navState.pendingClarificationCommand
+					}
+					if explanationAnswer(confirmMsg.Answer) {
+						navState.pendingClarificationCommand = ""
+						handleUserTextQuery(ctx, c, ls, adkClient, ttsClient, metrics, runtime, command, newTraceID("text"), time.Now())
+						continue
+					}
+					if !affirmativeAnswer(confirmMsg.Answer) {
+						lockedSendJSON(c, map[string]any{
+							"type":        "navigator.guidedMode",
+							"reason":      "clarification_not_confirmed",
+							"instruction": "I did not get a clear execution confirmation, so I stopped before acting.",
+						})
+						navState.clearPlan()
+						continue
+					}
+					plan := planNavigatorCommand(command+" "+confirmMsg.Answer, confirmMsg.Context, false)
+					if len(plan.Steps) == 0 {
+						lockedSendJSON(c, map[string]any{
+							"type":        "navigator.guidedMode",
+							"reason":      "clarified_but_not_supported",
+							"instruction": "I understand the intent now, but I still need a more specific or supported target.",
+						})
+						navState.clearPlan()
+						continue
+					}
+					navState.startPlan(command, plan.Steps)
+					lockedSendJSON(c, map[string]any{
+						"type":             "navigator.commandAccepted",
+						"command":          command,
+						"intentClass":      plan.IntentClass,
+						"intentConfidence": plan.IntentConfidence,
+					})
+					if step, ok := navState.nextStep(); ok {
+						lockedSendJSON(c, map[string]any{
+							"type":    "navigator.stepPlanned",
+							"step":    step,
+							"message": navigatorMessageForStep(step),
+						})
+					}
+
+				case "navigator.confirmRiskyAction":
+					var confirmMsg struct {
+						Command string           `json:"command"`
+						Answer  string           `json:"answer"`
+						Context navigatorContext `json:"context"`
+					}
+					if parseErr := json.Unmarshal(data, &confirmMsg); parseErr != nil {
+						slog.Warn("parse navigator risky response failed", "conn_id", c.ID, "error", parseErr)
+						continue
+					}
+					command := strings.TrimSpace(confirmMsg.Command)
+					if command == "" {
+						command = navState.pendingRiskyCommand
+					}
+					if explanationAnswer(confirmMsg.Answer) || !affirmativeAnswer(confirmMsg.Answer) {
+						lockedSendJSON(c, map[string]any{
+							"type":        "navigator.guidedMode",
+							"reason":      "risky_action_not_confirmed",
+							"instruction": "I stopped before the risky action. I can still explain the next step.",
+						})
+						navState.clearPlan()
+						continue
+					}
+					plan := planNavigatorCommand(command, confirmMsg.Context, true)
+					if len(plan.Steps) == 0 {
+						lockedSendJSON(c, map[string]any{
+							"type":   "navigator.failed",
+							"reason": "I could not build a safe step even after confirmation.",
+						})
+						navState.clearPlan()
+						continue
+					}
+					navState.startPlan(command, plan.Steps)
+					lockedSendJSON(c, map[string]any{
+						"type":             "navigator.commandAccepted",
+						"command":          command,
+						"intentClass":      plan.IntentClass,
+						"intentConfidence": plan.IntentConfidence,
+					})
+					if step, ok := navState.nextStep(); ok {
+						lockedSendJSON(c, map[string]any{
+							"type":    "navigator.stepPlanned",
+							"step":    step,
+							"message": navigatorMessageForStep(step),
+						})
+					}
+
+				case "navigator.refreshContext":
+					var refreshMsg struct {
+						Command         string           `json:"command"`
+						Step            navigatorStep    `json:"step"`
+						Status          string           `json:"status"`
+						ObservedOutcome string           `json:"observedOutcome"`
+						Context         navigatorContext `json:"context"`
+					}
+					if parseErr := json.Unmarshal(data, &refreshMsg); parseErr != nil {
+						slog.Warn("parse navigator refresh failed", "conn_id", c.ID, "error", parseErr)
+						continue
+					}
+					switch refreshMsg.Status {
+					case "success":
+						lockedSendJSON(c, map[string]any{
+							"type":            "navigator.stepVerified",
+							"stepId":          refreshMsg.Step.ID,
+							"status":          "success",
+							"observedOutcome": refreshMsg.ObservedOutcome,
+						})
+						if next, ok := navState.nextStep(); ok {
+							lockedSendJSON(c, map[string]any{
+								"type":    "navigator.stepPlanned",
+								"step":    next,
+								"message": navigatorMessageForStep(next),
+							})
+						} else {
+							lockedSendJSON(c, map[string]any{
+								"type":    "navigator.completed",
+								"summary": refreshMsg.ObservedOutcome,
+							})
+							navState.clearPlan()
+						}
+					case "guided_mode":
+						lockedSendJSON(c, map[string]any{
+							"type":        "navigator.guidedMode",
+							"reason":      "verification_guided_mode",
+							"instruction": refreshMsg.ObservedOutcome,
+						})
+						navState.clearPlan()
+					default:
+						lockedSendJSON(c, map[string]any{
+							"type":   "navigator.failed",
+							"reason": refreshMsg.ObservedOutcome,
+						})
+						navState.clearPlan()
+					}
+
 				case "screenCapture", "forceCapture":
 					if adkClient == nil {
 						continue
@@ -1299,6 +1738,8 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 						cfg := ls.getConfig()
 						sendTraceEvent(c, "proactive", traceID, "adk_analyze_start", rootAt, "")
 						sendProcessingState(c, "proactive", traceID, "screen_analyzing", screenAnalyzingLabel(cfg.Language), screenAnalyzingDetail(cfg.Language), "", 0, true)
+						stopContextHint := maybeStartProactiveContextHint(ctx, c, ls, ttsClient, metrics, captureMsg.Type, captureMsg.Context, traceID, rootAt)
+						defer stopContextHint()
 						analyzeTimeout := proactiveAnalyzeTimeout
 						if captureMsg.Type == "forceCapture" {
 							analyzeTimeout = forcedAnalyzeTimeout
@@ -1464,63 +1905,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 								if traceID == "" {
 									traceID = newTraceID("text")
 								}
-								rootAt := time.Now()
-								runtime.append("user: " + truncateText(part.Text, 240))
-								sendTraceEvent(c, "text", traceID, "text_received", rootAt, fmt.Sprintf("text_len=%d", len(part.Text)))
-								route := resolveQueryRoute(ls.getConfig(), part.Text)
-								switch route.Kind {
-								case queryRouteADKTool:
-									if maybeResolveTool(ctx, c, ls, adkClient, ttsClient, metrics, runtime, route.Tool, part.Text, traceID, rootAt) {
-										slog.Info("[HANDLER] clientContent handled via grounded tool", "conn_id", c.ID, "tool", route.Tool)
-										continue
-									}
-								case queryRouteLiveSearch:
-									sendTraceEvent(c, "text", traceID, "live_native_search_enabled", rootAt, "google_search")
-									sendProcessingState(c, "text", traceID, "searching", searchingLabel(ls.getConfig().Language), searchDetail(ls.getConfig().Language), "google_search", 0, true)
-								}
-								sess := ls.getSession()
-								if sess == nil {
-									switch route.Kind {
-									case queryRouteLiveSearch:
-										if maybeResolveSearchFallback(ctx, c, ls, adkClient, ttsClient, metrics, runtime, part.Text, traceID, rootAt, "live_search_no_session") {
-											continue
-										}
-										sendProcessingState(c, "text", traceID, "searching", searchingLabel(ls.getConfig().Language), searchDetail(ls.getConfig().Language), "google_search", 0, false)
-									case queryRoutePlainLive:
-										if maybeSpeakLiveUnavailableNotice(ctx, c, ls, ttsClient, metrics, "text", traceID, rootAt, "live_query_no_session") {
-											continue
-										}
-									}
-									slog.Warn("[HANDLER] clientContent received but no live session", "conn_id", c.ID, "trace_id", traceID)
-									sendTraceEvent(c, "text", traceID, "live_text_forward_failed", rootAt, "no_live_session")
-									sendProcessingState(c, "text", traceID, "response_preparing", responsePreparingLabel(ls.getConfig().Language), "", "", 0, false)
-									continue
-								}
-								slog.Info("[HANDLER] >>> forwarding clientContent to Gemini",
-									"conn_id", c.ID,
-									"trace_id", traceID,
-									"text_len", len(part.Text),
-								)
-								ls.queueTurnTrace(traceID, "text", rootAt)
-								if sendErr := sess.SendText(part.Text); sendErr != nil {
-									ls.clearPendingTurnTrace()
-									slog.Warn("[HANDLER] Gemini SendText failed", "conn_id", c.ID, "error", sendErr)
-									sendTraceEvent(c, "text", traceID, "live_text_forward_failed", rootAt, sendErr.Error())
-									switch route.Kind {
-									case queryRouteLiveSearch:
-										if maybeResolveSearchFallback(ctx, c, ls, adkClient, ttsClient, metrics, runtime, part.Text, traceID, rootAt, "live_search_forward_failed") {
-											continue
-										}
-										sendProcessingState(c, "text", traceID, "searching", searchingLabel(ls.getConfig().Language), searchDetail(ls.getConfig().Language), "google_search", 0, false)
-									case queryRoutePlainLive:
-										if maybeSpeakLiveUnavailableNotice(ctx, c, ls, ttsClient, metrics, "text", traceID, rootAt, "live_query_forward_failed") {
-											continue
-										}
-									}
-									sendProcessingState(c, "text", traceID, "response_preparing", responsePreparingLabel(ls.getConfig().Language), "", "", 0, false)
-								} else {
-									sendTraceEvent(c, "text", traceID, "live_text_forwarded", rootAt, "")
-								}
+								handleUserTextQuery(ctx, c, ls, adkClient, ttsClient, metrics, runtime, part.Text, traceID, time.Now())
 							}
 						}
 					}

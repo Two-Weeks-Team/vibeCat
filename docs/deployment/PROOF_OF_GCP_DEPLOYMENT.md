@@ -1,124 +1,39 @@
 # Proof of GCP Deployment
 
-**Project ID**: `vibecat-489105`
-**Region**: `asia-northeast3`
-**Verification Date**: 2026-03-11
+This checklist tracks the submission-grade proof package for the **UI Navigator** version of VibeCat.
 
-This file is the concise deployment-proof view for final handoff and submission packaging.
+## Required Proof
 
-See also:
+- deployed Cloud Run gateway
+- deployed Cloud Run orchestrator
+- recent logs for navigator requests
+- recent traces for navigator turns
+- monitoring/dashboard evidence
+- public repo and README
+- demo video alignment with the deployed product
 
-- `docs/evidence/DEPLOYMENT_EVIDENCE.md`
-- `docs/evidence/OPERATIONS_EVIDENCE_PACK_20260311.md`
-- `docs/evidence/artifacts/20260311/`
+## Required Screens / Artifacts
 
-## Cloud Run Services
+- Cloud Run service details for `realtime-gateway`
+- Cloud Run service details for `adk-orchestrator`
+- log entry showing navigator command handling
+- trace view showing navigator turn classification and execution events
+- monitoring dashboard with runtime health
+- repository README showing UI Navigator framing
 
-### Realtime Gateway
+## Narrative Requirements
 
-- service: `realtime-gateway`
-- ready revision: `realtime-gateway-00040-gcd`
-- URL: `https://realtime-gateway-a4akw2crra-du.a.run.app`
-- legacy alias: `https://realtime-gateway-163070481841.asia-northeast3.run.app`
-- traffic: `100%`
-- access: public
-- health:
-  - `GET /health` -> `200 {"connections":0,"service":"realtime-gateway","status":"ok"}`
-  - `GET /readyz` -> `200 {"service":"realtime-gateway","status":"ok"}`
+The proof package must match the submission story:
 
-### ADK Orchestrator
+- category: UI Navigator
+- product type: desktop UI navigator
+- hero surfaces: Antigravity IDE, Terminal, Chrome
+- interaction contract: acts when intent is clear, asks when it is not
 
-- service: `adk-orchestrator`
-- ready revision: `adk-orchestrator-00038-t4c`
-- URL: `https://adk-orchestrator-a4akw2crra-du.a.run.app`
-- legacy alias: `https://adk-orchestrator-163070481841.asia-northeast3.run.app`
-- traffic: `100%`
-- access: authenticated invocation required
-- health:
-  - anonymous `GET /health` -> `403 Forbidden`
-  - authenticated `GET /health` with identity token -> `{"service":"adk-orchestrator","status":"ok"}`
+## Completion Standard
 
-## Supporting GCP Resources
+This proof document is complete only when:
 
-### Firestore
-
-- database: `(default)`
-- type: `FIRESTORE_NATIVE`
-- location: `asia-northeast3`
-
-### Secret Manager
-
-- `vibecat-gemini-api-key`
-- `vibecat-gateway-auth-secret`
-
-Both are user-managed and replicated in `asia-northeast3`.
-
-### Artifact Registry
-
-- repository: `vibecat-images`
-- path: `asia-northeast3-docker.pkg.dev/vibecat-489105/vibecat-images`
-- format: `DOCKER`
-
-## Observability Proof
-
-### Cloud Logging
-
-Recent Cloud Run logs were observed from both services on 2026-03-11.
-
-### Cloud Trace
-
-Recent trace IDs observed on 2026-03-11:
-
-```text
-007dec0efd190738d0b27d8df33ca788
-00c2bb5cb274501fbd3a0b8edb7de5e4
-028b73af0956f4bd59081485878a5a33
-```
-
-### Cloud Monitoring
-
-- OpenTelemetry metric exporter is wired in code
-- dashboard configured: `VibeCat Operations Overview`
-- dashboard resource: `projects/163070481841/dashboards/752c1986-5674-4963-a967-6f3595902be2`
-- repo definition: `infra/monitoring/vibecat-operations-dashboard.yaml`
-- repo apply script: `infra/configure_observability.sh`
-- custom-metrics dashboard configured: `VibeCat Runtime Overview`
-- custom-metrics dashboard resource: `projects/163070481841/dashboards/0425463d-47b5-4235-a2e9-f7c9002ba2f6`
-- custom-metrics repo definition: `infra/observability/vibecat-runtime-dashboard.json`
-- custom-metrics apply script: `infra/observability/sync_dashboard.sh`
-
-Live dashboard exports are stored at:
-
-- `docs/evidence/artifacts/20260311/monitoring-dashboard-vibecat-operations-overview.json`
-- `docs/evidence/artifacts/20260311/monitoring-dashboard-vibecat-runtime-overview.json`
-
-## CI/CD Proof
-
-### CI
-
-- latest fully green CI run: `22932978716` on commit `ac5e4bf`
-- latest `master` CI run: `22933714954` on commit `7356f8c`
-
-Current `master` CI results:
-
-- Gateway Go job: pass
-- Orchestrator Go job: pass
-- Docker build job: pass
-- Swift macOS job: fail due self-hosted runner Xcode license state
-
-### CD
-
-- GitHub manual deployment workflow exists at `.github/workflows/cd.yml`
-- Cloud Build YAML exists for both backend services
-- Cloud Build triggers are not configured in GCP
-
-## Submission Notes
-
-For final submission packaging, the code and live deployment are already in place. What still needs to be attached manually, if required by the submission surface, is screenshot-grade evidence from:
-
-- Cloud Run service detail pages
-- Firestore database page
-- Cloud Logging viewer
-- Cloud Trace explorer after deploying the updated backend revisions from this branch
-
-Do not rely on older screenshot placeholders; verify them against the current `00040` and `00038` revisions.
+1. every screenshot or recording uses the UI Navigator framing
+2. at least one navigator step is visible in logs or trace evidence
+3. URLs, service names, and revision identifiers match the current deployment

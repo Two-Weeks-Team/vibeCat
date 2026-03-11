@@ -117,6 +117,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private var musicItem: NSMenuItem?
     private var searchItem: NSMenuItem?
     private var proactiveItem: NSMenuItem?
+    private var navigatorModeItem: NSMenuItem?
     private var manualAnalysisItem: NSMenuItem?
     private var pauseItem: NSMenuItem?
     private var muteItem: NSMenuItem?
@@ -145,6 +146,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     var onMusicToggled: ((Bool) -> Void)?
     var onSearchToggled: (() -> Void)?
     var onProactiveAudioToggled: (() -> Void)?
+    var onNavigatorModeToggled: ((Bool) -> Void)?
     var onManualAnalysisToggled: ((Bool) -> Void)?
     var onLanguageChanged: (() -> Void)?
 
@@ -379,6 +381,12 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         advancedMenu.addItem(createdProactiveItem)
         proactiveItem = createdProactiveItem
 
+        let createdNavigatorModeItem = NSMenuItem(title: VibeCatL10n.menuNavigatorMode(), action: #selector(toggleNavigatorMode(_:)), keyEquivalent: "")
+        createdNavigatorModeItem.target = self
+        createdNavigatorModeItem.state = AppSettings.shared.navigatorModeEnabled ? .on : .off
+        advancedMenu.addItem(createdNavigatorModeItem)
+        navigatorModeItem = createdNavigatorModeItem
+
         let createdManualAnalysisItem = NSMenuItem(title: VibeCatL10n.menuManualAnalysisOnly(), action: #selector(toggleManualAnalysisOnly(_:)), keyEquivalent: "")
         createdManualAnalysisItem.target = self
         createdManualAnalysisItem.state = AppSettings.shared.manualAnalysisOnly ? .on : .off
@@ -534,6 +542,13 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         onProactiveAudioToggled?()
     }
 
+    @objc private func toggleNavigatorMode(_ sender: NSMenuItem) {
+        AppSettings.shared.navigatorModeEnabled.toggle()
+        sender.state = AppSettings.shared.navigatorModeEnabled ? .on : .off
+        onNavigatorModeToggled?(AppSettings.shared.navigatorModeEnabled)
+        updateCaptureIndicator(isPaused: isPausedState, isManualOnly: AppSettings.shared.manualAnalysisOnly)
+    }
+
     @objc private func toggleManualAnalysisOnly(_ sender: NSMenuItem) {
         AppSettings.shared.manualAnalysisOnly.toggle()
         sender.state = AppSettings.shared.manualAnalysisOnly ? .on : .off
@@ -625,6 +640,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         musicItem?.state = AppSettings.shared.musicEnabled ? .on : .off
         searchItem?.state = AppSettings.shared.searchEnabled ? .on : .off
         proactiveItem?.state = AppSettings.shared.proactiveAudio ? .on : .off
+        navigatorModeItem?.state = AppSettings.shared.navigatorModeEnabled ? .on : .off
         manualAnalysisItem?.state = AppSettings.shared.manualAnalysisOnly ? .on : .off
     }
 
@@ -697,7 +713,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         case .active:
             return VibeCatL10n.captureIndicatorLive()
         case .manual:
-            return VibeCatL10n.captureIndicatorManual()
+            return AppSettings.shared.navigatorModeEnabled ? VibeCatL10n.captureIndicatorNavigator() : VibeCatL10n.captureIndicatorManual()
         case .paused:
             return VibeCatL10n.captureIndicatorPaused()
         }
@@ -707,7 +723,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         if isPausedState {
             return .paused
         }
-        if AppSettings.shared.manualAnalysisOnly {
+        if AppSettings.shared.navigatorModeEnabled || AppSettings.shared.manualAnalysisOnly {
             return .manual
         }
         return .active

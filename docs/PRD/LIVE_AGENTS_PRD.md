@@ -1,5 +1,7 @@
 # VibeCat Live Agents PRD
 
+> Historical note (2026-03-11): this document is preserved for auditability. It is **not** the current submission PRD. The current submission truth is `docs/PRD/UI_NAVIGATOR_PRD.md`.
+
 Version: 2.0  
 Date: 2026-03-03  
 Track: Gemini Live Agent Challenge - Live Agents

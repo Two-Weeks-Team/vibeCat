@@ -1,0 +1,124 @@
+import Foundation
+
+public enum NavigatorIntentClass: String, Sendable, Codable {
+    case executeNow = "execute_now"
+    case openOrNavigate = "open_or_navigate"
+    case findOrLookup = "find_or_lookup"
+    case analyzeOnly = "analyze_only"
+    case ambiguous
+}
+
+public enum NavigatorActionType: String, Sendable, Codable {
+    case focusApp = "focus_app"
+    case openURL = "open_url"
+    case hotkey
+    case pasteText = "paste_text"
+    case copySelection = "copy_selection"
+    case pressAX = "press_ax"
+    case waitFor = "wait_for"
+}
+
+public struct NavigatorTargetDescriptor: Sendable, Codable, Equatable {
+    public let role: String?
+    public let label: String?
+    public let windowTitle: String?
+    public let appName: String?
+    public let relativeAnchor: String?
+    public let regionHint: String?
+
+    public init(
+        role: String? = nil,
+        label: String? = nil,
+        windowTitle: String? = nil,
+        appName: String? = nil,
+        relativeAnchor: String? = nil,
+        regionHint: String? = nil
+    ) {
+        self.role = role
+        self.label = label
+        self.windowTitle = windowTitle
+        self.appName = appName
+        self.relativeAnchor = relativeAnchor
+        self.regionHint = regionHint
+    }
+}
+
+public struct NavigatorStep: Sendable, Codable, Equatable, Identifiable {
+    public let id: String
+    public let actionType: NavigatorActionType
+    public let targetApp: String
+    public let targetDescriptor: NavigatorTargetDescriptor
+    public let inputText: String?
+    public let expectedOutcome: String
+    public let confidence: Double
+    public let intentConfidence: Double
+    public let riskLevel: String
+    public let executionPolicy: String
+    public let fallbackPolicy: String
+    public let url: String?
+    public let hotkey: [String]
+    public let verifyHint: String?
+
+    public init(
+        id: String,
+        actionType: NavigatorActionType,
+        targetApp: String,
+        targetDescriptor: NavigatorTargetDescriptor = .init(),
+        inputText: String? = nil,
+        expectedOutcome: String,
+        confidence: Double,
+        intentConfidence: Double,
+        riskLevel: String,
+        executionPolicy: String,
+        fallbackPolicy: String,
+        url: String? = nil,
+        hotkey: [String] = [],
+        verifyHint: String? = nil
+    ) {
+        self.id = id
+        self.actionType = actionType
+        self.targetApp = targetApp
+        self.targetDescriptor = targetDescriptor
+        self.inputText = inputText
+        self.expectedOutcome = expectedOutcome
+        self.confidence = confidence
+        self.intentConfidence = intentConfidence
+        self.riskLevel = riskLevel
+        self.executionPolicy = executionPolicy
+        self.fallbackPolicy = fallbackPolicy
+        self.url = url
+        self.hotkey = hotkey
+        self.verifyHint = verifyHint
+    }
+}
+
+public struct NavigatorContextPayload: Sendable, Codable, Equatable {
+    public let appName: String
+    public let bundleId: String
+    public let windowTitle: String
+    public let focusedRole: String
+    public let focusedLabel: String
+    public let selectedText: String
+    public let axSnapshot: String
+    public let accessibilityTrusted: Bool
+
+    public init(
+        appName: String,
+        bundleId: String,
+        windowTitle: String,
+        focusedRole: String,
+        focusedLabel: String,
+        selectedText: String,
+        axSnapshot: String,
+        accessibilityTrusted: Bool
+    ) {
+        self.appName = appName
+        self.bundleId = bundleId
+        self.windowTitle = windowTitle
+        self.focusedRole = focusedRole
+        self.focusedLabel = focusedLabel
+        self.selectedText = selectedText
+        self.axSnapshot = axSnapshot
+        self.accessibilityTrusted = accessibilityTrusted
+    }
+}

@@ -7,7 +7,7 @@ final class CatPanel: NSPanel {
         static let cornerRadius: CGFloat = 11
         static let horizontalPadding: CGFloat = 30
         static let verticalPadding: CGFloat = 14
-        static let sideSpacing: CGFloat = 12
+        static let sideSpacing: CGFloat = 4
         static let minimumInset: CGFloat = 8
         static let titleLeading: CGFloat = 24
         static let titleTopInset: CGFloat = 6
@@ -35,6 +35,7 @@ final class CatPanel: NSPanel {
     private weak var screenAnalyzer: ScreenAnalyzer?
     private var smartHideTimer: Timer?
     private var hideCountdownTimer: Timer?
+    private var privacyBadgeHideTimer: Timer?
     private var bubbleDuration: TimeInterval = 2.0
     private var currentBubbleText: String?
     private var currentBubbleMeta: String?
@@ -42,6 +43,7 @@ final class CatPanel: NSPanel {
     private var turnActive = false
     private var bubbleShownAt: Date?
     private let maxBubbleDisplayTime: TimeInterval = 15.0
+    private let privacyBadgeDisplayTime: TimeInterval = 3.0
 
     var traceLogContextProvider: (() -> String?)?
     var onBubbleDidHide: (() -> Void)?
@@ -95,6 +97,8 @@ final class CatPanel: NSPanel {
         privacyBadgeView.layer?.cornerRadius = PrivacyBadgeLayout.cornerRadius
         privacyBadgeView.layer?.masksToBounds = true
         privacyBadgeView.layer?.backgroundColor = NSColor.black.withAlphaComponent(PrivacyBadgeLayout.badgeBackgroundOpacity).cgColor
+        privacyBadgeView.alphaValue = 0
+        privacyBadgeView.isHidden = true
         contentView.addSubview(privacyBadgeView)
 
         privacyDotView.wantsLayer = true
@@ -346,7 +350,7 @@ final class CatPanel: NSPanel {
         privacyTitleLabel.stringValue = title
         privacyDetailLabel.stringValue = detail
         privacyDotView.layer?.backgroundColor = accentColor.cgColor
-        layoutPrivacyBadge()
+        showPrivacyBadgeTemporarily()
     }
 
     func beginCharacterTransition() {
@@ -397,7 +401,9 @@ final class CatPanel: NSPanel {
         let catFrame = imageView.frame
         emotionIndicator.frame.origin = NSPoint(x: catFrame.maxX - 4, y: catFrame.maxY - 4)
         layoutSpinner()
-        layoutPrivacyBadge()
+        if !privacyBadgeView.isHidden || privacyBadgeView.alphaValue > 0 {
+            layoutPrivacyBadge()
+        }
         if currentBubbleText != nil {
             updateBubbleFrame()
         }
@@ -445,6 +451,42 @@ final class CatPanel: NSPanel {
             width: badgeWidth - PrivacyBadgeLayout.detailHorizontalPadding,
             height: detailSize.height
         )
+    }
+
+    private func showPrivacyBadgeTemporarily() {
+        privacyBadgeHideTimer?.invalidate()
+        privacyBadgeHideTimer = nil
+        layoutPrivacyBadge()
+
+        if privacyBadgeView.isHidden || privacyBadgeView.alphaValue == 0 {
+            privacyBadgeView.isHidden = false
+            privacyBadgeView.alphaValue = 0
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.16
+                self.privacyBadgeView.animator().alphaValue = 1
+            }
+        }
+
+        privacyBadgeHideTimer = Timer.scheduledTimer(withTimeInterval: privacyBadgeDisplayTime, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.hidePrivacyBadge()
+            }
+        }
+    }
+
+    private func hidePrivacyBadge() {
+        privacyBadgeHideTimer?.invalidate()
+        privacyBadgeHideTimer = nil
+        guard !privacyBadgeView.isHidden else { return }
+
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.22
+            self.privacyBadgeView.animator().alphaValue = 0
+        }, completionHandler: { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.privacyBadgeView.isHidden = true
+            }
+        })
     }
 
     private func updateBubbleFrame() {

@@ -112,7 +112,7 @@ final class ScreenAnalyzer {
     private let initialStabilizationDelay: UInt64 = 10_000_000_000
 
     private var automaticCaptureEnabled: Bool {
-        !AppSettings.shared.manualAnalysisOnly
+        !AppSettings.shared.navigatorModeEnabled && !AppSettings.shared.manualAnalysisOnly
     }
 
     private func refreshCapturePolicy() {

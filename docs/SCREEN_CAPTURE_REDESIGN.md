@@ -1,5 +1,7 @@
 # VibeCat Screen Capture Pipeline Redesign
 
+> Historical note (2026-03-11): this redesign document describes the earlier proactive companion pipeline. The current submission path is the command-driven UI Navigator flow.
+
 **Date**: 2026-03-09
 **Status**: Analysis Complete, Pre-Implementation Testing Phase
 **Author**: Sisyphus (claude-opus-4-6)

@@ -19,6 +19,15 @@ public enum ServerMessage: Sendable {
     case ttsStart(text: String?)
     case ttsEnd
     case pong
+    case navigatorCommandAccepted(command: String, intentClass: NavigatorIntentClass, intentConfidence: Double)
+    case navigatorIntentClarificationNeeded(command: String, question: String)
+    case navigatorStepPlanned(step: NavigatorStep, message: String)
+    case navigatorStepRunning(stepId: String, status: String)
+    case navigatorStepVerified(stepId: String, status: String, observedOutcome: String)
+    case navigatorRiskyActionBlocked(command: String, question: String, reason: String)
+    case navigatorGuidedMode(reason: String, instruction: String)
+    case navigatorCompleted(summary: String)
+    case navigatorFailed(reason: String)
     case error(code: String, message: String)
     case unknown
 }
@@ -124,6 +133,47 @@ public enum AudioMessageParser {
             return .ttsEnd
         case "pong":
             return .pong
+        case "navigator.commandAccepted":
+            let command = json["command"] as? String ?? ""
+            let rawIntent = json["intentClass"] as? String ?? NavigatorIntentClass.ambiguous.rawValue
+            let intent = NavigatorIntentClass(rawValue: rawIntent) ?? .ambiguous
+            let confidence = json["intentConfidence"] as? Double ?? 0
+            return .navigatorCommandAccepted(command: command, intentClass: intent, intentConfidence: confidence)
+        case "navigator.intentClarificationNeeded":
+            let command = json["command"] as? String ?? ""
+            let question = json["question"] as? String ?? ""
+            return .navigatorIntentClarificationNeeded(command: command, question: question)
+        case "navigator.stepPlanned":
+            let message = json["message"] as? String ?? ""
+            guard let stepJSON = json["step"] as? [String: Any],
+                  let step = parseNavigatorStep(stepJSON) else {
+                return .unknown
+            }
+            return .navigatorStepPlanned(step: step, message: message)
+        case "navigator.stepRunning":
+            let stepId = json["stepId"] as? String ?? ""
+            let status = json["status"] as? String ?? ""
+            return .navigatorStepRunning(stepId: stepId, status: status)
+        case "navigator.stepVerified":
+            let stepId = json["stepId"] as? String ?? ""
+            let status = json["status"] as? String ?? ""
+            let observedOutcome = json["observedOutcome"] as? String ?? ""
+            return .navigatorStepVerified(stepId: stepId, status: status, observedOutcome: observedOutcome)
+        case "navigator.riskyActionBlocked":
+            let command = json["command"] as? String ?? ""
+            let question = json["question"] as? String ?? ""
+            let reason = json["reason"] as? String ?? ""
+            return .navigatorRiskyActionBlocked(command: command, question: question, reason: reason)
+        case "navigator.guidedMode":
+            let reason = json["reason"] as? String ?? ""
+            let instruction = json["instruction"] as? String ?? ""
+            return .navigatorGuidedMode(reason: reason, instruction: instruction)
+        case "navigator.completed":
+            let summary = json["summary"] as? String ?? ""
+            return .navigatorCompleted(summary: summary)
+        case "navigator.failed":
+            let reason = json["reason"] as? String ?? ""
+            return .navigatorFailed(reason: reason)
         case "error":
             let code = json["code"] as? String ?? "UNKNOWN"
             let message = json["message"] as? String ?? ""
@@ -131,5 +181,43 @@ public enum AudioMessageParser {
         default:
             return .unknown
         }
+    }
+
+    private static func parseNavigatorStep(_ json: [String: Any]) -> NavigatorStep? {
+        guard let id = json["id"] as? String,
+              let rawActionType = json["actionType"] as? String,
+              let actionType = NavigatorActionType(rawValue: rawActionType),
+              let targetApp = json["targetApp"] as? String,
+              let expectedOutcome = json["expectedOutcome"] as? String else {
+            return nil
+        }
+
+        let descriptorJSON = json["targetDescriptor"] as? [String: Any] ?? [:]
+        let targetDescriptor = NavigatorTargetDescriptor(
+            role: descriptorJSON["role"] as? String,
+            label: descriptorJSON["label"] as? String,
+            windowTitle: descriptorJSON["windowTitle"] as? String,
+            appName: descriptorJSON["appName"] as? String,
+            relativeAnchor: descriptorJSON["relativeAnchor"] as? String,
+            regionHint: descriptorJSON["regionHint"] as? String
+        )
+
+        let hotkey = json["hotkey"] as? [String] ?? []
+        return NavigatorStep(
+            id: id,
+            actionType: actionType,
+            targetApp: targetApp,
+            targetDescriptor: targetDescriptor,
+            inputText: json["inputText"] as? String,
+            expectedOutcome: expectedOutcome,
+            confidence: json["confidence"] as? Double ?? 0,
+            intentConfidence: json["intentConfidence"] as? Double ?? 0,
+            riskLevel: json["riskLevel"] as? String ?? "low",
+            executionPolicy: json["executionPolicy"] as? String ?? "safe_immediate",
+            fallbackPolicy: json["fallbackPolicy"] as? String ?? "guided_mode",
+            url: json["url"] as? String,
+            hotkey: hotkey,
+            verifyHint: json["verifyHint"] as? String
+        )
     }
 }

@@ -219,6 +219,10 @@ public enum VibeCatL10n {
         pick(currentLanguage(language), ko: "수동 분석만", en: "Manual Analyze Only", ja: "手動分析のみ")
     }
 
+    public static func menuNavigatorMode(language: String? = nil) -> String {
+        pick(currentLanguage(language), ko: "Navigator 모드", en: "Navigator Mode", ja: "Navigator モード")
+    }
+
     public static func menuAnalyzeNow(language: String? = nil) -> String {
         pick(currentLanguage(language), ko: "지금 분석", en: "Analyze Now", ja: "今すぐ分析")
     }
@@ -410,6 +414,10 @@ public enum VibeCatL10n {
 
     public static func captureIndicatorLive(language: String? = nil) -> String {
         pick(currentLanguage(language), ko: "화면 캡처 켜짐", en: "Screen Capture On", ja: "画面キャプチャ ON")
+    }
+
+    public static func captureIndicatorNavigator(language: String? = nil) -> String {
+        pick(currentLanguage(language), ko: "Navigator 모드", en: "Navigator Mode", ja: "Navigator モード")
     }
 
     public static func captureIndicatorManual(language: String? = nil) -> String {
@@ -608,10 +616,65 @@ public enum VibeCatL10n {
     }
 
     public static func companionInputPlaceholder(language: String? = nil) -> String {
-        pick(currentLanguage(language), ko: "메시지를 입력하고 Return을 누르세요", en: "Type a message and press Return", ja: "メッセージを入力して Return を押してください")
+        pick(currentLanguage(language), ko: "무엇을 대신 할지 입력하고 Return을 누르세요", en: "Type what VibeCat should do and press Return", ja: "VibeCat にしてほしいことを入力して Return を押してください")
     }
 
     public static func companionListeningPrefix(language: String? = nil) -> String {
         pick(currentLanguage(language), ko: "듣는 중: ", en: "Listening: ", ja: "聞き取り中: ")
+    }
+
+    public static func navigatorActingTitle(language: String? = nil) -> String {
+        pick(currentLanguage(language), ko: "지금 진행 중...", en: "Acting now...", ja: "今実行中...")
+    }
+
+    public static func navigatorClarifyingTitle(language: String? = nil) -> String {
+        pick(currentLanguage(language), ko: "확인 필요...", en: "Need a quick clarification...", ja: "確認が必要です...")
+    }
+
+    public static func navigatorConfirmTitle(language: String? = nil) -> String {
+        pick(currentLanguage(language), ko: "확인 후 진행...", en: "Waiting for confirmation...", ja: "確認を待っています...")
+    }
+
+    public static func navigatorGuidedModeTitle(language: String? = nil) -> String {
+        pick(currentLanguage(language), ko: "안내 모드로 전환...", en: "Switching to guided mode...", ja: "ガイドモードへ切り替え...")
+    }
+
+    public static func navigatorDoneTitle(language: String? = nil) -> String {
+        pick(currentLanguage(language), ko: "완료됨", en: "Done", ja: "完了")
+    }
+
+    public static func navigatorFailedTitle(language: String? = nil) -> String {
+        pick(currentLanguage(language), ko: "실행 실패", en: "Action failed", ja: "実行失敗")
+    }
+
+    public static func navigatorVerifyingTitle(language: String? = nil) -> String {
+        pick(currentLanguage(language), ko: "결과 확인 중...", en: "Verifying result...", ja: "結果を確認中...")
+    }
+
+    public static func navigatorAccepted(intent: NavigatorIntentClass, confidence: Double, language: String? = nil) -> String {
+        let lang = currentLanguage(language)
+        let percent = Int((confidence * 100).rounded())
+        switch (lang, intent) {
+        case (.ko, .executeNow):
+            return "바로 진행할게. 의도 확신도 \(percent)%."
+        case (.ko, .openOrNavigate):
+            return "원하는 위치로 바로 이동해볼게. 의도 확신도 \(percent)%."
+        case (.ko, .findOrLookup):
+            return "찾아보면서 바로 움직일게. 의도 확신도 \(percent)%."
+        case (.ja, .executeNow):
+            return "今すぐ進めます。意図の確信度は \(percent)% です。"
+        case (.ja, .openOrNavigate):
+            return "その場所へ移動します。意図の確信度は \(percent)% です。"
+        case (.ja, .findOrLookup):
+            return "調べながら進めます。意図の確信度は \(percent)% です。"
+        case (.en, .executeNow):
+            return "I can do that now. Intent confidence is \(percent)%."
+        case (.en, .openOrNavigate):
+            return "I can navigate there now. Intent confidence is \(percent)%."
+        case (.en, .findOrLookup):
+            return "I can look that up and move there now. Intent confidence is \(percent)%."
+        default:
+            return pick(lang, ko: "진행 방향을 잡았어.", en: "I have the next step.", ja: "次の一手が見えました。")
+        }
     }
 }

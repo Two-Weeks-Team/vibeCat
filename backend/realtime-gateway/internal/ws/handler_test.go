@@ -12,8 +12,8 @@ import (
 
 	"github.com/gorilla/websocket"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/trace"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/genai"
 	"vibecat/realtime-gateway/internal/adk"
 	"vibecat/realtime-gateway/internal/live"
@@ -97,6 +97,16 @@ func TestBuildSearchPromptIncludesQueryAndSummary(t *testing.T) {
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q\n%s", want, prompt)
+		}
+	}
+}
+
+func TestProactiveContextHintTextUsesWindowAndAppGuidance(t *testing.T) {
+	got := proactiveContextHintText("ko", "[app=Xcode target=frontmost_window bundle=com.apple.dt.Xcode window=AuthServiceTests.swift]")
+
+	for _, want := range []string{"Xcode", "테스트"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("proactiveContextHintText() missing %q: %s", want, got)
 		}
 	}
 }
@@ -294,6 +304,121 @@ func TestHandlerScreenCaptureTimeoutReturnsSilentFallbackQuickly(t *testing.T) {
 	if elapsed := inactiveAt.Sub(start); elapsed >= 5*time.Second {
 		t.Fatalf("silent fallback completed in %v, want < 5s", elapsed)
 	}
+}
+
+func TestHandlerForceCaptureSpeaksContextHintBeforeAnalyzeCompletes(t *testing.T) {
+	originalDelay := proactiveContextHintDelay
+	proactiveContextHintDelay = 20 * time.Millisecond
+	t.Cleanup(func() {
+		proactiveContextHintDelay = originalDelay
+	})
+
+	reg := NewRegistry()
+	analyzeStarted := make(chan struct{}, 1)
+	hintTextCh := make(chan string, 1)
+	audioCh := make(chan struct{}, 1)
+	fakeADK := &stubADK{
+		analyzeFn: func(ctx context.Context, req adk.AnalysisRequest) (*adk.AnalysisResult, error) {
+			analyzeStarted <- struct{}{}
+			select {
+			case <-time.After(200 * time.Millisecond):
+				return &adk.AnalysisResult{
+					Vision: &adk.VisionAnalysis{Content: "AuthServiceTests.swift in Xcode"},
+				}, nil
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		},
+	}
+	fakeTTS := &stubTTS{
+		streamSpeakFn: func(ctx context.Context, cfg tts.Config, sink tts.AudioSink) error {
+			select {
+			case hintTextCh <- cfg.Text:
+			default:
+			}
+			if err := sink([]byte{0x01, 0x02, 0x03}); err != nil {
+				return err
+			}
+			select {
+			case audioCh <- struct{}{}:
+			default:
+			}
+			return nil
+		},
+	}
+
+	server := httptest.NewServer(Handler(reg, nil, fakeADK, fakeTTS, nil))
+	defer server.Close()
+
+	conn := dialTestWebSocket(t, server.URL)
+	defer conn.Close()
+
+	if err := conn.WriteJSON(map[string]any{
+		"type": "setup",
+		"config": map[string]any{
+			"voice":          "Zephyr",
+			"language":       "ko",
+			"proactiveAudio": true,
+		},
+	}); err != nil {
+		t.Fatalf("send setup: %v", err)
+	}
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("set setup read deadline: %v", err)
+	}
+	if _, payload, err := conn.ReadMessage(); err != nil {
+		t.Fatalf("read setupComplete: %v", err)
+	} else {
+		var msg map[string]any
+		if err := json.Unmarshal(payload, &msg); err != nil || msg["type"] != "setupComplete" {
+			t.Fatalf("expected setupComplete, got %s", payload)
+		}
+	}
+
+	if err := conn.WriteJSON(map[string]any{
+		"type":            "forceCapture",
+		"image":           "ZmFrZV9pbWFnZQ==",
+		"context":         "[app=Xcode target=frontmost_window bundle=com.apple.dt.Xcode window=AuthServiceTests.swift]",
+		"sessionId":       "session-force",
+		"userId":          "user-force",
+		"character":       "cat",
+		"activityMinutes": 7,
+	}); err != nil {
+		t.Fatalf("send forceCapture: %v", err)
+	}
+
+	select {
+	case <-analyzeStarted:
+	case <-time.After(time.Second):
+		t.Fatal("analyze did not start")
+	}
+
+	drainDone := make(chan struct{})
+	go func() {
+		defer close(drainDone)
+		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}()
+
+	var hintText string
+	select {
+	case hintText = <-hintTextCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("did not observe proactive context hint before analyze completion")
+	}
+	if !strings.Contains(hintText, "Xcode") {
+		t.Fatalf("hint text = %q, want Xcode-specific guidance", hintText)
+	}
+	select {
+	case <-audioCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("did not observe context hint audio chunk")
+	}
+	<-drainDone
 }
 
 func TestHandlerLiveSearchFallbackSpeaksViaTTSWithoutLiveSession(t *testing.T) {

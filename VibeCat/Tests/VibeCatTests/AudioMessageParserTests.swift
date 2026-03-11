@@ -151,6 +151,90 @@ final class AudioMessageParserTests: XCTestCase {
         XCTAssertEqual(timeLeftMs, 1500)
     }
 
+    func testParseNavigatorCommandAccepted() throws {
+        let payload = try makeJSON([
+            "type": "navigator.commandAccepted",
+            "command": "take me to the docs",
+            "intentClass": "find_or_lookup",
+            "intentConfidence": 0.87
+        ])
+
+        let message = AudioMessageParser.parse(payload)
+        guard case .navigatorCommandAccepted(let command, let intentClass, let confidence) = message else {
+            XCTFail("Expected .navigatorCommandAccepted")
+            return
+        }
+        XCTAssertEqual(command, "take me to the docs")
+        XCTAssertEqual(intentClass, .findOrLookup)
+        XCTAssertEqual(confidence, 0.87, accuracy: 0.0001)
+    }
+
+    func testParseNavigatorStepPlanned() throws {
+        let payload = try makeJSON([
+            "type": "navigator.stepPlanned",
+            "message": "I can open the relevant docs now.",
+            "step": [
+                "id": "open_docs_search",
+                "actionType": "open_url",
+                "targetApp": "Chrome",
+                "targetDescriptor": [
+                    "appName": "Chrome",
+                    "windowTitle": "AuthServiceTests"
+                ],
+                "expectedOutcome": "Chrome opens the relevant official docs search",
+                "confidence": 0.91,
+                "intentConfidence": 0.88,
+                "riskLevel": "low",
+                "executionPolicy": "safe_immediate",
+                "fallbackPolicy": "guided_mode",
+                "url": "https://www.google.com/search?q=auth",
+                "verifyHint": "google"
+            ]
+        ])
+
+        let message = AudioMessageParser.parse(payload)
+        guard case .navigatorStepPlanned(let step, let messageText) = message else {
+            XCTFail("Expected .navigatorStepPlanned")
+            return
+        }
+        XCTAssertEqual(messageText, "I can open the relevant docs now.")
+        XCTAssertEqual(step.id, "open_docs_search")
+        XCTAssertEqual(step.actionType, .openURL)
+        XCTAssertEqual(step.targetApp, "Chrome")
+        XCTAssertEqual(step.targetDescriptor.appName, "Chrome")
+        XCTAssertEqual(step.targetDescriptor.windowTitle, "AuthServiceTests")
+        XCTAssertEqual(step.url, "https://www.google.com/search?q=auth")
+        XCTAssertEqual(step.verifyHint, "google")
+    }
+
+    func testParseNavigatorRiskBlockAndCompletion() throws {
+        let riskPayload = try makeJSON([
+            "type": "navigator.riskyActionBlocked",
+            "command": "git push",
+            "question": "Do you want me to proceed?",
+            "reason": "blocked as a risky action"
+        ])
+        let riskMessage = AudioMessageParser.parse(riskPayload)
+        guard case .navigatorRiskyActionBlocked(let command, let question, let reason) = riskMessage else {
+            XCTFail("Expected .navigatorRiskyActionBlocked")
+            return
+        }
+        XCTAssertEqual(command, "git push")
+        XCTAssertEqual(question, "Do you want me to proceed?")
+        XCTAssertEqual(reason, "blocked as a risky action")
+
+        let completedPayload = try makeJSON([
+            "type": "navigator.completed",
+            "summary": "Chrome opened the official docs and Antigravity is frontmost again."
+        ])
+        let completedMessage = AudioMessageParser.parse(completedPayload)
+        guard case .navigatorCompleted(let summary) = completedMessage else {
+            XCTFail("Expected .navigatorCompleted")
+            return
+        }
+        XCTAssertTrue(summary.contains("Chrome opened"))
+    }
+
     func testParseUnknownTypeReturnsUnknown() throws {
         let payload = try makeJSON(["type": "somethingElse"])
         let message = AudioMessageParser.parse(payload)

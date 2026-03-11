@@ -175,6 +175,60 @@ final class GatewayClient {
         sendJSON(payload)
     }
 
+    func sendNavigatorCommand(_ command: String, context: NavigatorContextPayload) {
+        guard case .connected = state else { return }
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let traceID = "nav_" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+        guard let contextObject = encodableJSONObject(context) as? [String: Any] else { return }
+        sendJSON([
+            "type": "navigator.command",
+            "traceId": traceID,
+            "command": trimmed,
+            "context": contextObject
+        ])
+    }
+
+    func sendNavigatorClarificationResponse(originalCommand: String, answer: String, context: NavigatorContextPayload) {
+        guard case .connected = state else { return }
+        let trimmed = answer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard let contextObject = encodableJSONObject(context) as? [String: Any] else { return }
+        sendJSON([
+            "type": "navigator.confirmAmbiguousIntent",
+            "command": originalCommand,
+            "answer": trimmed,
+            "context": contextObject
+        ])
+    }
+
+    func sendNavigatorRiskConfirmation(originalCommand: String, answer: String, context: NavigatorContextPayload) {
+        guard case .connected = state else { return }
+        let trimmed = answer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard let contextObject = encodableJSONObject(context) as? [String: Any] else { return }
+        sendJSON([
+            "type": "navigator.confirmRiskyAction",
+            "command": originalCommand,
+            "answer": trimmed,
+            "context": contextObject
+        ])
+    }
+
+    func sendNavigatorRefresh(command: String, step: NavigatorStep, status: String, observedOutcome: String, context: NavigatorContextPayload) {
+        guard case .connected = state else { return }
+        guard let contextObject = encodableJSONObject(context) as? [String: Any],
+              let stepObject = encodableJSONObject(step) as? [String: Any] else { return }
+        sendJSON([
+            "type": "navigator.refreshContext",
+            "command": command,
+            "step": stepObject,
+            "status": status,
+            "observedOutcome": observedOutcome,
+            "context": contextObject
+        ])
+    }
+
     func sendBargeIn() {
         guard case .connected = state else { return }
         NSLog("[GW-OUT] sendBargeIn")
@@ -335,7 +389,7 @@ final class GatewayClient {
             "language": settings.language,
             "liveModel": settings.liveModel,
             "chattiness": settings.chattiness,
-            "proactiveAudio": settings.proactiveAudio,
+            "proactiveAudio": settings.navigatorModeEnabled ? false : settings.proactiveAudio,
             "searchEnabled": settings.searchEnabled,
             "affectiveDialog": true,
             "deviceId": Self.deviceIdentifier()
@@ -362,6 +416,11 @@ final class GatewayClient {
         let preview = String(text.prefix(100))
         NSLog("[GW-OUT] sendJSON: type=%@, preview=%@", type, preview)
         webSocketTask?.send(.string(text)) { _ in }
+    }
+
+    private func encodableJSONObject<T: Encodable>(_ value: T) -> Any? {
+        guard let data = try? JSONEncoder().encode(value) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data)
     }
 
     func applySessionHandleUpdate(_ handle: String) {

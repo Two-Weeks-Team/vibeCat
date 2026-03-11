@@ -1,6 +1,12 @@
-# VibeCat Operations Evidence Pack (2026-03-11)
+# VibeCat UI Navigator Operations Evidence Pack (2026-03-11)
 
-This document is the submission-oriented index for deployment, observability, and runtime evidence gathered on 2026-03-11.
+This document is the submission-oriented index for deployment, observability, and runtime evidence gathered on 2026-03-11 for the UI Navigator category submission.
+
+The current submission truth is:
+
+- product category: UI Navigator
+- product message: acts when intent is clear, asks when it is not
+- gold-tier workflow surfaces: Antigravity IDE, Terminal, Chrome
 
 ## Primary Documents
 
