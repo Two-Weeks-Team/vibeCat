@@ -49,8 +49,8 @@ func TestClassifyNavigatorIntentTreatsImplicitApplyAsExecute(t *testing.T) {
 
 func TestPlanNavigatorCommandBuildsDocsLookupSteps(t *testing.T) {
 	plan := planNavigatorCommand("공식 문서 쪽으로 가보자", navigatorContext{
-		AppName:     "Antigravity IDE",
-		WindowTitle: "AuthServiceTests.swift",
+		AppName:      "Antigravity IDE",
+		WindowTitle:  "AuthServiceTests.swift",
 		SelectedText: "AuthServiceTests failing with missing token",
 	}, false)
 
@@ -98,6 +98,23 @@ func TestPlanNavigatorCommandAllowsSafeDocsLookupForSensitiveTopic(t *testing.T)
 	}
 }
 
+func TestPlanNavigatorCommandUsesSelectedTextForRiskDecision(t *testing.T) {
+	plan := planNavigatorCommand("이거 실행해줘", navigatorContext{
+		AppName:      "Terminal",
+		SelectedText: "rm -rf ~/danger-zone",
+	}, false)
+
+	if plan.RiskQuestion == "" {
+		t.Fatal("expected risk confirmation for dangerous selected text")
+	}
+	if plan.RiskReason == "" {
+		t.Fatal("expected risk reason")
+	}
+	if len(plan.Steps) != 0 {
+		t.Fatalf("steps = %d, want 0 after risk block", len(plan.Steps))
+	}
+}
+
 func TestAffirmativeAnswerRequiresClearApproval(t *testing.T) {
 	if affirmativeAnswer("maybe") {
 		t.Fatal("maybe should not count as affirmative")
@@ -113,6 +130,32 @@ func TestAffirmativeAnswerRequiresClearApproval(t *testing.T) {
 	}
 }
 
+func TestNavigatorSessionStateRejectsStaleRefresh(t *testing.T) {
+	var state navigatorSessionState
+	state.startPlan("run it", []navigatorStep{
+		{ID: "step-1"},
+		{ID: "step-2"},
+	})
+
+	step, ok := state.nextStep()
+	if !ok || step.ID != "step-1" {
+		t.Fatalf("next step = %#v, %v", step, ok)
+	}
+	if !state.acceptsRefresh("run it", "step-1") {
+		t.Fatal("expected current step refresh to be accepted")
+	}
+	if state.acceptsRefresh("run it", "step-2") {
+		t.Fatal("stale or future step refresh should be rejected")
+	}
+	if state.acceptsRefresh("other command", "step-1") {
+		t.Fatal("mismatched command should be rejected")
+	}
+	state.clearCurrentStep()
+	if state.acceptsRefresh("run it", "step-1") {
+		t.Fatal("cleared current step should reject refresh")
+	}
+}
+
 func TestHandlerNavigatorCommandClarifiesAmbiguousRequest(t *testing.T) {
 	reg := NewRegistry()
 	server := httptest.NewServer(Handler(reg, nil, nil, nil, nil))
@@ -122,7 +165,7 @@ func TestHandlerNavigatorCommandClarifiesAmbiguousRequest(t *testing.T) {
 	defer conn.Close()
 
 	if err := conn.WriteJSON(map[string]any{
-		"type": "navigator.command",
+		"type":    "navigator.command",
 		"command": "이거 한번 봐",
 		"context": map[string]any{
 			"appName":              "Antigravity IDE",
@@ -149,7 +192,7 @@ func TestHandlerNavigatorCommandPlansStep(t *testing.T) {
 	defer conn.Close()
 
 	if err := conn.WriteJSON(map[string]any{
-		"type": "navigator.command",
+		"type":    "navigator.command",
 		"command": "공식 문서 쪽으로 가보자",
 		"context": map[string]any{
 			"appName":              "Antigravity IDE",

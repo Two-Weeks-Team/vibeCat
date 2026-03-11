@@ -4,7 +4,7 @@
 
 VibeCat is a **desktop UI navigator for developer workflows on macOS**.
 
-It preserves the existing overlay character and voice/text interaction shell, but its primary value is no longer proactive companion speech. The primary value is acting on the user's intent across desktop apps.
+The submission keeps the existing overlay character and voice/text interaction shell, but the primary value is no longer proactive companion speech. The target value is acting on the user's intent across desktop apps.
 
 ## Core Promise
 

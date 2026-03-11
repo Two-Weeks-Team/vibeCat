@@ -3,6 +3,8 @@
 **Last Reviewed:** 2026-03-11
 **Submission Track:** UI Navigator
 
+Current implementation and deployment evidence should be cross-checked with `docs/CURRENT_STATUS_20260311.md`, `docs/evidence/DEPLOYMENT_EVIDENCE.md`, and `docs/deployment/PROOF_OF_GCP_DEPLOYMENT.md`.
+
 ## System Overview
 
 VibeCat is a **desktop UI navigator for developer workflows on macOS**.
@@ -48,6 +50,12 @@ Responsibilities:
 - accessibility-backed action execution
 - post-action verification and guided-mode fallback
 
+Implementation evidence:
+
+- `VibeCat/Sources/VibeCat/AccessibilityNavigator.swift`
+- `VibeCat/Sources/VibeCat/GatewayClient.swift`
+- `VibeCat/Sources/VibeCat/AppDelegate.swift`
+
 Key navigator context fields:
 
 - `appName`
@@ -72,6 +80,11 @@ Responsibilities:
 - one-step planning
 - completion / failure / guided-mode responses
 - trace and logging for every navigator step
+
+Implementation evidence:
+
+- `backend/realtime-gateway/internal/ws/handler.go`
+- `backend/realtime-gateway/internal/ws/navigator.go`
 
 Core public navigator events:
 
@@ -104,6 +117,11 @@ Responsibilities retained in the pivot:
 - supporting research and memory paths
 
 The orchestrator is no longer the primary submission-critical path for proactive companion behavior. It remains available to enrich navigation and research flows when helpful.
+
+Deployment evidence:
+
+- `docs/evidence/DEPLOYMENT_EVIDENCE.md`
+- `docs/deployment/PROOF_OF_GCP_DEPLOYMENT.md`
 
 ## Execution Contract
 
@@ -181,3 +199,8 @@ Every navigator turn is expected to emit:
 - completion or failure outcome
 
 These feed Cloud Logging, Cloud Trace, and Cloud Monitoring for submission proof.
+
+Operational evidence is tracked in:
+
+- `docs/evidence/DEPLOYMENT_EVIDENCE.md`
+- `docs/deployment/PROOF_OF_GCP_DEPLOYMENT.md`

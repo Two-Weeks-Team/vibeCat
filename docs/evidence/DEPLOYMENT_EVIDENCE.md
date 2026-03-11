@@ -25,7 +25,7 @@ This file tracks the current evidence baseline for the **UI Navigator** submissi
 Evidence must now support the following claims:
 
 - VibeCat is a desktop UI navigator
-- it executes real UI actions
+- it executes real UI actions through `VibeCat/Sources/VibeCat/AccessibilityNavigator.swift`, including `AXUIElementPerformAction`-backed control presses and guarded keyboard automation
 - it supports a gold-tier workflow on Antigravity IDE, Terminal, and Chrome
 - it is hosted on Google Cloud
 - it emits observable runtime evidence for navigator turns

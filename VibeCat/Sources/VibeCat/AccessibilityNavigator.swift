@@ -9,6 +9,10 @@ struct NavigatorExecutionResult: Sendable {
     let observedOutcome: String
 }
 
+private struct PasteboardSnapshotItem: Sendable {
+    let dataByType: [NSPasteboard.PasteboardType: Data]
+}
+
 @MainActor
 final class AccessibilityNavigator {
     func currentContext() -> NavigatorContextPayload {
@@ -77,6 +81,9 @@ final class AccessibilityNavigator {
             guard AXIsProcessTrusted() else {
                 return NavigatorExecutionResult(status: "guided_mode", observedOutcome: "Accessibility permission is required for hotkeys")
             }
+            guard targetAppMatchesFrontmost(step.targetApp, descriptorAppName: step.targetDescriptor.appName) else {
+                return NavigatorExecutionResult(status: "guided_mode", observedOutcome: "The target app changed before I could send keys safely.")
+            }
             if sendHotkey(step.hotkey) {
                 try? await Task.sleep(nanoseconds: 350_000_000)
                 return verify(step: step, before: before, defaultOutcome: "Sent hotkey \(step.hotkey.joined(separator: "+"))")
@@ -87,10 +94,19 @@ final class AccessibilityNavigator {
             guard AXIsProcessTrusted() else {
                 return NavigatorExecutionResult(status: "guided_mode", observedOutcome: "Accessibility permission is required for text entry")
             }
+            guard targetAppMatchesFrontmost(step.targetApp, descriptorAppName: step.targetDescriptor.appName) else {
+                return NavigatorExecutionResult(status: "guided_mode", observedOutcome: "The target app changed before I could insert text safely.")
+            }
             guard let inputText = step.inputText, !inputText.isEmpty else {
                 return NavigatorExecutionResult(status: "failed", observedOutcome: "Missing input text")
             }
-            if pasteText(inputText) {
+            guard let snapshot = stagePasteboardText(inputText) else {
+                return NavigatorExecutionResult(status: "failed", observedOutcome: "Could not prepare the text safely")
+            }
+            defer {
+                restorePasteboardSnapshot(snapshot)
+            }
+            if sendHotkey(["command", "v"]) {
                 try? await Task.sleep(nanoseconds: 350_000_000)
                 return verify(step: step, before: before, defaultOutcome: "Inserted text")
             }
@@ -99,6 +115,9 @@ final class AccessibilityNavigator {
         case .copySelection:
             guard AXIsProcessTrusted() else {
                 return NavigatorExecutionResult(status: "guided_mode", observedOutcome: "Accessibility permission is required for copy")
+            }
+            guard targetAppMatchesFrontmost(step.targetApp, descriptorAppName: step.targetDescriptor.appName) else {
+                return NavigatorExecutionResult(status: "guided_mode", observedOutcome: "The target app changed before I could copy safely.")
             }
             if sendHotkey(["command", "c"]) {
                 try? await Task.sleep(nanoseconds: 250_000_000)
@@ -144,15 +163,17 @@ final class AccessibilityNavigator {
         }
 
         let contextChanged = after.windowTitle != before.windowTitle
+            || after.appName != before.appName
+            || after.bundleId != before.bundleId
             || after.focusedLabel != before.focusedLabel
             || after.selectedText != before.selectedText
             || after.axSnapshot != before.axSnapshot
 
-        if appMatches && (contextChanged || step.actionType == .focusApp || step.actionType == .openURL) {
+        if appMatches && contextChanged {
             return NavigatorExecutionResult(status: "success", observedOutcome: defaultOutcome)
         }
 
-        if appMatches {
+        if appMatches && step.actionType == .focusApp && !targetApp.isEmpty {
             return NavigatorExecutionResult(status: "success", observedOutcome: defaultOutcome)
         }
 
@@ -213,17 +234,58 @@ final class AccessibilityNavigator {
         }
     }
 
-    private func pasteText(_ text: String) -> Bool {
-        let pasteboard = NSPasteboard.general
-        let previous = pasteboard.string(forType: .string)
-        pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
-        let didSend = sendHotkey(["command", "v"])
-        if let previous {
-            pasteboard.clearContents()
-            pasteboard.setString(previous, forType: .string)
+    private func targetAppMatchesFrontmost(_ targetApp: String, descriptorAppName: String? = nil) -> Bool {
+        let expectedApp = normalizedMatchValue(targetApp) ?? normalizedMatchValue(descriptorAppName)
+        guard let expectedApp else {
+            return false
         }
-        return didSend
+        guard let frontApp = NSWorkspace.shared.frontmostApplication else {
+            return false
+        }
+        if let expectedBundleID = explicitBundleIdentifier(for: expectedApp),
+           frontApp.bundleIdentifier == expectedBundleID {
+            return true
+        }
+        guard let frontmostName = normalizedMatchValue(frontApp.localizedName) else {
+            return false
+        }
+        return frontmostName.contains(expectedApp) || expectedApp.contains(frontmostName)
+    }
+
+    private func stagePasteboardText(_ text: String) -> [PasteboardSnapshotItem]? {
+        let pasteboard = NSPasteboard.general
+        let snapshot = capturePasteboardSnapshot(from: pasteboard)
+        pasteboard.clearContents()
+        guard pasteboard.setString(text, forType: .string) else {
+            restorePasteboardSnapshot(snapshot)
+            return nil
+        }
+        return snapshot
+    }
+
+    private func capturePasteboardSnapshot(from pasteboard: NSPasteboard) -> [PasteboardSnapshotItem] {
+        (pasteboard.pasteboardItems ?? []).compactMap { item in
+            let dataByType = item.types.reduce(into: [NSPasteboard.PasteboardType: Data]()) { partial, type in
+                if let data = item.data(forType: type) {
+                    partial[type] = data
+                }
+            }
+            return dataByType.isEmpty ? nil : PasteboardSnapshotItem(dataByType: dataByType)
+        }
+    }
+
+    private func restorePasteboardSnapshot(_ snapshot: [PasteboardSnapshotItem]) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        guard !snapshot.isEmpty else { return }
+        let items = snapshot.map { snapshotItem in
+            let item = NSPasteboardItem()
+            for (type, data) in snapshotItem.dataByType {
+                item.setData(data, forType: type)
+            }
+            return item
+        }
+        pasteboard.writeObjects(items)
     }
 
     private func sendHotkey(_ tokens: [String]) -> Bool {
@@ -284,9 +346,13 @@ final class AccessibilityNavigator {
     private func resolveElement(for descriptor: NavigatorTargetDescriptor) -> AXUIElement? {
         guard let app = focusedApplicationElement() else { return nil }
         let roots = [focusedWindowElement(from: app), focusedUIElement(from: app), app].compactMap { $0 }
-        let windowTitle = descriptor.windowTitle?.lowercased()
-        let desiredRole = descriptor.role?.lowercased()
-        let desiredLabel = descriptor.label?.lowercased()
+        let windowTitle = normalizedMatchValue(descriptor.windowTitle)
+        let desiredRole = normalizedMatchValue(descriptor.role)
+        let desiredLabel = normalizedMatchValue(descriptor.label)
+
+        guard desiredRole != nil || desiredLabel != nil else {
+            return nil
+        }
 
         for root in roots {
             for element in breadthFirstSearch(from: root, maxDepth: 5, maxNodes: 80) {
@@ -312,6 +378,12 @@ final class AccessibilityNavigator {
         }
 
         return nil
+    }
+
+    private func normalizedMatchValue(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private func summarize(window: AXUIElement?, focusedElement: AXUIElement?) -> String {

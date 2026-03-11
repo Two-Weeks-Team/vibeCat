@@ -47,22 +47,22 @@ type navigatorStep struct {
 type navigatorIntentClass string
 
 const (
-	navigatorIntentExecuteNow    navigatorIntentClass = "execute_now"
-	navigatorIntentOpenNavigate  navigatorIntentClass = "open_or_navigate"
-	navigatorIntentFindLookup    navigatorIntentClass = "find_or_lookup"
-	navigatorIntentAnalyzeOnly   navigatorIntentClass = "analyze_only"
-	navigatorIntentAmbiguous     navigatorIntentClass = "ambiguous"
-	navigatorExecutionPolicyLow                       = "safe_immediate"
+	navigatorIntentExecuteNow   navigatorIntentClass = "execute_now"
+	navigatorIntentOpenNavigate navigatorIntentClass = "open_or_navigate"
+	navigatorIntentFindLookup   navigatorIntentClass = "find_or_lookup"
+	navigatorIntentAnalyzeOnly  navigatorIntentClass = "analyze_only"
+	navigatorIntentAmbiguous    navigatorIntentClass = "ambiguous"
+	navigatorExecutionPolicyLow                      = "safe_immediate"
 )
 
 type navigatorPlan struct {
-	Command        string
-	IntentClass    navigatorIntentClass
+	Command          string
+	IntentClass      navigatorIntentClass
 	IntentConfidence float64
-	ClarifyQuestion string
-	RiskQuestion    string
-	RiskReason      string
-	Steps           []navigatorStep
+	ClarifyQuestion  string
+	RiskQuestion     string
+	RiskReason       string
+	Steps            []navigatorStep
 }
 
 type navigatorSessionState struct {
@@ -71,6 +71,7 @@ type navigatorSessionState struct {
 	pendingRiskyCommand         string
 	steps                       []navigatorStep
 	nextStepIndex               int
+	currentStepID               string
 }
 
 func (s *navigatorSessionState) startPlan(command string, steps []navigatorStep) {
@@ -79,6 +80,7 @@ func (s *navigatorSessionState) startPlan(command string, steps []navigatorStep)
 	s.pendingRiskyCommand = ""
 	s.steps = steps
 	s.nextStepIndex = 0
+	s.currentStepID = ""
 }
 
 func (s *navigatorSessionState) clearPlan() {
@@ -87,6 +89,7 @@ func (s *navigatorSessionState) clearPlan() {
 	s.pendingRiskyCommand = ""
 	s.steps = nil
 	s.nextStepIndex = 0
+	s.currentStepID = ""
 }
 
 func (s *navigatorSessionState) nextStep() (navigatorStep, bool) {
@@ -95,11 +98,28 @@ func (s *navigatorSessionState) nextStep() (navigatorStep, bool) {
 	}
 	step := s.steps[s.nextStepIndex]
 	s.nextStepIndex++
+	s.currentStepID = step.ID
 	return step, true
 }
 
 func (s *navigatorSessionState) hasRemainingSteps() bool {
 	return s.nextStepIndex < len(s.steps)
+}
+
+func (s *navigatorSessionState) acceptsRefresh(command, stepID string) bool {
+	stepID = strings.TrimSpace(stepID)
+	if stepID == "" || stepID != s.currentStepID {
+		return false
+	}
+	command = strings.TrimSpace(command)
+	if command == "" || strings.TrimSpace(s.activeCommand) == "" {
+		return true
+	}
+	return command == s.activeCommand
+}
+
+func (s *navigatorSessionState) clearCurrentStep() {
+	s.currentStepID = ""
 }
 
 func planNavigatorCommand(command string, ctx navigatorContext, allowRisky bool) navigatorPlan {
@@ -140,7 +160,7 @@ func planNavigatorCommand(command string, ctx navigatorContext, allowRisky bool)
 		return plan
 	}
 
-	if riskReason := navigatorRiskReason(command); riskReason != "" && !allowRisky && stepsRequireRiskConfirmation(plan.Steps) {
+	if riskReason := planRiskReason(command, ctx, plan.Steps); riskReason != "" && !allowRisky && stepsRequireRiskConfirmation(plan.Steps) {
 		plan.RiskReason = riskReason
 		plan.RiskQuestion = buildRiskQuestion(command)
 		plan.Steps = nil
@@ -241,11 +261,25 @@ func keywordScore(text string, keywords []string) float64 {
 	return score
 }
 
-func navigatorRiskReason(command string) string {
-	lowered := strings.ToLower(command)
-	for _, keyword := range []string{"password", "token", "secret", "deploy", "production", "prod", "delete", "remove", "git push", "publish", "submit", "send", "비밀번호", "토큰", "배포", "삭제", "전송", "제출"} {
-		if strings.Contains(lowered, keyword) {
-			return fmt.Sprintf("blocked as a risky action because it mentions %q", keyword)
+func planRiskReason(command string, ctx navigatorContext, steps []navigatorStep) string {
+	inputs := []string{command, ctx.SelectedText}
+	for _, step := range steps {
+		inputs = append(inputs, step.InputText)
+	}
+	return navigatorRiskReason(inputs...)
+}
+
+func navigatorRiskReason(inputs ...string) string {
+	for _, input := range inputs {
+		lowered := strings.ToLower(input)
+		for _, keyword := range []string{
+			"password", "token", "secret", "deploy", "production", "prod", "delete", "remove",
+			"git push", "publish", "submit", "send", "rm -rf", "sudo ", "shutdown ", "reboot ",
+			"비밀번호", "토큰", "배포", "삭제", "전송", "제출",
+		} {
+			if strings.Contains(lowered, keyword) {
+				return fmt.Sprintf("blocked as a risky action because it mentions %q", keyword)
+			}
 		}
 	}
 	return ""
@@ -554,7 +588,10 @@ func looksLikeShellCommand(text string) bool {
 	if trimmed == "" {
 		return false
 	}
-	for _, prefix := range []string{"go ", "npm ", "pnpm ", "yarn ", "swift ", "xcodebuild ", "python ", "pytest ", "make ", "cargo ", "git "} {
+	for _, prefix := range []string{
+		"go ", "npm ", "pnpm ", "yarn ", "swift ", "xcodebuild ", "python ", "pytest ",
+		"make ", "cargo ", "git ", "rm ", "sudo ", "bash ", "sh ", "zsh ", "kubectl ",
+	} {
 		if strings.HasPrefix(trimmed, prefix) {
 			return true
 		}

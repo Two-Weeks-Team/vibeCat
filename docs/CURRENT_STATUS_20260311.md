@@ -2,6 +2,8 @@
 
 This document is the current-state snapshot for the repository, deployment, and submission direction.
 
+Cross-check deployment and submission evidence with `docs/evidence/DEPLOYMENT_EVIDENCE.md` and `docs/deployment/PROOF_OF_GCP_DEPLOYMENT.md`.
+
 ## Submission Direction
 
 - challenge category: **UI Navigator**
@@ -13,7 +15,7 @@ Historical Live Agent planning still exists in the repo, but it is no longer the
 
 ## Repository Snapshot
 
-- branch: `codex/remaining-issues-implementation`
+- branch: `codex/ui-navigator-pivot`
 - working tree: active implementation branch with navigator pivot in progress
 - backend services: deployed in `asia-northeast3`
 - client: Swift 6 macOS app under `VibeCat/`
@@ -74,6 +76,8 @@ The current submission-critical goals are:
 - `docs/analysis/DEMO_STORYBOARD.md`
 - `docs/evidence/DEPLOYMENT_EVIDENCE.md`
 - `docs/deployment/PROOF_OF_GCP_DEPLOYMENT.md`
+
+These are the only documents that should be used to support current UI Navigator submission claims without additional validation.
 
 ## Documents To Treat As Historical
 

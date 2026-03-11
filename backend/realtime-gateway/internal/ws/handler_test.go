@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -315,13 +316,20 @@ func TestHandlerForceCaptureSpeaksContextHintBeforeAnalyzeCompletes(t *testing.T
 
 	reg := NewRegistry()
 	analyzeStarted := make(chan struct{}, 1)
+	analyzeDone := make(chan struct{})
 	hintTextCh := make(chan string, 1)
 	audioCh := make(chan struct{}, 1)
+	var releaseAnalyze sync.Once
+	t.Cleanup(func() {
+		releaseAnalyze.Do(func() {
+			close(analyzeDone)
+		})
+	})
 	fakeADK := &stubADK{
 		analyzeFn: func(ctx context.Context, req adk.AnalysisRequest) (*adk.AnalysisResult, error) {
 			analyzeStarted <- struct{}{}
 			select {
-			case <-time.After(200 * time.Millisecond):
+			case <-analyzeDone:
 				return &adk.AnalysisResult{
 					Vision: &adk.VisionAnalysis{Content: "AuthServiceTests.swift in Xcode"},
 				}, nil
@@ -407,6 +415,11 @@ func TestHandlerForceCaptureSpeaksContextHintBeforeAnalyzeCompletes(t *testing.T
 	var hintText string
 	select {
 	case hintText = <-hintTextCh:
+		select {
+		case <-analyzeDone:
+			t.Fatal("analyze completed before proactive context hint fired")
+		default:
+		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("did not observe proactive context hint before analyze completion")
 	}
@@ -415,9 +428,17 @@ func TestHandlerForceCaptureSpeaksContextHintBeforeAnalyzeCompletes(t *testing.T
 	}
 	select {
 	case <-audioCh:
+		select {
+		case <-analyzeDone:
+			t.Fatal("analyze completed before proactive context hint audio arrived")
+		default:
+		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("did not observe context hint audio chunk")
 	}
+	releaseAnalyze.Do(func() {
+		close(analyzeDone)
+	})
 	<-drainDone
 }
 

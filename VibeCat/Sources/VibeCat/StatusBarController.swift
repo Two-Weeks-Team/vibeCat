@@ -697,7 +697,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         let state: TrayIconAnimator.CaptureIndicatorState
         if isPaused {
             state = .paused
-        } else if isManualOnly {
+        } else if AppSettings.shared.navigatorModeEnabled || isManualOnly {
             state = .manual
         } else {
             state = .active

@@ -644,9 +644,11 @@ func maybeStartProactiveContextHint(ctx context.Context, c *Conn, ls *liveSessio
 	}
 
 	done := make(chan struct{})
+	hintCtx, cancel := context.WithCancel(ctx)
 	cfg := ls.getConfig()
 	hintText := strings.TrimSpace(proactiveContextHintText(cfg.Language, captureContext))
 	if hintText == "" {
+		cancel()
 		slog.Debug("[HANDLER] proactive context hint skipped", "conn_id", c.ID, "reason", "empty_hint_text")
 		return func() {}
 	}
@@ -656,7 +658,7 @@ func maybeStartProactiveContextHint(ctx context.Context, c *Conn, ls *liveSessio
 		defer timer.Stop()
 
 		select {
-		case <-ctx.Done():
+		case <-hintCtx.Done():
 			return
 		case <-done:
 			return
@@ -665,7 +667,7 @@ func maybeStartProactiveContextHint(ctx context.Context, c *Conn, ls *liveSessio
 
 		slog.Info("[HANDLER] proactive context hint firing", "conn_id", c.ID, "trace_id", traceID, "hint_len", len(hintText))
 		sendTraceEvent(c, "proactive", traceID, "context_hint_start", rootAt, truncateText(hintText, 120))
-		if speakWithTTSFallback(ctx, c, ls, ttsClient, metrics, "proactive", traceID, rootAt, hintText, "proactive_context_hint") {
+		if speakWithTTSFallback(hintCtx, c, ls, ttsClient, metrics, "proactive", traceID, rootAt, hintText, "proactive_context_hint") {
 			sendTraceEvent(c, "proactive", traceID, "context_hint_done", rootAt, "")
 		}
 	}()
@@ -673,6 +675,7 @@ func maybeStartProactiveContextHint(ctx context.Context, c *Conn, ls *liveSessio
 	var once sync.Once
 	return func() {
 		once.Do(func() {
+			cancel()
 			close(done)
 		})
 	}
@@ -1563,7 +1566,12 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 						command = navState.pendingClarificationCommand
 					}
 					if explanationAnswer(confirmMsg.Answer) {
-						navState.pendingClarificationCommand = ""
+						navState.clearPlan()
+						lockedSendJSON(c, map[string]any{
+							"type":        "navigator.guidedMode",
+							"reason":      "clarification_explanation_only",
+							"instruction": "I will explain the next step instead of acting.",
+						})
 						handleUserTextQuery(ctx, c, ls, adkClient, ttsClient, metrics, runtime, command, newTraceID("text"), time.Now())
 						continue
 					}
@@ -1660,8 +1668,13 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 						slog.Warn("parse navigator refresh failed", "conn_id", c.ID, "error", parseErr)
 						continue
 					}
+					if !navState.acceptsRefresh(refreshMsg.Command, refreshMsg.Step.ID) {
+						slog.Warn("navigator refresh ignored", "conn_id", c.ID, "command", refreshMsg.Command, "step_id", refreshMsg.Step.ID, "active_command", navState.activeCommand)
+						continue
+					}
 					switch refreshMsg.Status {
 					case "success":
+						navState.clearCurrentStep()
 						lockedSendJSON(c, map[string]any{
 							"type":            "navigator.stepVerified",
 							"stepId":          refreshMsg.Step.ID,
