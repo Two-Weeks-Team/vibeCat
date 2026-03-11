@@ -27,6 +27,7 @@ public final class AppSettings: @unchecked Sendable {
         case gatewayURL = "vibecat.gatewayURL"
         case searchEnabled = "vibecat.searchEnabled"
         case proactiveAudio = "vibecat.proactiveAudio"
+        case manualAnalysisOnly = "vibecat.manualAnalysisOnly"
     }
 
     public var language: String {
@@ -97,6 +98,11 @@ public final class AppSettings: @unchecked Sendable {
             return defaults.bool(forKey: Key.proactiveAudio.rawValue)
         }
         set { defaults.set(newValue, forKey: Key.proactiveAudio.rawValue) }
+    }
+
+    public var manualAnalysisOnly: Bool {
+        get { defaults.bool(forKey: Key.manualAnalysisOnly.rawValue) }
+        set { defaults.set(newValue, forKey: Key.manualAnalysisOnly.rawValue) }
     }
 
     private init() {}

@@ -117,8 +117,12 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private var musicItem: NSMenuItem?
     private var searchItem: NSMenuItem?
     private var proactiveItem: NSMenuItem?
+    private var manualAnalysisItem: NSMenuItem?
     private var pauseItem: NSMenuItem?
     private var muteItem: NSMenuItem?
+    private var analyzeNowItem: NSMenuItem?
+    private var privacyStatusItem: NSMenuItem?
+    private var privacyNoStorageItem: NSMenuItem?
     private var setAPIKeyItem: NSMenuItem?
     private var recentSpeechMenu: NSMenu?
     private var emotionHistoryMenu: NSMenu?
@@ -134,12 +138,14 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     var onReconnect: (() -> Void)?
     var onPause: (() -> Void)?
     var onMute: (() -> Void)?
+    var onAnalyzeNow: (() -> Void)?
     var onQuit: (() -> Void)?
     var onShowOnboarding: (() -> Void)?
     var onCharacterChanged: ((String) -> Void)?
     var onMusicToggled: ((Bool) -> Void)?
     var onSearchToggled: (() -> Void)?
     var onProactiveAudioToggled: (() -> Void)?
+    var onManualAnalysisToggled: ((Bool) -> Void)?
     var onLanguageChanged: (() -> Void)?
 
     private(set) var connectionState: ConnectionState = .disconnected {
@@ -159,6 +165,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     func attachAnimator(_ animator: TrayIconAnimator) {
         trayAnimator = animator
         animator.attach(to: statusItem)
+        updateCaptureIndicator(isPaused: isPausedState, isManualOnly: AppSettings.shared.manualAnalysisOnly)
     }
 
     func attachRecentSpeechStore(_ store: RecentSpeechStore) {
@@ -372,9 +379,30 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         advancedMenu.addItem(createdProactiveItem)
         proactiveItem = createdProactiveItem
 
+        let createdManualAnalysisItem = NSMenuItem(title: VibeCatL10n.menuManualAnalysisOnly(), action: #selector(toggleManualAnalysisOnly(_:)), keyEquivalent: "")
+        createdManualAnalysisItem.target = self
+        createdManualAnalysisItem.state = AppSettings.shared.manualAnalysisOnly ? .on : .off
+        advancedMenu.addItem(createdManualAnalysisItem)
+        manualAnalysisItem = createdManualAnalysisItem
+
         let advancedItem = NSMenuItem(title: VibeCatL10n.menuAdvanced(), action: nil, keyEquivalent: "")
         advancedItem.submenu = advancedMenu
         menu.addItem(advancedItem)
+
+        let privacyMenu = NSMenu()
+        let captureStatusItem = NSMenuItem(title: currentCaptureIndicatorTitle(), action: nil, keyEquivalent: "")
+        captureStatusItem.isEnabled = false
+        privacyMenu.addItem(captureStatusItem)
+        privacyStatusItem = captureStatusItem
+
+        let noStorageItem = NSMenuItem(title: VibeCatL10n.menuNoScreenshotsStored(), action: nil, keyEquivalent: "")
+        noStorageItem.isEnabled = false
+        privacyMenu.addItem(noStorageItem)
+        privacyNoStorageItem = noStorageItem
+
+        let privacyItem = NSMenuItem(title: VibeCatL10n.menuPrivacy(), action: nil, keyEquivalent: "")
+        privacyItem.submenu = privacyMenu
+        menu.addItem(privacyItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -389,6 +417,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         let reconnectItem = NSMenuItem(title: VibeCatL10n.menuReconnect(), action: #selector(handleReconnect), keyEquivalent: "r")
         reconnectItem.target = self
         menu.addItem(reconnectItem)
+
+        let analyzeNowItem = NSMenuItem(title: VibeCatL10n.menuAnalyzeNow(), action: #selector(handleAnalyzeNow), keyEquivalent: "")
+        analyzeNowItem.target = self
+        menu.addItem(analyzeNowItem)
+        self.analyzeNowItem = analyzeNowItem
 
         let pauseItem = NSMenuItem(title: isPausedState ? VibeCatL10n.menuResume() : VibeCatL10n.menuPause(), action: #selector(handlePause), keyEquivalent: "p")
         pauseItem.target = self
@@ -407,6 +440,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(quitItem)
 
         statusItem.menu = menu
+        updateCaptureIndicator(isPaused: isPausedState, isManualOnly: AppSettings.shared.manualAnalysisOnly)
         updateTooltip()
     }
 
@@ -500,14 +534,27 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         onProactiveAudioToggled?()
     }
 
+    @objc private func toggleManualAnalysisOnly(_ sender: NSMenuItem) {
+        AppSettings.shared.manualAnalysisOnly.toggle()
+        sender.state = AppSettings.shared.manualAnalysisOnly ? .on : .off
+        onManualAnalysisToggled?(AppSettings.shared.manualAnalysisOnly)
+    }
+
     func updatePauseState(_ isPaused: Bool) {
         isPausedState = isPaused
         pauseItem?.title = isPaused ? VibeCatL10n.menuResume() : VibeCatL10n.menuPause()
+        analyzeNowItem?.isEnabled = !isPaused
+        updateCaptureIndicator(isPaused: isPaused, isManualOnly: AppSettings.shared.manualAnalysisOnly)
     }
 
     func updateMuteState(_ isMuted: Bool) {
         isMutedState = isMuted
         muteItem?.title = isMuted ? VibeCatL10n.menuUnmute() : VibeCatL10n.menuMute()
+    }
+
+    func updateManualAnalysisMode(_ isManualOnly: Bool) {
+        manualAnalysisItem?.state = isManualOnly ? .on : .off
+        updateCaptureIndicator(isPaused: isPausedState, isManualOnly: isManualOnly)
     }
 
     @objc private func handleReconnect() {
@@ -520,6 +567,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     @objc private func handleMute() {
         onMute?()
+    }
+
+    @objc private func handleAnalyzeNow() {
+        onAnalyzeNow?()
     }
 
     @objc private func handleShowOnboarding() {
@@ -574,6 +625,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         musicItem?.state = AppSettings.shared.musicEnabled ? .on : .off
         searchItem?.state = AppSettings.shared.searchEnabled ? .on : .off
         proactiveItem?.state = AppSettings.shared.proactiveAudio ? .on : .off
+        manualAnalysisItem?.state = AppSettings.shared.manualAnalysisOnly ? .on : .off
     }
 
     private func rebuildRecentSpeechMenu() {
@@ -623,6 +675,42 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         case .disconnected, .reconnecting:
             statusItem.button?.toolTip = VibeCatL10n.tooltipOfflineReconnecting()
         }
+    }
+
+    func updateCaptureIndicator(isPaused: Bool, isManualOnly: Bool) {
+        let state: TrayIconAnimator.CaptureIndicatorState
+        if isPaused {
+            state = .paused
+        } else if isManualOnly {
+            state = .manual
+        } else {
+            state = .active
+        }
+
+        trayAnimator?.setCaptureState(state)
+        privacyStatusItem?.title = currentCaptureIndicatorTitle(for: state)
+        privacyNoStorageItem?.title = VibeCatL10n.menuNoScreenshotsStored()
+    }
+
+    private func currentCaptureIndicatorTitle(for state: TrayIconAnimator.CaptureIndicatorState? = nil) -> String {
+        switch state ?? inferredCaptureIndicatorState() {
+        case .active:
+            return VibeCatL10n.captureIndicatorLive()
+        case .manual:
+            return VibeCatL10n.captureIndicatorManual()
+        case .paused:
+            return VibeCatL10n.captureIndicatorPaused()
+        }
+    }
+
+    private func inferredCaptureIndicatorState() -> TrayIconAnimator.CaptureIndicatorState {
+        if isPausedState {
+            return .paused
+        }
+        if AppSettings.shared.manualAnalysisOnly {
+            return .manual
+        }
+        return .active
     }
 
     private func updateAPIKeyMenuItemStyle() {

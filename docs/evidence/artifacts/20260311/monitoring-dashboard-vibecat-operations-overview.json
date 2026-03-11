@@ -1,0 +1,154 @@
+{
+  "displayName": "VibeCat Operations Overview",
+  "etag": "21a01fa59c8da55d443b3f6c17b3fb74",
+  "gridLayout": {
+    "columns": "2",
+    "widgets": [
+      {
+        "scorecard": {
+          "sparkChartView": {
+            "sparkChartType": "SPARK_LINE"
+          },
+          "timeSeriesQuery": {
+            "timeSeriesFilter": {
+              "aggregation": {
+                "alignmentPeriod": "60s",
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_RATE"
+              },
+              "filter": "metric.type=\"run.googleapis.com/request_count\" resource.type=\"cloud_run_revision\" resource.label.service_name=\"realtime-gateway\""
+            }
+          }
+        },
+        "title": "Gateway Requests / s"
+      },
+      {
+        "scorecard": {
+          "sparkChartView": {
+            "sparkChartType": "SPARK_LINE"
+          },
+          "timeSeriesQuery": {
+            "timeSeriesFilter": {
+              "aggregation": {
+                "alignmentPeriod": "60s",
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_PERCENTILE_95"
+              },
+              "filter": "metric.type=\"run.googleapis.com/request_latencies\" resource.type=\"cloud_run_revision\" resource.label.service_name=\"realtime-gateway\""
+            }
+          }
+        },
+        "title": "Gateway P95 Latency"
+      },
+      {
+        "scorecard": {
+          "sparkChartView": {
+            "sparkChartType": "SPARK_LINE"
+          },
+          "timeSeriesQuery": {
+            "timeSeriesFilter": {
+              "aggregation": {
+                "alignmentPeriod": "60s",
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_RATE"
+              },
+              "filter": "metric.type=\"run.googleapis.com/request_count\" resource.type=\"cloud_run_revision\" resource.label.service_name=\"adk-orchestrator\""
+            }
+          }
+        },
+        "title": "Orchestrator Requests / s"
+      },
+      {
+        "scorecard": {
+          "sparkChartView": {
+            "sparkChartType": "SPARK_LINE"
+          },
+          "timeSeriesQuery": {
+            "timeSeriesFilter": {
+              "aggregation": {
+                "alignmentPeriod": "60s",
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_PERCENTILE_95"
+              },
+              "filter": "metric.type=\"run.googleapis.com/request_latencies\" resource.type=\"cloud_run_revision\" resource.label.service_name=\"adk-orchestrator\""
+            }
+          }
+        },
+        "title": "Orchestrator P95 Latency"
+      },
+      {
+        "scorecard": {
+          "sparkChartView": {
+            "sparkChartType": "SPARK_LINE"
+          },
+          "timeSeriesQuery": {
+            "timeSeriesFilter": {
+              "aggregation": {
+                "alignmentPeriod": "60s",
+                "crossSeriesReducer": "REDUCE_MEAN",
+                "perSeriesAligner": "ALIGN_MEAN"
+              },
+              "filter": "metric.type=\"run.googleapis.com/container/cpu/utilizations\" resource.type=\"cloud_run_revision\" resource.label.service_name=\"realtime-gateway\""
+            }
+          }
+        },
+        "title": "Gateway CPU Utilization"
+      },
+      {
+        "scorecard": {
+          "sparkChartView": {
+            "sparkChartType": "SPARK_LINE"
+          },
+          "timeSeriesQuery": {
+            "timeSeriesFilter": {
+              "aggregation": {
+                "alignmentPeriod": "60s",
+                "crossSeriesReducer": "REDUCE_MEAN",
+                "perSeriesAligner": "ALIGN_MEAN"
+              },
+              "filter": "metric.type=\"run.googleapis.com/container/memory/utilizations\" resource.type=\"cloud_run_revision\" resource.label.service_name=\"realtime-gateway\""
+            }
+          }
+        },
+        "title": "Gateway Memory Utilization"
+      },
+      {
+        "scorecard": {
+          "sparkChartView": {
+            "sparkChartType": "SPARK_LINE"
+          },
+          "timeSeriesQuery": {
+            "timeSeriesFilter": {
+              "aggregation": {
+                "alignmentPeriod": "60s",
+                "crossSeriesReducer": "REDUCE_MEAN",
+                "perSeriesAligner": "ALIGN_MEAN"
+              },
+              "filter": "metric.type=\"run.googleapis.com/container/cpu/utilizations\" resource.type=\"cloud_run_revision\" resource.label.service_name=\"adk-orchestrator\""
+            }
+          }
+        },
+        "title": "Orchestrator CPU Utilization"
+      },
+      {
+        "scorecard": {
+          "sparkChartView": {
+            "sparkChartType": "SPARK_LINE"
+          },
+          "timeSeriesQuery": {
+            "timeSeriesFilter": {
+              "aggregation": {
+                "alignmentPeriod": "60s",
+                "crossSeriesReducer": "REDUCE_MEAN",
+                "perSeriesAligner": "ALIGN_MEAN"
+              },
+              "filter": "metric.type=\"run.googleapis.com/container/memory/utilizations\" resource.type=\"cloud_run_revision\" resource.label.service_name=\"adk-orchestrator\""
+            }
+          }
+        },
+        "title": "Orchestrator Memory Utilization"
+      }
+    ]
+  },
+  "name": "projects/163070481841/dashboards/752c1986-5674-4963-a967-6f3595902be2"
+}

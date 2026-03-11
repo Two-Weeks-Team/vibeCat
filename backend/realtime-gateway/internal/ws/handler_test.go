@@ -1,14 +1,20 @@
 package ws
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"google.golang.org/genai"
 	"vibecat/realtime-gateway/internal/adk"
 	"vibecat/realtime-gateway/internal/live"
+	"vibecat/realtime-gateway/internal/tts"
 )
 
 func TestCouldBeQuestion(t *testing.T) {
@@ -222,4 +228,275 @@ func TestResolveQueryRoute(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHandlerScreenCaptureTimeoutReturnsSilentFallbackQuickly(t *testing.T) {
+	reg := NewRegistry()
+	fakeADK := &stubADK{
+		analyzeFn: func(ctx context.Context, req adk.AnalysisRequest) (*adk.AnalysisResult, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	}
+
+	server := httptest.NewServer(Handler(reg, nil, fakeADK, nil, nil))
+	defer server.Close()
+
+	conn := dialTestWebSocket(t, server.URL)
+	defer conn.Close()
+
+	start := time.Now()
+	if err := conn.WriteJSON(map[string]any{
+		"type":            "screenCapture",
+		"image":           "ZmFrZV9pbWFnZQ==",
+		"context":         "Xcode failing test",
+		"sessionId":       "session-timeout",
+		"userId":          "user-timeout",
+		"character":       "cat",
+		"activityMinutes": 3,
+	}); err != nil {
+		t.Fatalf("send screenCapture: %v", err)
+	}
+
+	deadline := time.Now().Add(6 * time.Second)
+	if err := conn.SetReadDeadline(deadline); err != nil {
+		t.Fatalf("set read deadline: %v", err)
+	}
+	var inactiveAt time.Time
+	for time.Now().Before(deadline) {
+		msgType, payload, err := conn.ReadMessage()
+		if err != nil {
+			t.Fatalf("read websocket message: %v", err)
+		}
+		if msgType != websocket.TextMessage {
+			continue
+		}
+		var msg map[string]any
+		if err := json.Unmarshal(payload, &msg); err != nil {
+			continue
+		}
+		if msg["type"] != "processingState" || msg["stage"] != "screen_analyzing" {
+			continue
+		}
+		active, _ := msg["active"].(bool)
+		if !active {
+			inactiveAt = time.Now()
+			break
+		}
+	}
+
+	if inactiveAt.IsZero() {
+		t.Fatal("did not observe screen_analyzing inactive message before deadline")
+	}
+	if elapsed := inactiveAt.Sub(start); elapsed >= 5*time.Second {
+		t.Fatalf("silent fallback completed in %v, want < 5s", elapsed)
+	}
+}
+
+func TestHandlerLiveSearchFallbackSpeaksViaTTSWithoutLiveSession(t *testing.T) {
+	reg := NewRegistry()
+	fakeADK := &stubADK{
+		searchFn: func(ctx context.Context, req adk.SearchRequest) (*adk.SearchResult, error) {
+			return &adk.SearchResult{
+				Query:   req.Query,
+				Summary: "공식 문서 기준으로 1006은 close frame 없이 연결이 끊긴 경우를 뜻해.",
+				Sources: []string{"https://example.com/close-1006"},
+			}, nil
+		},
+	}
+	fakeTTS := &stubTTS{
+		streamSpeakFn: func(ctx context.Context, cfg tts.Config, sink tts.AudioSink) error {
+			if err := sink([]byte{0x01, 0x02, 0x03}); err != nil {
+				return err
+			}
+			return nil
+		},
+	}
+
+	server := httptest.NewServer(Handler(reg, nil, fakeADK, fakeTTS, nil))
+	defer server.Close()
+
+	conn := dialTestWebSocket(t, server.URL)
+	defer conn.Close()
+
+	if err := conn.WriteJSON(map[string]any{
+		"type": "setup",
+		"config": map[string]any{
+			"voice":         "Zephyr",
+			"language":      "ko",
+			"searchEnabled": true,
+		},
+	}); err != nil {
+		t.Fatalf("send setup: %v", err)
+	}
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("set setup read deadline: %v", err)
+	}
+	if _, payload, err := conn.ReadMessage(); err != nil {
+		t.Fatalf("read setupComplete: %v", err)
+	} else {
+		var msg map[string]any
+		if err := json.Unmarshal(payload, &msg); err != nil || msg["type"] != "setupComplete" {
+			t.Fatalf("expected setupComplete, got %s", payload)
+		}
+	}
+
+	if err := conn.WriteJSON(map[string]any{
+		"type": "clientContent",
+		"clientContent": map[string]any{
+			"turnComplete": true,
+			"turns": []map[string]any{
+				{
+					"role": "user",
+					"parts": []map[string]string{
+						{"text": "웹소켓 1006 오류 공식 문서 찾아서 해결 요약해줘"},
+					},
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("send clientContent: %v", err)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	if err := conn.SetReadDeadline(deadline); err != nil {
+		t.Fatalf("set read deadline: %v", err)
+	}
+	sawSearching := false
+	sawToolResult := false
+	sawTTSStart := false
+	sawAudioChunk := false
+	sawTTSEnd := false
+
+	for time.Now().Before(deadline) {
+		msgType, payload, err := conn.ReadMessage()
+		if err != nil {
+			t.Fatalf("read websocket message: %v", err)
+		}
+
+		if msgType == websocket.BinaryMessage && len(payload) > 0 {
+			sawAudioChunk = true
+			continue
+		}
+		if msgType != websocket.TextMessage {
+			continue
+		}
+
+		var msg map[string]any
+		if err := json.Unmarshal(payload, &msg); err != nil {
+			continue
+		}
+		switch msg["type"] {
+		case "processingState":
+			stage, _ := msg["stage"].(string)
+			active, _ := msg["active"].(bool)
+			if stage == "searching" && active {
+				sawSearching = true
+			}
+		case "toolResult":
+			if msg["tool"] == string(adk.ToolKindSearch) {
+				sawToolResult = true
+			}
+		case "ttsStart":
+			text, _ := msg["text"].(string)
+			if strings.TrimSpace(text) != "" {
+				sawTTSStart = true
+			}
+		case "ttsEnd":
+			sawTTSEnd = true
+		}
+		if sawSearching && sawToolResult && sawTTSStart && sawAudioChunk && sawTTSEnd {
+			break
+		}
+	}
+
+	if !sawSearching {
+		t.Fatal("did not observe searching processing state")
+	}
+	if !sawToolResult {
+		t.Fatal("did not observe fallback search tool result")
+	}
+	if !sawTTSStart {
+		t.Fatal("did not observe ttsStart for fallback speech")
+	}
+	if !sawAudioChunk {
+		t.Fatal("did not observe fallback audio chunk")
+	}
+	if !sawTTSEnd {
+		t.Fatal("did not observe ttsEnd for fallback speech")
+	}
+}
+
+type stubADK struct {
+	analyzeFn            func(context.Context, adk.AnalysisRequest) (*adk.AnalysisResult, error)
+	searchFn             func(context.Context, adk.SearchRequest) (*adk.SearchResult, error)
+	toolFn               func(context.Context, adk.ToolRequest) (*adk.ToolResult, error)
+	saveSessionSummaryFn func(context.Context, adk.SessionSummaryRequest) error
+	memoryContextFn      func(context.Context, adk.MemoryContextRequest) (string, error)
+}
+
+func (s *stubADK) Analyze(ctx context.Context, req adk.AnalysisRequest) (*adk.AnalysisResult, error) {
+	if s.analyzeFn != nil {
+		return s.analyzeFn(ctx, req)
+	}
+	return nil, errors.New("Analyze not implemented")
+}
+
+func (s *stubADK) Search(ctx context.Context, req adk.SearchRequest) (*adk.SearchResult, error) {
+	if s.searchFn != nil {
+		return s.searchFn(ctx, req)
+	}
+	return nil, errors.New("Search not implemented")
+}
+
+func (s *stubADK) Tool(ctx context.Context, req adk.ToolRequest) (*adk.ToolResult, error) {
+	if s.toolFn != nil {
+		return s.toolFn(ctx, req)
+	}
+	return nil, errors.New("Tool not implemented")
+}
+
+func (s *stubADK) SaveSessionSummary(ctx context.Context, req adk.SessionSummaryRequest) error {
+	if s.saveSessionSummaryFn != nil {
+		return s.saveSessionSummaryFn(ctx, req)
+	}
+	return nil
+}
+
+func (s *stubADK) MemoryContext(ctx context.Context, req adk.MemoryContextRequest) (string, error) {
+	if s.memoryContextFn != nil {
+		return s.memoryContextFn(ctx, req)
+	}
+	return "", nil
+}
+
+type stubTTS struct {
+	streamSpeakFn func(context.Context, tts.Config, tts.AudioSink) error
+}
+
+func (s *stubTTS) StreamSpeak(ctx context.Context, cfg tts.Config, sink tts.AudioSink) error {
+	if s.streamSpeakFn != nil {
+		return s.streamSpeakFn(ctx, cfg, sink)
+	}
+	return nil
+}
+
+func dialTestWebSocket(t *testing.T, baseURL string) *websocket.Conn {
+	t.Helper()
+	parsed, err := url.Parse(baseURL)
+	if err != nil {
+		t.Fatalf("parse base url: %v", err)
+	}
+	switch parsed.Scheme {
+	case "https":
+		parsed.Scheme = "wss"
+	default:
+		parsed.Scheme = "ws"
+	}
+
+	conn, _, err := websocket.DefaultDialer.Dial(parsed.String(), nil)
+	if err != nil {
+		t.Fatalf("dial websocket: %v", err)
+	}
+	return conn
 }

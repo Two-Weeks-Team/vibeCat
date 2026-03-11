@@ -4,10 +4,28 @@ import VibeCatCore
 /// Animates the menu bar tray icon through 8 frames from Assets/TrayIcons_Clean/
 @MainActor
 final class TrayIconAnimator {
+    enum CaptureIndicatorState {
+        case active
+        case manual
+        case paused
+
+        var color: NSColor {
+            switch self {
+            case .active:
+                return .systemGreen
+            case .manual:
+                return .systemOrange
+            case .paused:
+                return .systemGray
+            }
+        }
+    }
+
     private var frames: [NSImage] = []
     private var currentFrame = 0
     private var timer: Timer?
     private weak var statusItem: NSStatusItem?
+    private var captureIndicatorState: CaptureIndicatorState = .active
 
     private let frameInterval: TimeInterval = 0.1
     private let frameCount = 8
@@ -20,6 +38,11 @@ final class TrayIconAnimator {
     func attach(to item: NSStatusItem) {
         self.statusItem = item
         start()
+    }
+
+    func setCaptureState(_ state: CaptureIndicatorState) {
+        captureIndicatorState = state
+        updateIcon()
     }
 
     /// Update animation state based on companion emotion (MVP: all emotions use same idle frames)
@@ -96,6 +119,30 @@ final class TrayIconAnimator {
 
     private func updateIcon() {
         guard currentFrame < frames.count else { return }
-        statusItem?.button?.image = frames[currentFrame]
+        statusItem?.button?.image = compositedImage(for: frames[currentFrame])
+    }
+
+    private func compositedImage(for base: NSImage) -> NSImage {
+        let output = NSImage(size: base.size)
+        output.lockFocus()
+        defer { output.unlockFocus() }
+
+        base.draw(in: NSRect(origin: .zero, size: base.size))
+
+        let dotDiameter = max(4.5, min(base.size.width, base.size.height) * 0.32)
+        let dotRect = NSRect(
+            x: base.size.width - dotDiameter - 1.5,
+            y: base.size.height - dotDiameter - 1.5,
+            width: dotDiameter,
+            height: dotDiameter
+        )
+
+        NSColor.black.withAlphaComponent(0.32).setFill()
+        NSBezierPath(ovalIn: dotRect.insetBy(dx: -1.0, dy: -1.0)).fill()
+
+        captureIndicatorState.color.setFill()
+        NSBezierPath(ovalIn: dotRect).fill()
+
+        return output
     }
 }

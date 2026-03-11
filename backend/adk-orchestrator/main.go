@@ -12,10 +12,15 @@ import (
 	cloudlogging "cloud.google.com/go/logging"
 	mexporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric"
 	texporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/propagation"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 	"google.golang.org/adk/agent"
 	adkmemory "google.golang.org/adk/memory"
 	"google.golang.org/adk/plugin"
@@ -77,13 +82,24 @@ func main() {
 	if projectID == "" {
 		projectID = "vibecat-489105"
 	}
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	))
+	res := resource.NewWithAttributes(
+		semconv.SchemaURL,
+		semconv.ServiceNameKey.String(serviceName),
+	)
 
 	// Cloud Trace
 	traceExporter, traceErr := texporter.New(texporter.WithProjectID(projectID))
 	if traceErr != nil {
 		slog.Warn("cloud trace init failed — tracing disabled", "error", traceErr)
 	} else {
-		tp := sdktrace.NewTracerProvider(sdktrace.WithBatcher(traceExporter))
+		tp := sdktrace.NewTracerProvider(
+			sdktrace.WithBatcher(traceExporter),
+			sdktrace.WithResource(res),
+		)
 		otel.SetTracerProvider(tp)
 		defer tp.Shutdown(ctx)
 		slog.Info("cloud trace initialized", "project", projectID)
@@ -94,7 +110,10 @@ func main() {
 	if metricErr != nil {
 		slog.Warn("cloud monitoring init failed — metrics disabled", "error", metricErr)
 	} else {
-		mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExporter)))
+		mp := sdkmetric.NewMeterProvider(
+			sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExporter)),
+			sdkmetric.WithResource(res),
+		)
 		otel.SetMeterProvider(mp)
 		defer mp.Shutdown(ctx)
 		slog.Info("cloud monitoring initialized", "project", projectID)
@@ -184,16 +203,16 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)
 	mux.HandleFunc("/readyz", readyHandler)
-	mux.HandleFunc("/analyze", orch.analyzeHandler)
-	mux.HandleFunc("/search", orch.searchHandler)
-	mux.HandleFunc("/tool", orch.toolHandler)
-	mux.HandleFunc("/memory/session-summary", orch.sessionSummaryHandler)
-	mux.HandleFunc("/memory/context", orch.memoryContextHandler)
+	mux.HandleFunc("/analyze", withTraceContext(orch.analyzeHandler))
+	mux.HandleFunc("/search", withTraceContext(orch.searchHandler))
+	mux.HandleFunc("/tool", withTraceContext(orch.toolHandler))
+	mux.HandleFunc("/memory/session-summary", withTraceContext(orch.sessionSummaryHandler))
+	mux.HandleFunc("/memory/context", withTraceContext(orch.memoryContextHandler))
 
 	addr := ":" + portOrDefault("8080")
 	slog.Info("starting server", "service", serviceName, "addr", addr)
 
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := http.ListenAndServe(addr, otelhttp.NewHandler(mux, serviceName)); err != nil {
 		slog.Error("server failed", "error", err)
 		os.Exit(1)
 	}
@@ -228,6 +247,14 @@ func (o *orchestrator) analyzeHandler(w http.ResponseWriter, r *http.Request) {
 
 	imageLen := len(req.Image)
 	slog.Info("analyze request parsed", "trace_id", req.TraceID, "image_bytes", imageLen, "context", req.Context, "user_id", req.UserID, "session_id", req.SessionID)
+	if req.TraceID != "" {
+		span.SetAttributes(attribute.String("app.trace_id", req.TraceID))
+	}
+	span.SetAttributes(
+		attribute.Int("image.bytes", imageLen),
+		attribute.String("user.id", req.UserID),
+		attribute.String("session.id", req.SessionID),
+	)
 
 	// Use session/user IDs from request, or defaults
 	userID := req.UserID
@@ -557,5 +584,12 @@ func readyHandler(w http.ResponseWriter, r *http.Request) {
 		slog.Error("failed to encode ready response", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
+	}
+}
+
+func withTraceContext(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+		next(w, r.WithContext(ctx))
 	}
 }

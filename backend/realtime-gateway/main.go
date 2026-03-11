@@ -8,13 +8,20 @@ import (
 	"os"
 
 	cloudlogging "cloud.google.com/go/logging"
+	mexporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric"
 	texporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 	"google.golang.org/genai"
 	"vibecat/realtime-gateway/internal/adk"
 	"vibecat/realtime-gateway/internal/auth"
 	"vibecat/realtime-gateway/internal/live"
+	"vibecat/realtime-gateway/internal/tts"
 	"vibecat/realtime-gateway/internal/ws"
 )
 
@@ -26,19 +33,45 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
-	// Cloud Trace
 	projectID := os.Getenv("GCP_PROJECT_ID")
 	if projectID == "" {
 		projectID = "vibecat-489105"
 	}
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	))
+	res := resource.NewWithAttributes(
+		semconv.SchemaURL,
+		semconv.ServiceNameKey.String(serviceName),
+	)
+
+	// Cloud Trace
 	traceExporter, traceErr := texporter.New(texporter.WithProjectID(projectID))
 	if traceErr != nil {
 		slog.Warn("cloud trace init failed — tracing disabled", "error", traceErr)
 	} else {
-		tp := sdktrace.NewTracerProvider(sdktrace.WithBatcher(traceExporter))
+		tp := sdktrace.NewTracerProvider(
+			sdktrace.WithBatcher(traceExporter),
+			sdktrace.WithResource(res),
+		)
 		otel.SetTracerProvider(tp)
 		defer tp.Shutdown(context.Background())
 		slog.Info("cloud trace initialized", "project", projectID)
+	}
+
+	// Cloud Monitoring
+	metricExporter, metricErr := mexporter.New(mexporter.WithProjectID(projectID))
+	if metricErr != nil {
+		slog.Warn("cloud monitoring init failed — metrics disabled", "error", metricErr)
+	} else {
+		mp := sdkmetric.NewMeterProvider(
+			sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExporter)),
+			sdkmetric.WithResource(res),
+		)
+		otel.SetMeterProvider(mp)
+		defer mp.Shutdown(context.Background())
+		slog.Info("cloud monitoring initialized", "project", projectID)
 	}
 
 	// Cloud Logging
@@ -59,6 +92,7 @@ func main() {
 	jwtMgr := auth.NewManager(authSecret)
 
 	var liveMgr *live.Manager
+	var ttsClient *tts.Client
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey != "" {
 		genaiClient, clientErr := genai.NewClient(context.Background(), &genai.ClientConfig{
@@ -72,6 +106,7 @@ func main() {
 			slog.Error("failed to create genai client", "error", clientErr)
 		} else {
 			liveMgr = live.NewManager(genaiClient)
+			ttsClient = tts.NewClient(genaiClient)
 			slog.Info("gemini live manager initialized")
 		}
 	} else {
@@ -87,17 +122,24 @@ func main() {
 		slog.Warn("ADK_ORCHESTRATOR_URL not set, screen capture analysis disabled")
 	}
 
+	var wsMetrics *ws.Metrics
+	if createdMetrics, err := ws.NewMetrics(otel.Meter("vibecat/gateway")); err != nil {
+		slog.Warn("gateway websocket metrics init failed", "error", err)
+	} else {
+		wsMetrics = createdMetrics
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)
 	mux.HandleFunc("/readyz", readyHandler)
 	mux.HandleFunc("/api/v1/auth/register", auth.RegisterHandler(jwtMgr))
 	mux.HandleFunc("/api/v1/auth/refresh", auth.RefreshHandler(jwtMgr))
-	mux.Handle("/ws/live", auth.Middleware(jwtMgr, ws.Handler(registry, liveMgr, adkClient)))
+	mux.Handle("/ws/live", auth.Middleware(jwtMgr, ws.Handler(registry, liveMgr, adkClient, ttsClient, wsMetrics)))
 
 	addr := ":" + portOrDefault("8080")
 	slog.Info("starting server", "service", serviceName, "addr", addr)
 
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := http.ListenAndServe(addr, otelhttp.NewHandler(mux, serviceName)); err != nil {
 		slog.Error("server failed", "error", err)
 		os.Exit(1)
 	}

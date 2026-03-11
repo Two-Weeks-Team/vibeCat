@@ -6,6 +6,12 @@
 
 This file is the concise deployment-proof view for final handoff and submission packaging.
 
+See also:
+
+- `docs/evidence/DEPLOYMENT_EVIDENCE.md`
+- `docs/evidence/OPERATIONS_EVIDENCE_PACK_20260311.md`
+- `docs/evidence/artifacts/20260311/`
+
 ## Cloud Run Services
 
 ### Realtime Gateway
@@ -72,9 +78,19 @@ Recent trace IDs observed on 2026-03-11:
 ### Cloud Monitoring
 
 - OpenTelemetry metric exporter is wired in code
-- no Monitoring dashboard is configured yet
+- dashboard configured: `VibeCat Operations Overview`
+- dashboard resource: `projects/163070481841/dashboards/752c1986-5674-4963-a967-6f3595902be2`
+- repo definition: `infra/monitoring/vibecat-operations-dashboard.yaml`
+- repo apply script: `infra/configure_observability.sh`
+- custom-metrics dashboard configured: `VibeCat Runtime Overview`
+- custom-metrics dashboard resource: `projects/163070481841/dashboards/0425463d-47b5-4235-a2e9-f7c9002ba2f6`
+- custom-metrics repo definition: `infra/observability/vibecat-runtime-dashboard.json`
+- custom-metrics apply script: `infra/observability/sync_dashboard.sh`
 
-This means observability is partially proven, but dashboard-level completion still belongs to the remaining ops work.
+Live dashboard exports are stored at:
+
+- `docs/evidence/artifacts/20260311/monitoring-dashboard-vibecat-operations-overview.json`
+- `docs/evidence/artifacts/20260311/monitoring-dashboard-vibecat-runtime-overview.json`
 
 ## CI/CD Proof
 
@@ -103,6 +119,6 @@ For final submission packaging, the code and live deployment are already in plac
 - Cloud Run service detail pages
 - Firestore database page
 - Cloud Logging viewer
-- Cloud Trace explorer
+- Cloud Trace explorer after deploying the updated backend revisions from this branch
 
 Do not rely on older screenshot placeholders; verify them against the current `00040` and `00038` revisions.

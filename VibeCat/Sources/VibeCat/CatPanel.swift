@@ -7,6 +7,10 @@ final class CatPanel: NSPanel {
     private let emotionIndicator = NSTextField(labelWithString: "")
     private let bubbleView = ChatBubbleView()
     private let spinnerView = NSProgressIndicator()
+    private let privacyBadgeView = NSVisualEffectView()
+    private let privacyDotView = NSView()
+    private let privacyTitleLabel = NSTextField(labelWithString: "")
+    private let privacyDetailLabel = NSTextField(labelWithString: "")
     private let catViewModel: CatViewModel
     private let spriteAnimator: SpriteAnimator
     private var spriteSize: CGFloat = 100
@@ -67,6 +71,26 @@ final class CatPanel: NSPanel {
         spinnerView.isHidden = true
         spinnerView.frame = NSRect(x: 0, y: 0, width: 24, height: 24)
         contentView.addSubview(spinnerView)
+
+        privacyBadgeView.material = .hudWindow
+        privacyBadgeView.blendingMode = .withinWindow
+        privacyBadgeView.state = .active
+        privacyBadgeView.wantsLayer = true
+        privacyBadgeView.layer?.cornerRadius = 11
+        privacyBadgeView.layer?.masksToBounds = true
+        contentView.addSubview(privacyBadgeView)
+
+        privacyDotView.wantsLayer = true
+        privacyDotView.layer?.cornerRadius = 4
+        privacyBadgeView.addSubview(privacyDotView)
+
+        privacyTitleLabel.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        privacyTitleLabel.textColor = .white
+        privacyBadgeView.addSubview(privacyTitleLabel)
+
+        privacyDetailLabel.font = NSFont.systemFont(ofSize: 10, weight: .regular)
+        privacyDetailLabel.textColor = NSColor.white.withAlphaComponent(0.78)
+        privacyBadgeView.addSubview(privacyDetailLabel)
 
         emotionIndicator.font = NSFont.systemFont(ofSize: 18)
         emotionIndicator.textColor = .white
@@ -301,6 +325,13 @@ final class CatPanel: NSPanel {
         self.screenAnalyzer = screenAnalyzer
     }
 
+    func updateCapturePrivacyBadge(title: String, detail: String, accentColor: NSColor) {
+        privacyTitleLabel.stringValue = title
+        privacyDetailLabel.stringValue = detail
+        privacyDotView.layer?.backgroundColor = accentColor.cgColor
+        layoutPrivacyBadge()
+    }
+
     func beginCharacterTransition() {
         showBubble(text: VibeCatL10n.characterChanging())
         spinnerView.isHidden = false
@@ -349,6 +380,7 @@ final class CatPanel: NSPanel {
         let catFrame = imageView.frame
         emotionIndicator.frame.origin = NSPoint(x: catFrame.maxX - 4, y: catFrame.maxY - 4)
         layoutSpinner()
+        layoutPrivacyBadge()
         if currentBubbleText != nil {
             updateBubbleFrame()
         }
@@ -360,6 +392,28 @@ final class CatPanel: NSPanel {
             x: catFrame.midX - spinnerView.frame.width / 2,
             y: catFrame.midY - spinnerView.frame.height / 2
         )
+    }
+
+    private func layoutPrivacyBadge() {
+        let titleSize = privacyTitleLabel.intrinsicContentSize
+        let detailSize = privacyDetailLabel.intrinsicContentSize
+        let badgeWidth = max(titleSize.width, detailSize.width) + 30
+        let badgeHeight = titleSize.height + detailSize.height + 14
+        let catFrame = imageView.frame
+
+        var badgeX = catFrame.maxX + 12
+        let badgeY = max(catFrame.midY - badgeHeight / 2, 12)
+
+        if let visibleFrame = screen?.visibleFrame ?? NSScreen.main?.visibleFrame,
+           frame.minX + badgeX + badgeWidth > visibleFrame.maxX - 8 {
+            badgeX = max(catFrame.minX - badgeWidth - 12, 8)
+        }
+
+        privacyBadgeView.frame = NSRect(x: badgeX, y: badgeY, width: badgeWidth, height: badgeHeight)
+        privacyBadgeView.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.56).cgColor
+        privacyDotView.frame = NSRect(x: 10, y: badgeHeight - 17, width: 8, height: 8)
+        privacyTitleLabel.frame = NSRect(x: 24, y: badgeHeight - titleSize.height - 6, width: badgeWidth - 30, height: titleSize.height)
+        privacyDetailLabel.frame = NSRect(x: 10, y: 5, width: badgeWidth - 16, height: detailSize.height)
     }
 
     private func updateBubbleFrame() {

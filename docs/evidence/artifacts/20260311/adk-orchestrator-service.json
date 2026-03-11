@@ -1,0 +1,124 @@
+{
+  "apiVersion": "serving.knative.dev/v1",
+  "kind": "Service",
+  "metadata": {
+    "annotations": {
+      "run.googleapis.com/client-name": "gcloud",
+      "run.googleapis.com/client-version": "557.0.0",
+      "run.googleapis.com/ingress": "all",
+      "run.googleapis.com/ingress-status": "all",
+      "run.googleapis.com/maxScale": "20",
+      "run.googleapis.com/operation-id": "67883123-578d-4403-914c-f48984ed3516",
+      "run.googleapis.com/urls": "[\"https://adk-orchestrator-163070481841.asia-northeast3.run.app\",\"https://adk-orchestrator-a4akw2crra-du.a.run.app\"]",
+      "serving.knative.dev/creator": "centisgood@gmail.com",
+      "serving.knative.dev/lastModifier": "centisgood@gmail.com"
+    },
+    "creationTimestamp": "2026-03-04T00:28:33.676734Z",
+    "generation": 38,
+    "labels": {
+      "cloud.googleapis.com/location": "asia-northeast3",
+      "run.googleapis.com/satisfiesPzs": "true"
+    },
+    "name": "adk-orchestrator",
+    "namespace": "163070481841",
+    "resourceVersion": "AAZMtSHa4PI",
+    "selfLink": "/apis/serving.knative.dev/v1/namespaces/163070481841/services/adk-orchestrator",
+    "uid": "f8226519-7d1e-4f8d-8672-18cf54e8abe0"
+  },
+  "spec": {
+    "template": {
+      "metadata": {
+        "annotations": {
+          "autoscaling.knative.dev/maxScale": "3",
+          "run.googleapis.com/client-name": "gcloud",
+          "run.googleapis.com/client-version": "557.0.0",
+          "run.googleapis.com/startup-cpu-boost": "true"
+        },
+        "labels": {
+          "client.knative.dev/nonce": "dkmfcxsqcv",
+          "run.googleapis.com/startupProbeType": "Default"
+        }
+      },
+      "spec": {
+        "containerConcurrency": 80,
+        "containers": [
+          {
+            "env": [
+              {
+                "name": "GEMINI_API_KEY",
+                "valueFrom": {
+                  "secretKeyRef": {
+                    "key": "latest",
+                    "name": "vibecat-gemini-api-key"
+                  }
+                }
+              }
+            ],
+            "image": "asia-northeast3-docker.pkg.dev/vibecat-489105/vibecat-images/adk-orchestrator",
+            "ports": [
+              {
+                "containerPort": 8080,
+                "name": "http1"
+              }
+            ],
+            "resources": {
+              "limits": {
+                "cpu": "1",
+                "memory": "1Gi"
+              }
+            },
+            "startupProbe": {
+              "failureThreshold": 1,
+              "periodSeconds": 240,
+              "tcpSocket": {
+                "port": 8080
+              },
+              "timeoutSeconds": 240
+            }
+          }
+        ],
+        "serviceAccountName": "163070481841-compute@developer.gserviceaccount.com",
+        "timeoutSeconds": 300
+      }
+    },
+    "traffic": [
+      {
+        "latestRevision": true,
+        "percent": 100
+      }
+    ]
+  },
+  "status": {
+    "address": {
+      "url": "https://adk-orchestrator-a4akw2crra-du.a.run.app"
+    },
+    "conditions": [
+      {
+        "lastTransitionTime": "2026-03-11T00:58:21.048050Z",
+        "status": "True",
+        "type": "Ready"
+      },
+      {
+        "lastTransitionTime": "2026-03-11T00:58:16.611505Z",
+        "status": "True",
+        "type": "ConfigurationsReady"
+      },
+      {
+        "lastTransitionTime": "2026-03-11T00:58:21.019997Z",
+        "status": "True",
+        "type": "RoutesReady"
+      }
+    ],
+    "latestCreatedRevisionName": "adk-orchestrator-00038-t4c",
+    "latestReadyRevisionName": "adk-orchestrator-00038-t4c",
+    "observedGeneration": 38,
+    "traffic": [
+      {
+        "latestRevision": true,
+        "percent": 100,
+        "revisionName": "adk-orchestrator-00038-t4c"
+      }
+    ],
+    "url": "https://adk-orchestrator-a4akw2crra-du.a.run.app"
+  }
+}
