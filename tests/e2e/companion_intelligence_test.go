@@ -13,7 +13,7 @@ func TestCompanionIntelligenceFlowRealAPI(t *testing.T) {
 	token := orchestratorIdentityToken(t)
 
 	userID := fmt.Sprintf("e2e-companion-%d", time.Now().UnixNano())
-	sessionID := "session-frustrated"
+	sessionID := fmt.Sprintf("session-%d", time.Now().UnixNano())
 
 	resp, body := postJSONWithBearer(t, base+"/memory/context", token, map[string]any{
 		"userId":   userID,
@@ -52,7 +52,13 @@ func TestCompanionIntelligenceFlowRealAPI(t *testing.T) {
 		} `json:"mood"`
 		Decision struct {
 			ShouldSpeak bool `json:"shouldSpeak"`
+			Reason      string `json:"reason"`
 		} `json:"decision"`
+		Search struct {
+			Query   string   `json:"query"`
+			Summary string   `json:"summary"`
+			Sources []string `json:"sources"`
+		} `json:"search"`
 		SpeechText string `json:"speechText"`
 	}
 	if err := json.Unmarshal(body, &frustrated); err != nil {
@@ -63,6 +69,9 @@ func TestCompanionIntelligenceFlowRealAPI(t *testing.T) {
 	}
 	if strings.TrimSpace(frustrated.SpeechText) == "" && !frustrated.Decision.ShouldSpeak {
 		t.Fatalf("expected frustrated analyze to produce speech or a speak decision: %s", body)
+	}
+	if strings.TrimSpace(frustrated.Search.Summary) == "" && frustrated.Decision.Reason != "search_result" {
+		t.Fatalf("expected frustrated analyze to include a grounded search follow-up: %s", body)
 	}
 
 	resp, body = postJSONWithBearer(t, base+"/search", token, map[string]any{
@@ -90,7 +99,7 @@ func TestCompanionIntelligenceFlowRealAPI(t *testing.T) {
 
 	resp, body = postJSONWithBearer(t, base+"/analyze", token, map[string]any{
 		"userId":          userID,
-		"sessionId":       "session-success",
+		"sessionId":       sessionID,
 		"language":        "Korean",
 		"traceId":         "e2e_companion_success",
 		"character":       "cat",
@@ -105,6 +114,9 @@ func TestCompanionIntelligenceFlowRealAPI(t *testing.T) {
 	}
 
 	var success struct {
+		Mood struct {
+			Mood string `json:"mood"`
+		} `json:"mood"`
 		Vision struct {
 			SuccessDetected bool `json:"successDetected"`
 		} `json:"vision"`
@@ -116,13 +128,19 @@ func TestCompanionIntelligenceFlowRealAPI(t *testing.T) {
 	if err := json.Unmarshal(body, &success); err != nil {
 		t.Fatalf("decode success analyze response: %v (%s)", err, body)
 	}
+	if strings.TrimSpace(success.Mood.Mood) == "" {
+		t.Fatalf("expected success analyze to return mood state: %s", body)
+	}
+	if success.Mood.Mood == frustrated.Mood.Mood {
+		t.Fatalf("expected mood transition across the same session: frustrated=%q success=%q", frustrated.Mood.Mood, success.Mood.Mood)
+	}
 	if !success.Vision.SuccessDetected && strings.TrimSpace(success.Celebration.Message) == "" {
 		t.Fatalf("expected success analyze to detect celebration: %s", body)
 	}
 
 	resp, body = postJSONWithBearer(t, base+"/memory/session-summary", token, map[string]any{
 		"userId":    userID,
-		"sessionId": "session-success",
+		"sessionId": sessionID,
 		"language":  "Korean",
 		"history": []string{
 			"user: 인증 테스트가 계속 실패해",

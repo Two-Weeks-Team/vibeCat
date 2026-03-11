@@ -3,6 +3,21 @@ import VibeCatCore
 
 @MainActor
 final class CatPanel: NSPanel {
+    private enum PrivacyBadgeLayout {
+        static let cornerRadius: CGFloat = 11
+        static let horizontalPadding: CGFloat = 30
+        static let verticalPadding: CGFloat = 14
+        static let sideSpacing: CGFloat = 12
+        static let minimumInset: CGFloat = 8
+        static let titleLeading: CGFloat = 24
+        static let titleTopInset: CGFloat = 6
+        static let detailLeading: CGFloat = 10
+        static let detailBottomInset: CGFloat = 5
+        static let badgeBackgroundOpacity: CGFloat = 0.56
+        static let dotSize = NSSize(width: 8, height: 8)
+        static let dotTopInset: CGFloat = 17
+    }
+
     private let imageView = NSImageView()
     private let emotionIndicator = NSTextField(labelWithString: "")
     private let bubbleView = ChatBubbleView()
@@ -76,12 +91,13 @@ final class CatPanel: NSPanel {
         privacyBadgeView.blendingMode = .withinWindow
         privacyBadgeView.state = .active
         privacyBadgeView.wantsLayer = true
-        privacyBadgeView.layer?.cornerRadius = 11
+        privacyBadgeView.layer?.cornerRadius = PrivacyBadgeLayout.cornerRadius
         privacyBadgeView.layer?.masksToBounds = true
+        privacyBadgeView.layer?.backgroundColor = NSColor.black.withAlphaComponent(PrivacyBadgeLayout.badgeBackgroundOpacity).cgColor
         contentView.addSubview(privacyBadgeView)
 
         privacyDotView.wantsLayer = true
-        privacyDotView.layer?.cornerRadius = 4
+        privacyDotView.layer?.cornerRadius = PrivacyBadgeLayout.dotSize.width / 2
         privacyBadgeView.addSubview(privacyDotView)
 
         privacyTitleLabel.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
@@ -397,23 +413,37 @@ final class CatPanel: NSPanel {
     private func layoutPrivacyBadge() {
         let titleSize = privacyTitleLabel.intrinsicContentSize
         let detailSize = privacyDetailLabel.intrinsicContentSize
-        let badgeWidth = max(titleSize.width, detailSize.width) + 30
-        let badgeHeight = titleSize.height + detailSize.height + 14
+        let badgeWidth = max(titleSize.width, detailSize.width) + PrivacyBadgeLayout.horizontalPadding
+        let badgeHeight = titleSize.height + detailSize.height + PrivacyBadgeLayout.verticalPadding
         let catFrame = imageView.frame
 
-        var badgeX = catFrame.maxX + 12
-        let badgeY = max(catFrame.midY - badgeHeight / 2, 12)
+        var badgeX = catFrame.maxX + PrivacyBadgeLayout.sideSpacing
+        let badgeY = max(catFrame.midY - badgeHeight / 2, PrivacyBadgeLayout.minimumInset)
 
         if let visibleFrame = screen?.visibleFrame ?? NSScreen.main?.visibleFrame,
-           frame.minX + badgeX + badgeWidth > visibleFrame.maxX - 8 {
-            badgeX = max(catFrame.minX - badgeWidth - 12, 8)
+           frame.minX + badgeX + badgeWidth > visibleFrame.maxX - PrivacyBadgeLayout.minimumInset {
+            badgeX = max(catFrame.minX - badgeWidth - PrivacyBadgeLayout.sideSpacing, PrivacyBadgeLayout.minimumInset)
         }
 
         privacyBadgeView.frame = NSRect(x: badgeX, y: badgeY, width: badgeWidth, height: badgeHeight)
-        privacyBadgeView.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.56).cgColor
-        privacyDotView.frame = NSRect(x: 10, y: badgeHeight - 17, width: 8, height: 8)
-        privacyTitleLabel.frame = NSRect(x: 24, y: badgeHeight - titleSize.height - 6, width: badgeWidth - 30, height: titleSize.height)
-        privacyDetailLabel.frame = NSRect(x: 10, y: 5, width: badgeWidth - 16, height: detailSize.height)
+        privacyDotView.frame = NSRect(
+            x: PrivacyBadgeLayout.detailLeading,
+            y: badgeHeight - PrivacyBadgeLayout.dotTopInset,
+            width: PrivacyBadgeLayout.dotSize.width,
+            height: PrivacyBadgeLayout.dotSize.height
+        )
+        privacyTitleLabel.frame = NSRect(
+            x: PrivacyBadgeLayout.titleLeading,
+            y: badgeHeight - titleSize.height - PrivacyBadgeLayout.titleTopInset,
+            width: badgeWidth - PrivacyBadgeLayout.horizontalPadding,
+            height: titleSize.height
+        )
+        privacyDetailLabel.frame = NSRect(
+            x: PrivacyBadgeLayout.detailLeading,
+            y: PrivacyBadgeLayout.detailBottomInset,
+            width: badgeWidth - 16,
+            height: detailSize.height
+        )
     }
 
     private func updateBubbleFrame() {

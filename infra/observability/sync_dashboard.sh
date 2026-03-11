@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECT_ID="${GCP_PROJECT_ID:-vibecat-489105}"
+PROJECT_ID="${GCP_PROJECT:-${GCP_PROJECT_ID:-vibecat-489105}}"
 CONFIG_PATH="${1:-infra/observability/vibecat-runtime-dashboard.json}"
 
 if ! command -v gcloud >/dev/null 2>&1; then

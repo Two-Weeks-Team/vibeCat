@@ -11,6 +11,9 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"google.golang.org/genai"
 	"vibecat/realtime-gateway/internal/adk"
 	"vibecat/realtime-gateway/internal/live"
@@ -294,9 +297,13 @@ func TestHandlerScreenCaptureTimeoutReturnsSilentFallbackQuickly(t *testing.T) {
 }
 
 func TestHandlerLiveSearchFallbackSpeaksViaTTSWithoutLiveSession(t *testing.T) {
+	installTestTracerProvider(t)
+
 	reg := NewRegistry()
+	searchSpanCh := make(chan bool, 1)
 	fakeADK := &stubADK{
 		searchFn: func(ctx context.Context, req adk.SearchRequest) (*adk.SearchResult, error) {
+			searchSpanCh <- trace.SpanFromContext(ctx).SpanContext().IsValid()
 			return &adk.SearchResult{
 				Query:   req.Query,
 				Summary: "공식 문서 기준으로 1006은 close frame 없이 연결이 끊긴 경우를 뜻해.",
@@ -425,6 +432,157 @@ func TestHandlerLiveSearchFallbackSpeaksViaTTSWithoutLiveSession(t *testing.T) {
 	if !sawTTSEnd {
 		t.Fatal("did not observe ttsEnd for fallback speech")
 	}
+	select {
+	case sawSpan := <-searchSpanCh:
+		if !sawSpan {
+			t.Fatal("expected search fallback to run under an active trace span")
+		}
+	default:
+		t.Fatal("expected search fallback to invoke ADK search")
+	}
+}
+
+func TestFetchMemoryContextStartsTraceSpan(t *testing.T) {
+	installTestTracerProvider(t)
+
+	userID := "trace-memory-user"
+	language := "Korean"
+	invalidateCachedMemoryContext(userID, language)
+	defer invalidateCachedMemoryContext(userID, language)
+
+	sawSpan := false
+	fakeADK := &stubADK{
+		memoryContextFn: func(ctx context.Context, req adk.MemoryContextRequest) (string, error) {
+			sawSpan = trace.SpanFromContext(ctx).SpanContext().IsValid()
+			return "Recent coding context", nil
+		},
+	}
+
+	got := fetchMemoryContext(context.Background(), fakeADK, live.Config{
+		DeviceID: userID,
+		Language: language,
+	})
+
+	if got != "Recent coding context" {
+		t.Fatalf("fetchMemoryContext() = %q", got)
+	}
+	if !sawSpan {
+		t.Fatal("expected memory context lookup to run under an active trace span")
+	}
+}
+
+func TestHandlerToolRoutingStartsTraceSpan(t *testing.T) {
+	installTestTracerProvider(t)
+
+	reg := NewRegistry()
+	toolSpanCh := make(chan bool, 1)
+	fakeADK := &stubADK{
+		toolFn: func(ctx context.Context, req adk.ToolRequest) (*adk.ToolResult, error) {
+			toolSpanCh <- trace.SpanFromContext(ctx).SpanContext().IsValid()
+			return &adk.ToolResult{
+				Tool:    adk.ToolKindMaps,
+				Query:   req.Query,
+				Summary: "강남역 근처 카페 두 곳을 찾았어.",
+				Sources: []string{"https://example.com/maps"},
+			}, nil
+		},
+	}
+
+	server := httptest.NewServer(Handler(reg, nil, fakeADK, nil, nil))
+	defer server.Close()
+
+	conn := dialTestWebSocket(t, server.URL)
+	defer conn.Close()
+
+	if err := conn.WriteJSON(map[string]any{
+		"type": "clientContent",
+		"clientContent": map[string]any{
+			"turnComplete": true,
+			"turns": []map[string]any{
+				{
+					"role": "user",
+					"parts": []map[string]string{
+						{"text": "강남역 근처 카페 추천해줘"},
+					},
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("send clientContent: %v", err)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	if err := conn.SetReadDeadline(deadline); err != nil {
+		t.Fatalf("set read deadline: %v", err)
+	}
+
+	sawToolResult := false
+	for time.Now().Before(deadline) {
+		msgType, payload, err := conn.ReadMessage()
+		if err != nil {
+			t.Fatalf("read websocket message: %v", err)
+		}
+		if msgType != websocket.TextMessage {
+			continue
+		}
+
+		var msg map[string]any
+		if err := json.Unmarshal(payload, &msg); err != nil {
+			continue
+		}
+		if msg["type"] == "toolResult" {
+			sawToolResult = true
+			break
+		}
+	}
+
+	if !sawToolResult {
+		t.Fatal("did not observe toolResult for routed tool request")
+	}
+	select {
+	case sawSpan := <-toolSpanCh:
+		if !sawSpan {
+			t.Fatal("expected tool routing to run under an active trace span")
+		}
+	default:
+		t.Fatal("expected tool routing to invoke ADK tool")
+	}
+}
+
+func TestSaveSessionMemoryStartsTraceSpan(t *testing.T) {
+	installTestTracerProvider(t)
+
+	sawSpan := false
+	fakeADK := &stubADK{
+		saveSessionSummaryFn: func(ctx context.Context, req adk.SessionSummaryRequest) error {
+			sawSpan = trace.SpanFromContext(ctx).SpanContext().IsValid()
+			return nil
+		},
+	}
+	runtime := newSessionRuntime("trace-save-user", "trace-save-session")
+	runtime.append("user: 인증 테스트가 계속 실패해")
+	runtime.append("assistant: 401 응답 경로를 먼저 확인해보자")
+
+	saveSessionMemory(context.Background(), fakeADK, live.Config{Language: "Korean"}, runtime)
+
+	if !sawSpan {
+		t.Fatal("expected session summary save to run under an active trace span")
+	}
+}
+
+func installTestTracerProvider(t *testing.T) {
+	t.Helper()
+
+	previousProvider := otel.GetTracerProvider()
+	t.Cleanup(func() {
+		otel.SetTracerProvider(previousProvider)
+	})
+
+	tp := sdktrace.NewTracerProvider()
+	t.Cleanup(func() {
+		_ = tp.Shutdown(context.Background())
+	})
+	otel.SetTracerProvider(tp)
 }
 
 type stubADK struct {

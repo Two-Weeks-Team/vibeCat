@@ -203,11 +203,11 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)
 	mux.HandleFunc("/readyz", readyHandler)
-	mux.HandleFunc("/analyze", withTraceContext(orch.analyzeHandler))
-	mux.HandleFunc("/search", withTraceContext(orch.searchHandler))
-	mux.HandleFunc("/tool", withTraceContext(orch.toolHandler))
-	mux.HandleFunc("/memory/session-summary", withTraceContext(orch.sessionSummaryHandler))
-	mux.HandleFunc("/memory/context", withTraceContext(orch.memoryContextHandler))
+	mux.HandleFunc("/analyze", orch.analyzeHandler)
+	mux.HandleFunc("/search", orch.searchHandler)
+	mux.HandleFunc("/tool", orch.toolHandler)
+	mux.HandleFunc("/memory/session-summary", orch.sessionSummaryHandler)
+	mux.HandleFunc("/memory/context", orch.memoryContextHandler)
 
 	addr := ":" + portOrDefault("8080")
 	slog.Info("starting server", "service", serviceName, "addr", addr)
@@ -247,14 +247,15 @@ func (o *orchestrator) analyzeHandler(w http.ResponseWriter, r *http.Request) {
 
 	imageLen := len(req.Image)
 	slog.Info("analyze request parsed", "trace_id", req.TraceID, "image_bytes", imageLen, "context", req.Context, "user_id", req.UserID, "session_id", req.SessionID)
-	if req.TraceID != "" {
-		span.SetAttributes(attribute.String("app.trace_id", req.TraceID))
-	}
-	span.SetAttributes(
+	attrs := []attribute.KeyValue{
 		attribute.Int("image.bytes", imageLen),
-		attribute.String("user.id", req.UserID),
-		attribute.String("session.id", req.SessionID),
-	)
+		attribute.Bool("user.present", strings.TrimSpace(req.UserID) != ""),
+		attribute.Bool("session.present", strings.TrimSpace(req.SessionID) != ""),
+	}
+	if req.TraceID != "" {
+		attrs = append(attrs, attribute.String("app.trace_id", req.TraceID))
+	}
+	span.SetAttributes(attrs...)
 
 	// Use session/user IDs from request, or defaults
 	userID := req.UserID
@@ -584,12 +585,5 @@ func readyHandler(w http.ResponseWriter, r *http.Request) {
 		slog.Error("failed to encode ready response", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
-	}
-}
-
-func withTraceContext(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
-		next(w, r.WithContext(ctx))
 	}
 }

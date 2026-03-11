@@ -635,6 +635,12 @@ func maybeResolveSearchFallback(
 	sendTraceEvent(c, "text", traceID, "search_fallback_start", rootAt, reason)
 	searchCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
+	searchCtx, span := otel.Tracer("vibecat/gateway").Start(searchCtx, "adk.search")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("app.trace_id", traceID),
+		attribute.String("fallback.reason", reason),
+	)
 
 	result, err := adkClient.Search(searchCtx, adk.SearchRequest{
 		Query:    query,
@@ -732,6 +738,11 @@ func fetchMemoryContext(ctx context.Context, adkClient adkService, cfg live.Conf
 
 	memoryCtx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
 	defer cancel()
+	memoryCtx, span := otel.Tracer("vibecat/gateway").Start(memoryCtx, "adk.memory_context")
+	defer span.End()
+	span.SetAttributes(
+		attribute.Bool("user.present", userID != ""),
+	)
 
 	contextText, err := adkClient.MemoryContext(memoryCtx, adk.MemoryContextRequest{
 		UserID:   userID,
@@ -894,6 +905,14 @@ func maybeResolveTool(ctx context.Context, c *Conn, ls *liveSessionState, adkCli
 	sendProcessingState(c, "tool", traceID, "tool_running", toolRunningLabel(cfg.Language), toolStatusDetail(requestedTool, cfg.Language), string(requestedTool), 0, true)
 	toolCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
+	toolCtx, span := otel.Tracer("vibecat/gateway").Start(toolCtx, "adk.tool")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("app.trace_id", traceID),
+		attribute.String("tool.requested", string(requestedTool)),
+		attribute.Bool("user.present", strings.TrimSpace(userID) != ""),
+		attribute.Bool("session.present", strings.TrimSpace(sessionID) != ""),
+	)
 	result, err := adkClient.Tool(toolCtx, adk.ToolRequest{
 		Query:     query,
 		Language:  cfg.Language,
@@ -969,6 +988,13 @@ func saveSessionMemory(ctx context.Context, adkClient adkService, cfg live.Confi
 
 	saveCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
+	saveCtx, span := otel.Tracer("vibecat/gateway").Start(saveCtx, "adk.save_session_summary")
+	defer span.End()
+	span.SetAttributes(
+		attribute.Bool("user.present", strings.TrimSpace(userID) != ""),
+		attribute.Bool("session.present", strings.TrimSpace(sessionID) != ""),
+		attribute.Int("history.length", len(history)),
+	)
 	if err := adkClient.SaveSessionSummary(saveCtx, adk.SessionSummaryRequest{
 		UserID:    userID,
 		SessionID: sessionID,
