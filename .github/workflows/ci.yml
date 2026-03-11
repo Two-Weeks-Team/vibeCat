@@ -87,15 +87,43 @@ jobs:
 
       - name: Select Xcode 16+ and accept license
         run: |
-          XCODE_PATH=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
-          if [ -z "$XCODE_PATH" ]; then XCODE_PATH="/Applications/Xcode.app"; fi
-          export DEVELOPER_DIR="$XCODE_PATH/Contents/Developer"
-          echo "DEVELOPER_DIR=$DEVELOPER_DIR" >> "$GITHUB_ENV"
-          if sudo -n true 2>/dev/null; then
-            sudo -n env DEVELOPER_DIR="$DEVELOPER_DIR" xcodebuild -runFirstLaunch >/dev/null 2>&1 || true
-            sudo -n env DEVELOPER_DIR="$DEVELOPER_DIR" xcodebuild -license accept >/dev/null 2>&1 || true
+          xcodes=($(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V))
+          if [ ${#xcodes[@]} -eq 0 ]; then
+            xcodes=(/Applications/Xcode.app)
           fi
+
+          selected=""
+          for (( idx=${#xcodes[@]}-1; idx>=0; idx-- )); do
+            candidate="${xcodes[$idx]}"
+            devdir="$candidate/Contents/Developer"
+            if [ ! -d "$devdir" ]; then
+              continue
+            fi
+            if DEVELOPER_DIR="$devdir" xcodebuild -checkFirstLaunchStatus >/dev/null 2>&1; then
+              selected="$devdir"
+              break
+            fi
+          done
+
+          if [ -z "$selected" ]; then
+            latest="${xcodes[$((${#xcodes[@]}-1))]}"
+            selected="$latest/Contents/Developer"
+            if sudo -n true 2>/dev/null; then
+              sudo -n env DEVELOPER_DIR="$selected" xcodebuild -runFirstLaunch >/dev/null 2>&1 || true
+              sudo -n env DEVELOPER_DIR="$selected" xcodebuild -license accept >/dev/null 2>&1 || true
+            fi
+            if ! DEVELOPER_DIR="$selected" xcodebuild -checkFirstLaunchStatus >/dev/null 2>&1; then
+              echo "::error::No licensed Xcode installation is available on this runner."
+              echo "::error::Checked candidates: ${xcodes[*]}"
+              xcode-select -p || true
+              exit 69
+            fi
+          fi
+
+          export DEVELOPER_DIR="$selected"
+          echo "DEVELOPER_DIR=$DEVELOPER_DIR" >> "$GITHUB_ENV"
           xcodebuild -checkFirstLaunchStatus
+          xcodebuild -version
           swift --version
 
       - name: Build
