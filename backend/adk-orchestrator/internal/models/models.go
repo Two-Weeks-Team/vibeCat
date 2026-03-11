@@ -87,6 +87,79 @@ type ToolResult struct {
 	CreatedAt     time.Time `json:"createdAt,omitempty"`
 }
 
+type NavigatorTargetDescriptor struct {
+	Role           string `json:"role,omitempty"`
+	Label          string `json:"label,omitempty"`
+	WindowTitle    string `json:"windowTitle,omitempty"`
+	AppName        string `json:"appName,omitempty"`
+	RelativeAnchor string `json:"relativeAnchor,omitempty"`
+	RegionHint     string `json:"regionHint,omitempty"`
+}
+
+type NavigatorEscalationRequest struct {
+	Command                    string  `json:"command"`
+	Language                   string  `json:"language,omitempty"`
+	AppName                    string  `json:"appName,omitempty"`
+	BundleID                   string  `json:"bundleId,omitempty"`
+	FrontmostBundleID          string  `json:"frontmostBundleId,omitempty"`
+	WindowTitle                string  `json:"windowTitle,omitempty"`
+	FocusedRole                string  `json:"focusedRole,omitempty"`
+	FocusedLabel               string  `json:"focusedLabel,omitempty"`
+	SelectedText               string  `json:"selectedText,omitempty"`
+	AXSnapshot                 string  `json:"axSnapshot,omitempty"`
+	LastInputFieldDescriptor   string  `json:"lastInputFieldDescriptor,omitempty"`
+	Screenshot                 string  `json:"screenshot,omitempty"`
+	CaptureConfidence          float64 `json:"captureConfidence,omitempty"`
+	VisibleInputCandidateCount int     `json:"visibleInputCandidateCount,omitempty"`
+	TraceID                    string  `json:"traceId,omitempty"`
+}
+
+type NavigatorEscalationResult struct {
+	ResolvedDescriptor     *NavigatorTargetDescriptor `json:"resolvedDescriptor,omitempty"`
+	Confidence             float64                    `json:"confidence"`
+	FallbackRecommendation string                     `json:"fallbackRecommendation,omitempty"`
+	Reason                 string                     `json:"reason,omitempty"`
+}
+
+type NavigatorBackgroundStep struct {
+	ID               string                    `json:"id"`
+	ActionType       string                    `json:"actionType"`
+	TargetApp        string                    `json:"targetApp,omitempty"`
+	TargetDescriptor NavigatorTargetDescriptor `json:"targetDescriptor,omitempty"`
+	ResultStatus     string                    `json:"resultStatus,omitempty"`
+	ObservedOutcome  string                    `json:"observedOutcome,omitempty"`
+	PlannedAt        time.Time                 `json:"plannedAt,omitempty"`
+	CompletedAt      time.Time                 `json:"completedAt,omitempty"`
+}
+
+type NavigatorBackgroundRequest struct {
+	UserID                  string                    `json:"userId,omitempty"`
+	SessionID               string                    `json:"sessionId,omitempty"`
+	TaskID                  string                    `json:"taskId"`
+	Command                 string                    `json:"command"`
+	Language                string                    `json:"language,omitempty"`
+	Outcome                 string                    `json:"outcome"`
+	OutcomeDetail           string                    `json:"outcomeDetail,omitempty"`
+	Surface                 string                    `json:"surface,omitempty"`
+	InitialAppName          string                    `json:"initialAppName,omitempty"`
+	InitialWindowTitle      string                    `json:"initialWindowTitle,omitempty"`
+	InitialContextHash      string                    `json:"initialContextHash,omitempty"`
+	LastVerifiedContextHash string                    `json:"lastVerifiedContextHash,omitempty"`
+	StartedAt               time.Time                 `json:"startedAt,omitempty"`
+	CompletedAt             time.Time                 `json:"completedAt,omitempty"`
+	Steps                   []NavigatorBackgroundStep `json:"steps,omitempty"`
+	TraceID                 string                    `json:"traceId,omitempty"`
+}
+
+type NavigatorBackgroundResult struct {
+	Summary         string   `json:"summary"`
+	ReplayLabel     string   `json:"replayLabel,omitempty"`
+	Surface         string   `json:"surface,omitempty"`
+	ResearchSummary string   `json:"researchSummary,omitempty"`
+	ResearchSources []string `json:"researchSources,omitempty"`
+	Tags            []string `json:"tags,omitempty"`
+}
+
 type SessionSummaryRequest struct {
 	UserID    string   `json:"userId"`
 	SessionID string   `json:"sessionId,omitempty"`

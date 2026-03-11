@@ -1,0 +1,27 @@
+{
+  "name": "chrome_docs_lookup",
+  "command": "공식 문서 쪽으로 가보자",
+  "context": {
+    "appName": "Antigravity IDE",
+    "bundleId": "dev.antigravity.ide",
+    "frontmostBundleId": "dev.antigravity.ide",
+    "windowTitle": "AuthServiceTests.swift",
+    "focusedRole": "AXTextArea",
+    "focusedLabel": "Editor",
+    "selectedText": "Gemini Live API session resumption",
+    "axSnapshot": "window:AuthServiceTests.swift\neditor:AXTextArea:Editor",
+    "inputFieldHint": "",
+    "lastInputFieldDescriptor": "",
+    "focusStableMs": 840,
+    "captureConfidence": 0.88,
+    "visibleInputCandidateCount": 0,
+    "accessibilityPermission": "trusted",
+    "accessibilityTrusted": true
+  },
+  "expect": {
+    "intentClass": "find_or_lookup",
+    "stepCount": 2,
+    "firstAction": "focus_app",
+    "lastAction": "open_url"
+  }
+}

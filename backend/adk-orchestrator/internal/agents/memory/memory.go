@@ -151,6 +151,48 @@ func (a *Agent) SaveSessionSummary(ctx context.Context, userID string, history [
 	return a.store.UpdateMemory(ctx, userID, entry)
 }
 
+// SaveTaskSummary appends a navigator-task-sized summary into cross-session memory.
+// This runs on the background lane and must stay lightweight on the caller path.
+func (a *Agent) SaveTaskSummary(ctx context.Context, userID, summary string, history []string, language string) error {
+	if a.store == nil || strings.TrimSpace(userID) == "" {
+		return nil
+	}
+
+	language = lang.NormalizeLanguage(language)
+	summary = strings.TrimSpace(summary)
+	if summary == "" {
+		summary = a.generateSummary(ctx, history, language)
+	}
+	if summary == "" {
+		return nil
+	}
+
+	entry, err := a.store.GetMemory(ctx, userID)
+	if err != nil {
+		slog.Warn("memory agent: failed to get memory for task update", "error", err)
+		entry = nil
+	}
+	if entry == nil {
+		entry = &store.MemoryEntry{
+			UserID:    userID,
+			UpdatedAt: time.Now(),
+		}
+	}
+
+	entry.RecentSummaries = append(entry.RecentSummaries, store.SessionSummary{
+		Date:             time.Now(),
+		Summary:          summary,
+		UnresolvedIssues: extractUnresolvedIssues(history),
+	})
+	if len(entry.RecentSummaries) > 10 {
+		entry.RecentSummaries = entry.RecentSummaries[len(entry.RecentSummaries)-10:]
+	}
+	entry.UpdatedAt = time.Now()
+	entry.KnownTopics = mergeTopics(entry.KnownTopics, history)
+
+	return a.store.UpdateMemory(ctx, userID, entry)
+}
+
 // generateSummary uses Gemini to summarize the session history.
 func (a *Agent) generateSummary(ctx context.Context, history []string, language string) string {
 	if a.genaiClient == nil || len(history) == 0 {

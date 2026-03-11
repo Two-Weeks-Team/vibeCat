@@ -1,7 +1,7 @@
 ---
-title: from localhost to cloud run: deploying a multi-agent system
+title: from localhost to cloud run: deploying a live pm plus action worker
 published: false
-description: how VibeCat's two-service Cloud Run architecture came together — the deployment script, the observability stack, the CI pipeline, and the /readyz lesson I learned the hard way on a previous project
+description: how VibeCat's two-service Cloud Run architecture supports a Gemini Live PM, a single-task action worker, and the observability needed to trust a desktop UI navigator
 tags: geminiliveagentchallenge, devlog, buildinpublic, go
 cover_image:
 ---
@@ -12,7 +12,7 @@ I created this post for the purposes of entering the Gemini Live Agent Challenge
 
 there's a specific kind of confidence you get when something works on your laptop. the logs are clean, the WebSocket connects, the cat sprite blinks at you from the menu bar. then you push it to Cloud Run and spend the next two hours staring at a 503.
 
-this is the story of getting VibeCat — a macOS AI companion with a 9-agent backend — from `go run .` to two live Cloud Run services in `asia-northeast3`. it covers the deployment script, the observability stack, the CI pipeline, and one specific lesson about health checks that I learned the hard way on a previous project called missless (if you read "the websocket cascade from hell," you know where this is going).
+this is the story of getting VibeCat — now a macOS desktop UI navigator with a Live PM and a single-task action worker — from `go run .` to two live Cloud Run services in `asia-northeast3`. it covers the deployment script, the observability stack, the CI pipeline, and one specific lesson about health checks that I learned the hard way on a previous project called missless.
 
 source: [github.com/Two-Weeks-Team/vibeCat](https://github.com/Two-Weeks-Team/vibeCat)
 
@@ -24,7 +24,7 @@ VibeCat's backend is deliberately split into two Cloud Run services. this wasn't
 
 **realtime-gateway** handles everything real-time: the WebSocket connection from the macOS client, the Gemini Live API session (voice, VAD, barge-in), JWT auth, and TTS. it needs to stay alive for the duration of a user session.
 
-**adk-orchestrator** handles the heavy thinking: a 9-agent graph that runs on every screen capture analysis request. VisionAgent, MemoryAgent, MoodDetector, CelebrationTrigger, Mediator, AdaptiveScheduler, EngagementAgent, SearchBuddy — all wired together with ADK's `ParallelAgent` and `SequentialAgent` primitives.
+**adk-orchestrator** handles the slower intelligence lane: contextual analysis, research, memory-adjacent logic, and supporting signals that can enrich the navigator without owning the real-time execution loop.
 
 the gateway calls the orchestrator over HTTP (`POST /analyze`) whenever it needs to analyze a screen capture. the orchestrator is internal-only — no public traffic, IAM-protected.
 

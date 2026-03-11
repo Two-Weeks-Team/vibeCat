@@ -95,30 +95,75 @@ public struct NavigatorStep: Sendable, Codable, Equatable, Identifiable {
 public struct NavigatorContextPayload: Sendable, Codable, Equatable {
     public let appName: String
     public let bundleId: String
+    public let frontmostBundleId: String
     public let windowTitle: String
     public let focusedRole: String
     public let focusedLabel: String
     public let selectedText: String
     public let axSnapshot: String
+    public let inputFieldHint: String
+    public let lastInputFieldDescriptor: String
+    public let screenshot: String
+    public let focusStableMs: Int
+    public let captureConfidence: Double
+    public let visibleInputCandidateCount: Int
+    public let accessibilityPermission: String
     public let accessibilityTrusted: Bool
 
     public init(
         appName: String,
         bundleId: String,
+        frontmostBundleId: String,
         windowTitle: String,
         focusedRole: String,
         focusedLabel: String,
         selectedText: String,
         axSnapshot: String,
+        inputFieldHint: String,
+        lastInputFieldDescriptor: String,
+        screenshot: String,
+        focusStableMs: Int,
+        captureConfidence: Double,
+        visibleInputCandidateCount: Int,
+        accessibilityPermission: String,
         accessibilityTrusted: Bool
     ) {
         self.appName = appName
         self.bundleId = bundleId
+        self.frontmostBundleId = frontmostBundleId
         self.windowTitle = windowTitle
         self.focusedRole = focusedRole
         self.focusedLabel = focusedLabel
         self.selectedText = selectedText
         self.axSnapshot = axSnapshot
+        self.inputFieldHint = inputFieldHint
+        self.lastInputFieldDescriptor = lastInputFieldDescriptor
+        self.screenshot = screenshot
+        self.focusStableMs = focusStableMs
+        self.captureConfidence = captureConfidence
+        self.visibleInputCandidateCount = visibleInputCandidateCount
+        self.accessibilityPermission = accessibilityPermission
         self.accessibilityTrusted = accessibilityTrusted
+    }
+
+    public func withScreenshot(_ screenshot: String) -> NavigatorContextPayload {
+        NavigatorContextPayload(
+            appName: appName,
+            bundleId: bundleId,
+            frontmostBundleId: frontmostBundleId,
+            windowTitle: windowTitle,
+            focusedRole: focusedRole,
+            focusedLabel: focusedLabel,
+            selectedText: selectedText,
+            axSnapshot: axSnapshot,
+            inputFieldHint: inputFieldHint,
+            lastInputFieldDescriptor: lastInputFieldDescriptor,
+            screenshot: screenshot,
+            focusStableMs: focusStableMs,
+            captureConfidence: captureConfidence,
+            visibleInputCandidateCount: visibleInputCandidateCount,
+            accessibilityPermission: accessibilityPermission,
+            accessibilityTrusted: accessibilityTrusted
+        )
     }
 }

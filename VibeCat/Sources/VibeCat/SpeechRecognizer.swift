@@ -8,13 +8,36 @@ enum AudioForwardMode: Sendable {
 
 @MainActor
 final class SpeechRecognizer {
+    enum CaptureState: Equatable, Sendable {
+        case stopped
+        case starting
+        case recovering(attempt: Int)
+        case listening
+        case failed
+    }
+
     var onAudioBufferCaptured: (@Sendable (AVAudioPCMBuffer, AudioForwardMode) -> Void)?
     var onBargeInDetected: (@Sendable () -> Void)?
     var onRecordingFormatChanged: ((AVAudioFormat?) -> Void)?
+    var onCaptureStateChanged: ((CaptureState) -> Void)?
     private(set) var currentAudioFormat: AVAudioFormat?
     private(set) var isListening = false
 
     private let audioCapture = SpeechAudioCapture()
+    private(set) var captureState: CaptureState = .stopped {
+        didSet {
+            guard oldValue != captureState else { return }
+            onCaptureStateChanged?(captureState)
+        }
+    }
+    private var desiredListening = false
+    private var restartSequence: UInt64 = 0
+    private let recoveryDelays: [UInt64] = [
+        0,
+        300_000_000,
+        1_000_000_000,
+        2_000_000_000,
+    ]
 
     func requestPermissions() async -> Bool {
         await withCheckedContinuation { continuation in
@@ -34,8 +57,72 @@ final class SpeechRecognizer {
     }
 
     func startListening() async {
-        guard !isListening else { return }
+        desiredListening = true
+        await ensureListening(reason: "start", forceRestart: false)
+    }
 
+    func stopListening() {
+        desiredListening = false
+        restartSequence &+= 1
+        teardownCapture()
+        captureState = .stopped
+    }
+
+    func resumeListening() {
+        desiredListening = true
+        Task { await ensureListening(reason: "resume", forceRestart: false) }
+    }
+
+    func setModelSpeaking(_ speaking: Bool) {
+        audioCapture.modelSpeaking = speaking
+    }
+
+    func handleAudioDeviceChange(reason: String) {
+        guard desiredListening else {
+            NSLog("[SPEECH] audio device change ignored: recognizer intentionally stopped")
+            return
+        }
+        Task { @MainActor [weak self] in
+            await self?.ensureListening(reason: reason, forceRestart: true)
+        }
+    }
+
+    private func ensureListening(reason: String, forceRestart: Bool) async {
+        if isListening && !forceRestart {
+            captureState = .listening
+            return
+        }
+
+        restartSequence &+= 1
+        let sequence = restartSequence
+
+        for (attemptIndex, delay) in recoveryDelays.enumerated() {
+            guard desiredListening, sequence == restartSequence else { return }
+
+            if delay > 0 {
+                captureState = .recovering(attempt: attemptIndex + 1)
+                NSLog("[SPEECH] listening recovery scheduled reason=%@ attempt=%d delay_ms=%llu", reason, attemptIndex+1, delay / 1_000_000)
+                try? await Task.sleep(nanoseconds: delay)
+                guard desiredListening, sequence == restartSequence else { return }
+            } else {
+                captureState = .starting
+            }
+
+            if forceRestart || isListening || currentAudioFormat != nil {
+                teardownCapture()
+            }
+
+            if await attemptStartCapture() {
+                captureState = .listening
+                return
+            }
+        }
+
+        guard desiredListening, sequence == restartSequence else { return }
+        captureState = .failed
+    }
+
+    private func attemptStartCapture() async -> Bool {
         let capture = audioCapture
         let callback = onAudioBufferCaptured
         let bargeInCallback = onBargeInDetected
@@ -50,40 +137,19 @@ final class SpeechRecognizer {
             isListening = true
             onRecordingFormatChanged?(currentAudioFormat)
             NSLog("[SPEECH] startListening: success, format=%@, isListening=%d", String(describing: currentAudioFormat), isListening ? 1 : 0)
+            return true
         } catch {
             NSLog("[SPEECH] startListening: FAILED error=%@", String(describing: error))
-            audioCapture.stop()
-            currentAudioFormat = nil
-            isListening = false
-            onRecordingFormatChanged?(nil)
+            teardownCapture()
+            return false
         }
     }
 
-    func stopListening() {
-        guard isListening else { return }
+    private func teardownCapture() {
         audioCapture.stop()
         currentAudioFormat = nil
         isListening = false
         onRecordingFormatChanged?(nil)
-    }
-
-    func resumeListening() {
-        guard !isListening else { return }
-        Task { await startListening() }
-    }
-
-    func setModelSpeaking(_ speaking: Bool) {
-        audioCapture.modelSpeaking = speaking
-    }
-
-    func handleAudioDeviceChange() async {
-        guard isListening else {
-            NSLog("[SPEECH] audio device change ignored: recognizer already stopped")
-            return
-        }
-        NSLog("[SPEECH] audio device change detected; restarting capture")
-        stopListening()
-        await startListening()
     }
 }
 

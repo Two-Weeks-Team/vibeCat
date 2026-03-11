@@ -11,12 +11,13 @@ import (
 
 const (
 	// Collection names
-	SessionsCollection  = "sessions"
-	MetricsCollection   = "metrics"
-	HistoryCollection   = "history"
-	SearchesCollection  = "searches"
-	UsersCollection     = "users"
-	MemorySubcollection = "memory"
+	SessionsCollection         = "sessions"
+	MetricsCollection          = "metrics"
+	HistoryCollection          = "history"
+	SearchesCollection         = "searches"
+	NavigatorReplaysCollection = "navigator_replays"
+	UsersCollection            = "users"
+	MemorySubcollection        = "memory"
 )
 
 // Client wraps the Firestore client with typed helpers.
@@ -211,4 +212,22 @@ func (c *Client) GetCachedSearch(ctx context.Context, sessionID string, query st
 	}
 
 	return &entry, nil
+}
+
+// StoreNavigatorReplay writes a navigator replay summary keyed by task ID.
+func (c *Client) StoreNavigatorReplay(ctx context.Context, replay *NavigatorReplay) error {
+	if replay == nil {
+		return fmt.Errorf("navigator replay cannot be nil")
+	}
+	docID := replay.TaskID
+	if docID == "" {
+		return fmt.Errorf("navigator replay taskId cannot be empty")
+	}
+
+	docRef := c.client.Collection(NavigatorReplaysCollection).Doc(docID)
+	_, err := docRef.Set(ctx, replay)
+	if err != nil {
+		return fmt.Errorf("failed to store navigator replay: %w", err)
+	}
+	return nil
 }

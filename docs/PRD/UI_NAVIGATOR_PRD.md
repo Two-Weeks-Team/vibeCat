@@ -10,6 +10,17 @@ The submission keeps the existing overlay character and voice/text interaction s
 
 VibeCat becomes the user's hands when the intent is clear, and asks a short clarification question when it is not.
 
+## Runtime Thesis
+
+VibeCat is not a swarm of equal agents.
+
+It is:
+
+- one `Live PM` that speaks with the user through Gemini Live + VAD
+- one `single-task action worker` that plans and tracks executable work
+- one local `AX-first executor` that performs UI actions
+- optional background intelligence that can enrich the experience without blocking execution
+
 ## Primary Submission Surfaces
 
 - Antigravity IDE
@@ -42,6 +53,23 @@ Hero workflow:
 3. VibeCat opens the relevant docs or surface in Chrome
 4. VibeCat returns to Antigravity or Terminal
 5. VibeCat performs and verifies one step at a time
+
+## Plan Of Record
+
+The implementation plan is tracked in:
+
+- `docs/PRD/DETAILS/UI_NAVIGATOR_IMPLEMENTATION_PLAN_20260311.md`
+- `docs/analysis/GOOGLE_CLOUD_AGENTIC_ARCHITECTURE_REVIEW_20260311.md`
+
+Implementation status against that plan:
+
+1. `Live PM + single-task worker` boundaries are locked in code
+2. action task state is externalized through `ActionStateStore`
+3. pre-action context includes screenshot, AX hashes, focus stability, and input-field descriptors
+4. low-confidence target resolution goes through a narrow multimodal escalator
+5. post-task summary, replay labeling, research enrichment, and memory writes are on the async background lane
+6. step-level metrics and replay fixtures are in place for regression coverage
+7. submission docs are aligned to the navigator runtime
 
 ## Submission Message
 

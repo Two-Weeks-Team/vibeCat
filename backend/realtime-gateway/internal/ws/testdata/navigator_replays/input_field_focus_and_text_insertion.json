@@ -1,0 +1,27 @@
+{
+  "name": "input_field_focus_and_text_insertion",
+  "command": "여기에 \"gemini live api\" 입력해줘",
+  "context": {
+    "appName": "Google Chrome",
+    "bundleId": "com.google.Chrome",
+    "frontmostBundleId": "com.google.Chrome",
+    "windowTitle": "Google",
+    "focusedRole": "AXTextField",
+    "focusedLabel": "Search",
+    "selectedText": "",
+    "axSnapshot": "window:Google\nfocused:input:AXTextField:Search",
+    "inputFieldHint": "Search",
+    "lastInputFieldDescriptor": "bundle=com.google.Chrome|window=Google|role=textfield|label=Search",
+    "focusStableMs": 1020,
+    "captureConfidence": 0.92,
+    "visibleInputCandidateCount": 1,
+    "accessibilityPermission": "trusted",
+    "accessibilityTrusted": true
+  },
+  "expect": {
+    "intentClass": "execute_now",
+    "stepCount": 2,
+    "firstAction": "press_ax",
+    "lastAction": "paste_text"
+  }
+}

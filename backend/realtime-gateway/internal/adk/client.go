@@ -110,6 +110,79 @@ type ToolResult struct {
 	Reason        string   `json:"reason,omitempty"`
 }
 
+type NavigatorTargetDescriptor struct {
+	Role           string `json:"role,omitempty"`
+	Label          string `json:"label,omitempty"`
+	WindowTitle    string `json:"windowTitle,omitempty"`
+	AppName        string `json:"appName,omitempty"`
+	RelativeAnchor string `json:"relativeAnchor,omitempty"`
+	RegionHint     string `json:"regionHint,omitempty"`
+}
+
+type NavigatorEscalationRequest struct {
+	Command                    string  `json:"command"`
+	Language                   string  `json:"language,omitempty"`
+	AppName                    string  `json:"appName,omitempty"`
+	BundleID                   string  `json:"bundleId,omitempty"`
+	FrontmostBundleID          string  `json:"frontmostBundleId,omitempty"`
+	WindowTitle                string  `json:"windowTitle,omitempty"`
+	FocusedRole                string  `json:"focusedRole,omitempty"`
+	FocusedLabel               string  `json:"focusedLabel,omitempty"`
+	SelectedText               string  `json:"selectedText,omitempty"`
+	AXSnapshot                 string  `json:"axSnapshot,omitempty"`
+	LastInputFieldDescriptor   string  `json:"lastInputFieldDescriptor,omitempty"`
+	Screenshot                 string  `json:"screenshot,omitempty"`
+	CaptureConfidence          float64 `json:"captureConfidence,omitempty"`
+	VisibleInputCandidateCount int     `json:"visibleInputCandidateCount,omitempty"`
+	TraceID                    string  `json:"traceId,omitempty"`
+}
+
+type NavigatorEscalationResult struct {
+	ResolvedDescriptor     *NavigatorTargetDescriptor `json:"resolvedDescriptor,omitempty"`
+	Confidence             float64                    `json:"confidence"`
+	FallbackRecommendation string                     `json:"fallbackRecommendation,omitempty"`
+	Reason                 string                     `json:"reason,omitempty"`
+}
+
+type NavigatorBackgroundStep struct {
+	ID               string                    `json:"id"`
+	ActionType       string                    `json:"actionType"`
+	TargetApp        string                    `json:"targetApp,omitempty"`
+	TargetDescriptor NavigatorTargetDescriptor `json:"targetDescriptor,omitempty"`
+	ResultStatus     string                    `json:"resultStatus,omitempty"`
+	ObservedOutcome  string                    `json:"observedOutcome,omitempty"`
+	PlannedAt        time.Time                 `json:"plannedAt,omitempty"`
+	CompletedAt      time.Time                 `json:"completedAt,omitempty"`
+}
+
+type NavigatorBackgroundRequest struct {
+	UserID                  string                    `json:"userId,omitempty"`
+	SessionID               string                    `json:"sessionId,omitempty"`
+	TaskID                  string                    `json:"taskId"`
+	Command                 string                    `json:"command"`
+	Language                string                    `json:"language,omitempty"`
+	Outcome                 string                    `json:"outcome"`
+	OutcomeDetail           string                    `json:"outcomeDetail,omitempty"`
+	Surface                 string                    `json:"surface,omitempty"`
+	InitialAppName          string                    `json:"initialAppName,omitempty"`
+	InitialWindowTitle      string                    `json:"initialWindowTitle,omitempty"`
+	InitialContextHash      string                    `json:"initialContextHash,omitempty"`
+	LastVerifiedContextHash string                    `json:"lastVerifiedContextHash,omitempty"`
+	StartedAt               time.Time                 `json:"startedAt,omitempty"`
+	CompletedAt             time.Time                 `json:"completedAt,omitempty"`
+	Steps                   []NavigatorBackgroundStep `json:"steps,omitempty"`
+	TraceID                 string                    `json:"traceId,omitempty"`
+}
+
+type NavigatorBackgroundResult struct {
+	Summary         string   `json:"summary"`
+	ReplayLabel     string   `json:"replayLabel,omitempty"`
+	Surface         string   `json:"surface,omitempty"`
+	ResearchSummary string   `json:"researchSummary,omitempty"`
+	ResearchSources []string `json:"researchSources,omitempty"`
+	Tags            []string `json:"tags,omitempty"`
+}
+
 type SessionSummaryRequest struct {
 	UserID    string   `json:"userId"`
 	SessionID string   `json:"sessionId,omitempty"`
@@ -316,6 +389,82 @@ func (c *Client) SaveSessionSummary(ctx context.Context, req SessionSummaryReque
 		return fmt.Errorf("adk client: session summary unexpected status %d", resp.StatusCode)
 	}
 	return nil
+}
+
+func (c *Client) NavigatorEscalate(ctx context.Context, req NavigatorEscalationRequest) (*NavigatorEscalationResult, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("adk client: marshal navigator escalation request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/navigator/escalate", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("adk client: create navigator escalation request: %w", err)
+	}
+	if err := c.prepareJSONRequest(httpReq); err != nil {
+		slog.Warn("[ADK-CLIENT] failed to prepare navigator escalation request", "error", err)
+	}
+
+	startTime := time.Now()
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("adk client: navigator escalation request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	elapsed := time.Since(startTime)
+
+	if resp.StatusCode == http.StatusNoContent {
+		slog.Info("[ADK-CLIENT] <<< navigator escalation: no result", "trace_id", req.TraceID, "elapsed", elapsed.String())
+		return nil, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("adk client: navigator escalation unexpected status %d", resp.StatusCode)
+	}
+
+	var result NavigatorEscalationResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("adk client: decode navigator escalation response: %w", err)
+	}
+	slog.Info("[ADK-CLIENT] <<< navigator escalation OK", "trace_id", req.TraceID, "elapsed", elapsed.String(), "confidence", result.Confidence)
+	return &result, nil
+}
+
+func (c *Client) NavigatorBackground(ctx context.Context, req NavigatorBackgroundRequest) (*NavigatorBackgroundResult, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("adk client: marshal navigator background request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/navigator/background", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("adk client: create navigator background request: %w", err)
+	}
+	if err := c.prepareJSONRequest(httpReq); err != nil {
+		slog.Warn("[ADK-CLIENT] failed to prepare navigator background request", "error", err)
+	}
+
+	startTime := time.Now()
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("adk client: navigator background request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	elapsed := time.Since(startTime)
+
+	if resp.StatusCode == http.StatusNoContent {
+		slog.Info("[ADK-CLIENT] <<< navigator background: no result", "trace_id", req.TraceID, "elapsed", elapsed.String())
+		return nil, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("adk client: navigator background unexpected status %d", resp.StatusCode)
+	}
+
+	var result NavigatorBackgroundResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("adk client: decode navigator background response: %w", err)
+	}
+	slog.Info("[ADK-CLIENT] <<< navigator background OK", "trace_id", req.TraceID, "elapsed", elapsed.String(), "summary_len", len(result.Summary))
+	return &result, nil
 }
 
 func (c *Client) MemoryContext(ctx context.Context, req MemoryContextRequest) (string, error) {

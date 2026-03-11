@@ -124,6 +124,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private var analyzeNowItem: NSMenuItem?
     private var privacyStatusItem: NSMenuItem?
     private var privacyNoStorageItem: NSMenuItem?
+    private var audioInputCurrentItem: NSMenuItem?
+    private var audioInputFollowItem: NSMenuItem?
+    private var audioInputStateItem: NSMenuItem?
     private var setAPIKeyItem: NSMenuItem?
     private var recentSpeechMenu: NSMenu?
     private var emotionHistoryMenu: NSMenu?
@@ -411,6 +414,26 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         let privacyItem = NSMenuItem(title: VibeCatL10n.menuPrivacy(), action: nil, keyEquivalent: "")
         privacyItem.submenu = privacyMenu
         menu.addItem(privacyItem)
+
+        let audioInputMenu = NSMenu()
+        let currentInputItem = NSMenuItem(title: VibeCatL10n.audioInputCurrent(VibeCatL10n.audioInputUnknown()), action: nil, keyEquivalent: "")
+        currentInputItem.isEnabled = false
+        audioInputMenu.addItem(currentInputItem)
+        audioInputCurrentItem = currentInputItem
+
+        let followSystemItem = NSMenuItem(title: VibeCatL10n.audioInputFollowingSystem(), action: nil, keyEquivalent: "")
+        followSystemItem.isEnabled = false
+        audioInputMenu.addItem(followSystemItem)
+        audioInputFollowItem = followSystemItem
+
+        let stateItem = NSMenuItem(title: VibeCatL10n.audioInputStopped(), action: nil, keyEquivalent: "")
+        stateItem.isEnabled = false
+        audioInputMenu.addItem(stateItem)
+        audioInputStateItem = stateItem
+
+        let audioInputItem = NSMenuItem(title: VibeCatL10n.menuAudioInput(), action: nil, keyEquivalent: "")
+        audioInputItem.submenu = audioInputMenu
+        menu.addItem(audioInputItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -706,6 +729,15 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         trayAnimator?.setCaptureState(state)
         privacyStatusItem?.title = currentCaptureIndicatorTitle(for: state)
         privacyNoStorageItem?.title = VibeCatL10n.menuNoScreenshotsStored()
+    }
+
+    func updateAudioInputStatus(inputName: String, stateText: String) {
+        let resolvedName = inputName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? VibeCatL10n.audioInputUnknown()
+            : inputName
+        audioInputCurrentItem?.title = VibeCatL10n.audioInputCurrent(resolvedName)
+        audioInputFollowItem?.title = VibeCatL10n.audioInputFollowingSystem()
+        audioInputStateItem?.title = stateText
     }
 
     private func currentCaptureIndicatorTitle(for state: TrayIconAnimator.CaptureIndicatorState? = nil) -> String {

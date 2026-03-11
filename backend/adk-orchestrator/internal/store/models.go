@@ -88,3 +88,26 @@ type SearchCacheEntry struct {
 	Result    string    `firestore:"result"`
 	Timestamp time.Time `firestore:"timestamp"`
 }
+
+// NavigatorReplay stores a completed navigator task replay and labels.
+type NavigatorReplay struct {
+	TaskID                  string    `firestore:"taskId"`
+	UserID                  string    `firestore:"userId,omitempty"`
+	SessionID               string    `firestore:"sessionId,omitempty"`
+	Command                 string    `firestore:"command"`
+	Outcome                 string    `firestore:"outcome"`
+	OutcomeDetail           string    `firestore:"outcomeDetail,omitempty"`
+	Surface                 string    `firestore:"surface,omitempty"`
+	Summary                 string    `firestore:"summary,omitempty"`
+	ReplayLabel             string    `firestore:"replayLabel,omitempty"`
+	ResearchSummary         string    `firestore:"researchSummary,omitempty"`
+	ResearchSources         []string  `firestore:"researchSources,omitempty"`
+	Tags                    []string  `firestore:"tags,omitempty"`
+	InitialAppName          string    `firestore:"initialAppName,omitempty"`
+	InitialWindowTitle      string    `firestore:"initialWindowTitle,omitempty"`
+	InitialContextHash      string    `firestore:"initialContextHash,omitempty"`
+	LastVerifiedContextHash string    `firestore:"lastVerifiedContextHash,omitempty"`
+	StartedAt               time.Time `firestore:"startedAt,omitempty"`
+	CompletedAt             time.Time `firestore:"completedAt,omitempty"`
+	UpdatedAt               time.Time `firestore:"updatedAt,omitempty"`
+}

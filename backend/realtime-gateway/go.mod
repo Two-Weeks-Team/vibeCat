@@ -5,6 +5,7 @@ go 1.24.0
 toolchain go1.24.6
 
 require (
+	cloud.google.com/go/firestore v1.20.0
 	cloud.google.com/go/logging v1.13.2
 	cloud.google.com/go/secretmanager v1.16.0
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.54.0
@@ -16,10 +17,12 @@ require (
 	go.opentelemetry.io/otel/metric v1.41.0
 	go.opentelemetry.io/otel/sdk v1.41.0
 	go.opentelemetry.io/otel/sdk/metric v1.41.0
+	go.opentelemetry.io/otel/trace v1.41.0
 	golang.org/x/image v0.36.0
 	golang.org/x/oauth2 v0.34.0
 	google.golang.org/api v0.259.0
 	google.golang.org/genai v1.48.0
+	google.golang.org/grpc v1.78.0
 )
 
 require (
@@ -43,7 +46,6 @@ require (
 	github.com/googleapis/gax-go/v2 v2.16.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.63.0 // indirect
-	go.opentelemetry.io/otel/trace v1.41.0 // indirect
 	golang.org/x/crypto v0.46.0 // indirect
 	golang.org/x/net v0.48.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
@@ -53,6 +55,5 @@ require (
 	google.golang.org/genproto v0.0.0-20251202230838-ff82c1b0f217 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20251222181119-0a764e51fe1b // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251222181119-0a764e51fe1b // indirect
-	google.golang.org/grpc v1.78.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )

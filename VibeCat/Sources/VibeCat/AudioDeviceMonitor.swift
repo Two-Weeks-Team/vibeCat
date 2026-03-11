@@ -44,10 +44,14 @@ final class AudioDeviceMonitor {
     private var lastSnapshot: Snapshot?
     private var isStarted = false
 
+    var latestSnapshot: Snapshot? {
+        lastSnapshot
+    }
+
     func start() {
         guard !isStarted else { return }
         isStarted = true
-        lastSnapshot = currentSnapshot(trigger: .deviceListChanged)
+        lastSnapshot = makeSnapshot(trigger: .deviceListChanged)
 
         registerListener(for: &devicesAddress, storage: &devicesListener, trigger: .deviceListChanged)
         registerListener(for: &defaultInputAddress, storage: &defaultInputListener, trigger: .defaultInputChanged)
@@ -72,8 +76,12 @@ final class AudioDeviceMonitor {
         isStarted = false
     }
 
+    func currentSnapshot() -> Snapshot {
+        makeSnapshot(trigger: .deviceListChanged)
+    }
+
     private func emitChange(_ trigger: Trigger) {
-        let snapshot = currentSnapshot(trigger: trigger)
+        let snapshot = makeSnapshot(trigger: trigger)
         guard snapshot != lastSnapshot else {
             NSLog("[AUDIO-DEVICE] duplicate change ignored trigger=%@", trigger.rawValue)
             return
@@ -121,7 +129,7 @@ final class AudioDeviceMonitor {
         storage = nil
     }
 
-    private func currentSnapshot(trigger: Trigger) -> Snapshot {
+    private func makeSnapshot(trigger: Trigger) -> Snapshot {
         let inputDeviceID = defaultDeviceID(for: kAudioHardwarePropertyDefaultInputDevice)
         let outputDeviceID = defaultDeviceID(for: kAudioHardwarePropertyDefaultOutputDevice)
         return Snapshot(

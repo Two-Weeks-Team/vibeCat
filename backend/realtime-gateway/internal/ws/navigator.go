@@ -1,21 +1,42 @@
 package ws
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/url"
 	"regexp"
 	"strings"
+	"time"
 )
 
 type navigatorContext struct {
-	AppName              string `json:"appName"`
-	BundleID             string `json:"bundleId"`
-	WindowTitle          string `json:"windowTitle"`
-	FocusedRole          string `json:"focusedRole"`
-	FocusedLabel         string `json:"focusedLabel"`
-	SelectedText         string `json:"selectedText"`
-	AXSnapshot           string `json:"axSnapshot"`
-	AccessibilityTrusted bool   `json:"accessibilityTrusted"`
+	AppName                 string  `json:"appName"`
+	BundleID                string  `json:"bundleId"`
+	FrontmostBundleID       string  `json:"frontmostBundleId"`
+	WindowTitle             string  `json:"windowTitle"`
+	FocusedRole             string  `json:"focusedRole"`
+	FocusedLabel            string  `json:"focusedLabel"`
+	SelectedText            string  `json:"selectedText"`
+	AXSnapshot              string  `json:"axSnapshot"`
+	InputFieldHint          string  `json:"inputFieldHint"`
+	LastInputDescriptor     string  `json:"lastInputFieldDescriptor"`
+	Screenshot              string  `json:"screenshot,omitempty"`
+	FocusStableMs           int     `json:"focusStableMs"`
+	CaptureConfidence       float64 `json:"captureConfidence"`
+	VisibleInputCandidates  int     `json:"visibleInputCandidateCount"`
+	AccessibilityPermission string  `json:"accessibilityPermission"`
+	AccessibilityTrusted    bool    `json:"accessibilityTrusted"`
+}
+
+type navigatorContextSnapshot struct {
+	AppName          string `json:"appName,omitempty"`
+	BundleID         string `json:"bundleId,omitempty"`
+	WindowTitle      string `json:"windowTitle,omitempty"`
+	FocusedRole      string `json:"focusedRole,omitempty"`
+	FocusedLabel     string `json:"focusedLabel,omitempty"`
+	SelectedTextHash string `json:"selectedTextHash,omitempty"`
+	AXSnapshotHash   string `json:"axSnapshotHash,omitempty"`
 }
 
 type navigatorTargetDescriptor struct {
@@ -65,31 +86,83 @@ type navigatorPlan struct {
 	Steps            []navigatorStep
 }
 
+type navigatorStepTrace struct {
+	ID               string                    `json:"id"`
+	ActionType       string                    `json:"actionType"`
+	TargetApp        string                    `json:"targetApp,omitempty"`
+	TargetDescriptor navigatorTargetDescriptor `json:"targetDescriptor,omitempty"`
+	PlannedAt        time.Time                 `json:"plannedAt,omitempty"`
+	ResultStatus     string                    `json:"resultStatus,omitempty"`
+	ObservedOutcome  string                    `json:"observedOutcome,omitempty"`
+	CompletedAt      time.Time                 `json:"completedAt,omitempty"`
+}
+
+type navigatorPromptKind string
+
+const (
+	navigatorPromptIntent  navigatorPromptKind = "intent"
+	navigatorPromptReplace navigatorPromptKind = "replace_task"
+)
+
 type navigatorSessionState struct {
+	activeTaskID                string
 	activeCommand               string
+	pendingClarificationKind    navigatorPromptKind
 	pendingClarificationCommand string
 	pendingRiskyCommand         string
 	steps                       []navigatorStep
 	nextStepIndex               int
 	currentStepID               string
+	deviceID                    string
+	connectionID                string
+	initialContext              navigatorContextSnapshot
+	initialContextHash          string
+	initialAppName              string
+	initialWindowTitle          string
+	stepHistory                 []navigatorStepTrace
+	lastVerifiedContextHash     string
+	createdAt                   time.Time
+	updatedAt                   time.Time
 }
 
-func (s *navigatorSessionState) startPlan(command string, steps []navigatorStep) {
+func (s *navigatorSessionState) startPlan(command string, steps []navigatorStep) string {
+	s.activeTaskID = newNavigatorTaskID()
 	s.activeCommand = command
+	s.pendingClarificationKind = ""
 	s.pendingClarificationCommand = ""
 	s.pendingRiskyCommand = ""
 	s.steps = steps
 	s.nextStepIndex = 0
 	s.currentStepID = ""
+	s.initialContext = navigatorContextSnapshot{}
+	s.initialContextHash = ""
+	s.initialAppName = ""
+	s.initialWindowTitle = ""
+	s.stepHistory = nil
+	s.lastVerifiedContextHash = ""
+	now := time.Now().UTC()
+	s.createdAt = now
+	s.updatedAt = now
+	return s.activeTaskID
 }
 
 func (s *navigatorSessionState) clearPlan() {
+	s.activeTaskID = ""
 	s.activeCommand = ""
+	s.pendingClarificationKind = ""
 	s.pendingClarificationCommand = ""
 	s.pendingRiskyCommand = ""
 	s.steps = nil
 	s.nextStepIndex = 0
 	s.currentStepID = ""
+	s.initialContext = navigatorContextSnapshot{}
+	s.initialContextHash = ""
+	s.initialAppName = ""
+	s.initialWindowTitle = ""
+	s.stepHistory = nil
+	s.lastVerifiedContextHash = ""
+	s.createdAt = time.Time{}
+	s.updatedAt = time.Time{}
 }
 
 func (s *navigatorSessionState) nextStep() (navigatorStep, bool) {
@@ -97,8 +170,10 @@ func (s *navigatorSessionState) nextStep() (navigatorStep, bool) {
 		return navigatorStep{}, false
 	}
 	step := s.steps[s.nextStepIndex]
+	s.recordPlannedStep(step)
 	s.nextStepIndex++
 	s.currentStepID = step.ID
+	s.touch()
 	return step, true
 }
 
@@ -106,9 +181,42 @@ func (s *navigatorSessionState) hasRemainingSteps() bool {
 	return s.nextStepIndex < len(s.steps)
 }
 
-func (s *navigatorSessionState) acceptsRefresh(command, stepID string) bool {
+func (s *navigatorSessionState) hasActiveTask() bool {
+	return strings.TrimSpace(s.activeTaskID) != ""
+}
+
+func (s *navigatorSessionState) activeTaskSnapshot() (string, string, string, bool) {
+	if strings.TrimSpace(s.activeTaskID) == "" {
+		return "", "", "", false
+	}
+	return s.activeTaskID, s.activeCommand, s.currentStepID, true
+}
+
+func (s *navigatorSessionState) stageClarification(kind navigatorPromptKind, command string) {
+	s.pendingClarificationKind = kind
+	s.pendingClarificationCommand = strings.TrimSpace(command)
+	s.touch()
+}
+
+func (s *navigatorSessionState) consumeClarification(command string) (navigatorPromptKind, string) {
+	kind := s.pendingClarificationKind
+	pending := strings.TrimSpace(s.pendingClarificationCommand)
+	s.pendingClarificationKind = ""
+	s.pendingClarificationCommand = ""
+	s.touch()
+	if strings.TrimSpace(command) == "" {
+		command = pending
+	}
+	return kind, strings.TrimSpace(command)
+}
+
+func (s *navigatorSessionState) acceptsRefresh(command, taskID, stepID string) bool {
 	stepID = strings.TrimSpace(stepID)
 	if stepID == "" || stepID != s.currentStepID {
+		return false
+	}
+	taskID = strings.TrimSpace(taskID)
+	if strings.TrimSpace(s.activeTaskID) == "" || taskID == "" || taskID != s.activeTaskID {
 		return false
 	}
 	command = strings.TrimSpace(command)
@@ -120,6 +228,193 @@ func (s *navigatorSessionState) acceptsRefresh(command, stepID string) bool {
 
 func (s *navigatorSessionState) clearCurrentStep() {
 	s.currentStepID = ""
+	s.touch()
+}
+
+func (s *navigatorSessionState) bindLease(deviceID, connectionID string) {
+	if trimmed := strings.TrimSpace(deviceID); trimmed != "" {
+		s.deviceID = trimmed
+	}
+	if trimmed := strings.TrimSpace(connectionID); trimmed != "" {
+		s.connectionID = trimmed
+	}
+	s.touch()
+}
+
+func (s *navigatorSessionState) ownsLease(connectionID string) bool {
+	lease := strings.TrimSpace(s.connectionID)
+	if lease == "" {
+		return true
+	}
+	return lease == strings.TrimSpace(connectionID)
+}
+
+func (s *navigatorSessionState) hasPersistableState() bool {
+	return s.hasActiveTask() ||
+		strings.TrimSpace(s.pendingClarificationCommand) != "" ||
+		strings.TrimSpace(s.pendingRiskyCommand) != ""
+}
+
+func (s *navigatorSessionState) rememberInitialContext(ctx navigatorContext) {
+	if !s.hasActiveTask() {
+		return
+	}
+	if s.initialContextHash == "" {
+		s.initialContext = snapshotNavigatorContext(ctx)
+		s.initialContextHash = navigatorContextHash(ctx)
+		s.initialAppName = strings.TrimSpace(ctx.AppName)
+		s.initialWindowTitle = strings.TrimSpace(ctx.WindowTitle)
+	}
+	s.touch()
+}
+
+func (s *navigatorSessionState) markVerifiedContext(ctx navigatorContext) {
+	s.lastVerifiedContextHash = navigatorContextHash(ctx)
+	s.touch()
+}
+
+func (s *navigatorSessionState) recordPlannedStep(step navigatorStep) {
+	trace := navigatorStepTrace{
+		ID:               step.ID,
+		ActionType:       step.ActionType,
+		TargetApp:        step.TargetApp,
+		TargetDescriptor: step.TargetDescriptor,
+		PlannedAt:        time.Now().UTC(),
+	}
+	for idx := range s.stepHistory {
+		if s.stepHistory[idx].ID != step.ID {
+			continue
+		}
+		s.stepHistory[idx].ActionType = step.ActionType
+		s.stepHistory[idx].TargetApp = step.TargetApp
+		s.stepHistory[idx].TargetDescriptor = step.TargetDescriptor
+		if s.stepHistory[idx].PlannedAt.IsZero() {
+			s.stepHistory[idx].PlannedAt = trace.PlannedAt
+		}
+		return
+	}
+	s.stepHistory = append(s.stepHistory, trace)
+}
+
+func (s *navigatorSessionState) recordStepResult(step navigatorStep, status, observedOutcome string) {
+	for idx := range s.stepHistory {
+		if s.stepHistory[idx].ID != step.ID {
+			continue
+		}
+		s.stepHistory[idx].ResultStatus = strings.TrimSpace(status)
+		s.stepHistory[idx].ObservedOutcome = strings.TrimSpace(observedOutcome)
+		s.stepHistory[idx].CompletedAt = time.Now().UTC()
+		s.touch()
+		return
+	}
+	s.stepHistory = append(s.stepHistory, navigatorStepTrace{
+		ID:               step.ID,
+		ActionType:       step.ActionType,
+		TargetApp:        step.TargetApp,
+		TargetDescriptor: step.TargetDescriptor,
+		ResultStatus:     strings.TrimSpace(status),
+		ObservedOutcome:  strings.TrimSpace(observedOutcome),
+		CompletedAt:      time.Now().UTC(),
+	})
+	s.touch()
+}
+
+func (s *navigatorSessionState) firstPlannedStep() (navigatorStepTrace, bool) {
+	if len(s.stepHistory) == 0 {
+		return navigatorStepTrace{}, false
+	}
+	first := s.stepHistory[0]
+	if first.PlannedAt.IsZero() {
+		return navigatorStepTrace{}, false
+	}
+	return first, true
+}
+
+type navigatorTaskSnapshot struct {
+	TaskID                  string
+	Command                 string
+	Surface                 string
+	InitialAppName          string
+	InitialWindowTitle      string
+	InitialContextHash      string
+	LastVerifiedContextHash string
+	StartedAt               time.Time
+	CompletedAt             time.Time
+	Steps                   []navigatorStepTrace
+}
+
+func (s *navigatorSessionState) snapshotTask(completedAt time.Time) *navigatorTaskSnapshot {
+	if strings.TrimSpace(s.activeTaskID) == "" {
+		return nil
+	}
+	steps := append([]navigatorStepTrace(nil), s.stepHistory...)
+	return &navigatorTaskSnapshot{
+		TaskID:                  strings.TrimSpace(s.activeTaskID),
+		Command:                 strings.TrimSpace(s.activeCommand),
+		Surface:                 navigatorSurfaceFromState(*s),
+		InitialAppName:          strings.TrimSpace(s.initialAppName),
+		InitialWindowTitle:      strings.TrimSpace(s.initialWindowTitle),
+		InitialContextHash:      strings.TrimSpace(s.initialContextHash),
+		LastVerifiedContextHash: strings.TrimSpace(s.lastVerifiedContextHash),
+		StartedAt:               s.createdAt,
+		CompletedAt:             completedAt.UTC(),
+		Steps:                   steps,
+	}
+}
+
+func (s *navigatorSessionState) touch() {
+	now := time.Now().UTC()
+	if s.createdAt.IsZero() {
+		s.createdAt = now
+	}
+	s.updatedAt = now
+}
+
+func snapshotNavigatorContext(ctx navigatorContext) navigatorContextSnapshot {
+	return navigatorContextSnapshot{
+		AppName:          strings.TrimSpace(ctx.AppName),
+		BundleID:         strings.TrimSpace(ctx.BundleID),
+		WindowTitle:      strings.TrimSpace(ctx.WindowTitle),
+		FocusedRole:      strings.TrimSpace(ctx.FocusedRole),
+		FocusedLabel:     strings.TrimSpace(ctx.FocusedLabel),
+		SelectedTextHash: shortStableHash(ctx.SelectedText),
+		AXSnapshotHash:   shortStableHash(ctx.AXSnapshot),
+	}
+}
+
+func navigatorContextHash(ctx navigatorContext) string {
+	payload := strings.Join([]string{
+		strings.TrimSpace(ctx.AppName),
+		strings.TrimSpace(ctx.BundleID),
+		strings.TrimSpace(ctx.FrontmostBundleID),
+		strings.TrimSpace(ctx.WindowTitle),
+		strings.TrimSpace(ctx.FocusedRole),
+		strings.TrimSpace(ctx.FocusedLabel),
+		strings.TrimSpace(ctx.SelectedText),
+		strings.TrimSpace(ctx.AXSnapshot),
+		strings.TrimSpace(ctx.InputFieldHint),
+		strings.TrimSpace(ctx.LastInputDescriptor),
+		fmt.Sprintf("focus_stable_ms=%d", ctx.FocusStableMs),
+		fmt.Sprintf("capture_confidence=%.3f", ctx.CaptureConfidence),
+		fmt.Sprintf("visible_inputs=%d", ctx.VisibleInputCandidates),
+		strings.TrimSpace(ctx.AccessibilityPermission),
+		fmt.Sprintf("ax_trusted=%t", ctx.AccessibilityTrusted),
+	}, "\n")
+	sum := sha256.Sum256([]byte(payload))
+	return hex.EncodeToString(sum[:])
+}
+
+func shortStableHash(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(trimmed))
+	return hex.EncodeToString(sum[:])[:16]
+}
+
+func newNavigatorTaskID() string {
+	return "task_" + newConnID()
 }
 
 func planNavigatorCommand(command string, ctx navigatorContext, allowRisky bool) navigatorPlan {
@@ -139,6 +434,8 @@ func planNavigatorCommand(command string, ctx navigatorContext, allowRisky bool)
 	}
 
 	switch {
+	case wantsTextEntry(command, ctx):
+		plan.Steps = buildTextEntrySteps(command, ctx, confidence)
 	case shouldUseDocsLookup(command):
 		plan.Steps = buildDocsLookupSteps(command, ctx, confidence)
 	case looksLikeDirectClick(command):
@@ -154,6 +451,11 @@ func planNavigatorCommand(command string, ctx navigatorContext, allowRisky bool)
 	default:
 		plan.ClarifyQuestion = defaultClarifyQuestion(command)
 		plan.IntentClass = navigatorIntentAmbiguous
+	}
+
+	if plan.IntentClass != navigatorIntentAnalyzeOnly && plan.IntentClass != navigatorIntentAmbiguous && len(plan.Steps) == 0 {
+		plan.IntentClass = navigatorIntentAmbiguous
+		plan.ClarifyQuestion = clarificationForUnresolvedTarget(command, ctx)
 	}
 
 	if plan.IntentClass == navigatorIntentAnalyzeOnly || plan.IntentClass == navigatorIntentAmbiguous {
@@ -177,15 +479,16 @@ func classifyNavigatorIntent(command string) (navigatorIntentClass, float64, str
 
 	executeScore := keywordScore(lowered, []string{
 		"apply", "do it", "run it", "rerun", "retry", "fix", "execute", "take care of",
-		"반영", "적용", "실행", "다시 돌려", "다시 실행", "수정", "해결", "처리해", "눌러",
+		"type", "enter", "paste", "fill", "write", "focus the input", "focus the field",
+		"반영", "적용", "실행", "다시 돌려", "다시 실행", "수정", "해결", "처리해", "눌러", "입력", "붙여넣", "써",
 	})
 	openScore := keywordScore(lowered, []string{
 		"open", "go to", "take me", "bring me", "jump", "navigate", "show me",
 		"열어", "이동", "데려가", "가보자", "보여", "가자",
 	})
 	findScore := keywordScore(lowered, []string{
-		"find", "look up", "search", "docs", "official", "where is", "locate",
-		"찾아", "검색", "공식 문서", "위치", "어디",
+		"find", "look up", "search", "docs", "official", "where is", "locate", "input field", "text field", "search box",
+		"찾아", "검색", "공식 문서", "위치", "어디", "입력창", "검색창", "텍스트 필드",
 	})
 	analyzeScore := keywordScore(lowered, []string{
 		"explain", "summarize", "what is", "why", "how", "tell me about",
@@ -203,11 +506,19 @@ func classifyNavigatorIntent(command string) (navigatorIntentClass, float64, str
 		strings.Contains(lowered, "다시 돌려") {
 		executeScore = maxFloat(executeScore, 0.76)
 	}
+	if strings.Contains(lowered, "입력해") || strings.Contains(lowered, "입력해줘") || strings.Contains(lowered, "붙여넣어") ||
+		strings.Contains(lowered, "써줘") || strings.Contains(lowered, "type ") || strings.Contains(lowered, "enter ") ||
+		strings.Contains(lowered, "paste ") || strings.Contains(lowered, "fill ") {
+		executeScore = maxFloat(executeScore, 0.8)
+	}
 	if strings.Contains(lowered, "열어줘") || strings.Contains(lowered, "데려가") || strings.Contains(lowered, "가보자") {
 		openScore = maxFloat(openScore, 0.72)
 	}
 	if strings.Contains(lowered, "찾아줘") || strings.Contains(lowered, "찾아봐") {
 		findScore = maxFloat(findScore, 0.72)
+	}
+	if strings.Contains(lowered, "입력창") || strings.Contains(lowered, "검색창") || strings.Contains(lowered, "input field") || strings.Contains(lowered, "search box") {
+		findScore = maxFloat(findScore, 0.74)
 	}
 	if strings.Contains(lowered, "official docs") || strings.Contains(lowered, "공식 문서") {
 		findScore = maxFloat(findScore, 0.88)
@@ -305,6 +616,37 @@ func buildRiskQuestion(command string) string {
 
 func defaultClarifyQuestion(command string) string {
 	return "Do you want me to act on this now, or just explain the next step?"
+}
+
+func clarificationForUnresolvedTarget(command string, ctx navigatorContext) string {
+	lowered := strings.ToLower(strings.TrimSpace(command))
+	switch {
+	case wantsTextEntry(command, ctx) && ctx.VisibleInputCandidates > 1 && ctx.CaptureConfidence < 0.7:
+		return fmt.Sprintf("I can see %d possible input fields, so I should not guess. Do you want me to focus the likely one first, or should I only explain the next step?", ctx.VisibleInputCandidates)
+	case wantsTextEntry(command, ctx):
+		return "I could not confirm which input field you mean. Do you want me to focus the likely field first, or should I only explain the next step?"
+	case looksLikeDirectClick(command):
+		return "I could not confirm which control you want me to press. Do you want me to keep looking, or should I only explain the next step?"
+	case containsKeywordAny(lowered, "여기", "거기", "here", "there") && ctx.FocusStableMs < 300:
+		return "The current focus is still changing. Do you want me to wait for the UI to settle and try again, or should I only explain the next step?"
+	default:
+		return defaultClarifyQuestion(command)
+	}
+}
+
+func buildTaskReplacementQuestion(activeCommand, nextCommand string) string {
+	active := cleanTopic(activeCommand)
+	next := cleanTopic(nextCommand)
+	switch {
+	case active == "" && next == "":
+		return "I am already working on one action. Do you want me to stop it and switch to this new one?"
+	case active == "":
+		return fmt.Sprintf("I am already working on another action. Do you want me to stop it and switch to %q?", next)
+	case next == "":
+		return fmt.Sprintf("I am already working on %q. Do you want me to stop that and switch tasks?", active)
+	default:
+		return fmt.Sprintf("I am already working on %q. Do you want me to stop that and switch to %q?", active, next)
+	}
 }
 
 func shouldUseDocsLookup(command string) bool {
@@ -553,6 +895,258 @@ func buildAXPressStep(command string, ctx navigatorContext, intentConfidence flo
 	}, true
 }
 
+var quotedTextPattern = regexp.MustCompile(`"([^"]+)"|“([^”]+)”|'([^']+)'|‘([^’]+)’`)
+
+func wantsTextEntry(command string, ctx navigatorContext) bool {
+	lowered := strings.ToLower(strings.TrimSpace(command))
+	if lowered == "" {
+		return false
+	}
+	if extractTextEntryPayload(command) != "" {
+		return true
+	}
+	for _, keyword := range []string{
+		"input field", "text field", "search box", "search field", "address bar", "prompt box",
+		"type ", "enter ", "paste ", "fill ", "focus the input", "focus the field",
+		"입력창", "텍스트 필드", "검색창", "주소창", "프롬프트", "입력해", "붙여넣어", "써줘",
+	} {
+		if strings.Contains(lowered, keyword) {
+			return true
+		}
+	}
+	return hasVisibleTextInput(ctx) && containsKeywordAny(lowered, "여기에", "거기에", "here", "there")
+}
+
+func buildTextEntrySteps(command string, ctx navigatorContext, intentConfidence float64) []navigatorStep {
+	targetApp := cleanTopic(ctx.AppName)
+	if targetApp == "" {
+		return nil
+	}
+
+	descriptor, ok := buildTextEntryDescriptor(command, ctx)
+	if !ok {
+		return nil
+	}
+
+	steps := make([]navigatorStep, 0, 2)
+	fieldSummary := descriptor.Label
+	if fieldSummary == "" {
+		fieldSummary = fallbackFieldSummary(descriptor.Role, ctx)
+	}
+	if fieldSummary == "" {
+		fieldSummary = "input field"
+	}
+
+	steps = append(steps, navigatorStep{
+		ID:         "focus_input_field",
+		ActionType: "press_ax",
+		TargetApp:  targetApp,
+		TargetDescriptor: navigatorTargetDescriptor{
+			Role:           descriptor.Role,
+			Label:          descriptor.Label,
+			WindowTitle:    descriptor.WindowTitle,
+			AppName:        descriptor.AppName,
+			RelativeAnchor: descriptor.RelativeAnchor,
+			RegionHint:     descriptor.RegionHint,
+		},
+		ExpectedOutcome:  fmt.Sprintf("Focus the %s", fieldSummary),
+		Confidence:       0.82,
+		IntentConfidence: intentConfidence,
+		RiskLevel:        "low",
+		ExecutionPolicy:  navigatorExecutionPolicyLow,
+		FallbackPolicy:   "guided_mode",
+		VerifyHint:       strings.ToLower(cleanTopic(fieldSummary)),
+	})
+
+	if payload := extractTextEntryPayload(command); payload != "" {
+		verifyHint := payload
+		if len(verifyHint) > 24 {
+			verifyHint = verifyHint[:24]
+		}
+		steps = append(steps, navigatorStep{
+			ID:         "paste_input_text",
+			ActionType: "paste_text",
+			TargetApp:  targetApp,
+			TargetDescriptor: navigatorTargetDescriptor{
+				Role:           descriptor.Role,
+				Label:          descriptor.Label,
+				WindowTitle:    descriptor.WindowTitle,
+				AppName:        descriptor.AppName,
+				RelativeAnchor: descriptor.RelativeAnchor,
+				RegionHint:     descriptor.RegionHint,
+			},
+			InputText:        payload,
+			ExpectedOutcome:  fmt.Sprintf("Insert text into the %s", fieldSummary),
+			Confidence:       0.8,
+			IntentConfidence: intentConfidence,
+			RiskLevel:        "low",
+			ExecutionPolicy:  navigatorExecutionPolicyLow,
+			FallbackPolicy:   "guided_mode",
+			VerifyHint:       strings.ToLower(cleanTopic(verifyHint)),
+		})
+	}
+
+	return steps
+}
+
+func buildTextEntryDescriptor(command string, ctx navigatorContext) (navigatorTargetDescriptor, bool) {
+	if referencesCurrentTarget(command) && ctx.FocusStableMs > 0 && ctx.FocusStableMs < 300 && !looksLikeTextInputRole(ctx.FocusedRole) {
+		return navigatorTargetDescriptor{}, false
+	}
+	if referencesCurrentTarget(command) && ctx.VisibleInputCandidates > 1 && !looksLikeTextInputRole(ctx.FocusedRole) && ctx.CaptureConfidence < 0.7 {
+		return navigatorTargetDescriptor{}, false
+	}
+
+	role := inferTextEntryRole(command, ctx)
+	label := extractTextEntryFieldLabel(command, ctx)
+	anchor := cleanTopic(ctx.FocusedLabel)
+	if anchor == "" {
+		anchor = cleanTopic(ctx.InputFieldHint)
+	}
+	if anchor == "" {
+		anchor = cleanTopic(lastInputFieldDescriptorLabel(ctx.LastInputDescriptor))
+	}
+
+	descriptor := navigatorTargetDescriptor{
+		Role:           role,
+		Label:          label,
+		WindowTitle:    cleanTopic(ctx.WindowTitle),
+		AppName:        cleanTopic(ctx.AppName),
+		RelativeAnchor: anchor,
+	}
+	if descriptor.Role == "" {
+		descriptor.Role = "textfield"
+	}
+	if descriptor.Label == "" && !hasVisibleTextInput(ctx) && !looksLikeTextInputRole(ctx.FocusedRole) {
+		return navigatorTargetDescriptor{}, false
+	}
+	return descriptor, true
+}
+
+func inferTextEntryRole(command string, ctx navigatorContext) string {
+	lowered := strings.ToLower(command)
+	if containsKeywordAny(lowered, "textarea", "text area", "본문", "설명", "description") {
+		return "textarea"
+	}
+	if looksLikeTextInputRole(ctx.FocusedRole) && containsKeywordAny(lowered, "여기", "거기", "here", "there", "current") {
+		return normalizeRoleToken(ctx.FocusedRole)
+	}
+	return "textfield"
+}
+
+func extractTextEntryFieldLabel(command string, ctx navigatorContext) string {
+	lowered := strings.ToLower(command)
+	if looksLikeTextInputRole(ctx.FocusedRole) && containsKeywordAny(lowered, "여기", "거기", "here", "there", "current") {
+		return cleanTopic(ctx.FocusedLabel)
+	}
+	switch {
+	case containsKeywordAny(lowered, "검색창", "search box", "search field", "search bar"):
+		return "search"
+	case containsKeywordAny(lowered, "주소창", "address bar", "url bar", "location bar"):
+		return "address"
+	case containsKeywordAny(lowered, "프롬프트", "prompt"):
+		return "prompt"
+	case containsKeywordAny(lowered, "채팅", "메시지", "message box", "chat box", "composer"):
+		return "message"
+	case containsKeywordAny(lowered, "입력창", "input field", "text field"):
+		return cleanTopic(ctx.FocusedLabel)
+	default:
+		if hint := cleanTopic(ctx.InputFieldHint); hint != "" {
+			return hint
+		}
+		return cleanTopic(lastInputFieldDescriptorLabel(ctx.LastInputDescriptor))
+	}
+}
+
+func extractTextEntryPayload(command string) string {
+	if matches := commandLiteralPattern.FindStringSubmatch(command); len(matches) == 2 {
+		return cleanTopic(matches[1])
+	}
+	if matches := quotedTextPattern.FindStringSubmatch(command); len(matches) > 0 {
+		for _, candidate := range matches[1:] {
+			if cleaned := cleanTopic(candidate); cleaned != "" {
+				return cleaned
+			}
+		}
+	}
+	for _, marker := range []string{"입력해줘:", "입력해:", "입력:", "붙여넣어:", "붙여넣기:", "type:", "enter:", "paste:", "fill:"} {
+		if idx := strings.Index(strings.ToLower(command), marker); idx >= 0 {
+			return cleanTopic(command[idx+len(marker):])
+		}
+	}
+	return ""
+}
+
+func hasVisibleTextInput(ctx navigatorContext) bool {
+	if looksLikeTextInputRole(ctx.FocusedRole) {
+		return true
+	}
+	if cleanTopic(ctx.InputFieldHint) != "" {
+		return true
+	}
+	if ctx.VisibleInputCandidates > 0 {
+		return true
+	}
+	lowered := strings.ToLower(ctx.AXSnapshot)
+	return containsKeywordAny(lowered, "axtextfield", "axtextarea", "input:", "focused_input:")
+}
+
+func lastInputFieldDescriptorLabel(raw string) string {
+	for _, part := range strings.Split(raw, "|") {
+		part = strings.TrimSpace(part)
+		if !strings.HasPrefix(strings.ToLower(part), "label=") {
+			continue
+		}
+		return strings.TrimSpace(part[len("label="):])
+	}
+	return ""
+}
+
+func referencesCurrentTarget(command string) bool {
+	lowered := strings.ToLower(strings.TrimSpace(command))
+	return containsKeywordAny(lowered, "여기", "거기", "here", "there", "current", "this")
+}
+
+func looksLikeTextInputRole(role string) bool {
+	lowered := strings.ToLower(strings.TrimSpace(role))
+	return containsKeywordAny(lowered, "textfield", "textarea", "searchfield")
+}
+
+func normalizeRoleToken(role string) string {
+	lowered := strings.ToLower(strings.TrimSpace(role))
+	switch {
+	case strings.Contains(lowered, "textarea"):
+		return "textarea"
+	case strings.Contains(lowered, "textfield"), strings.Contains(lowered, "searchfield"):
+		return "textfield"
+	default:
+		return cleanTopic(role)
+	}
+}
+
+func fallbackFieldSummary(role string, ctx navigatorContext) string {
+	if label := cleanTopic(ctx.FocusedLabel); label != "" && looksLikeTextInputRole(ctx.FocusedRole) {
+		return label
+	}
+	switch normalizeRoleToken(role) {
+	case "textarea":
+		return "text area"
+	case "textfield":
+		return "input field"
+	default:
+		return cleanTopic(role)
+	}
+}
+
+func containsKeywordAny(text string, keywords ...string) bool {
+	for _, keyword := range keywords {
+		if strings.Contains(text, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
 func cleanTopic(raw string) string {
 	cleaned := strings.TrimSpace(raw)
 	if cleaned == "" {
@@ -623,8 +1217,14 @@ func navigatorMessageForStep(step navigatorStep) string {
 	case "open_url":
 		return "I can open the relevant docs now."
 	case "press_ax":
+		if looksLikeTextInputRole(step.TargetDescriptor.Role) {
+			return "I found the input field and can focus it now."
+		}
 		return "I found a likely control and can act on it now."
 	case "paste_text":
+		if looksLikeTextInputRole(step.TargetDescriptor.Role) {
+			return "I can type into that input field now."
+		}
 		return "I can insert the next instruction now."
 	case "hotkey":
 		return "I can trigger the next UI step now."
