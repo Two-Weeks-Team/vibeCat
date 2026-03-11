@@ -1,231 +1,181 @@
 ---
-title: teaching nine agents to think like a colleague
+title: why i stopped building nine equal agents
 published: false
-description: how VibeCat decomposes "being a good colleague" into 9 ADK agents running in 3 parallel waves — and why the Mediator agent is the hardest one to build
-tags: geminiliveagentchallenge, devlog, buildinpublic, go
+description: VibeCat started with a big multi-agent companion graph, but the product got better when I split it into one Live PM and one single-task action worker
+tags: geminiliveagentchallenge, devlog, buildinpublic, architecture
 cover_image:
 ---
 
-I created this post for the purposes of entering the Gemini Live Agent Challenge. In my last post I walked through what VibeCat actually does — a macOS cat that watches your screen, hears your voice, and knows when to shut up. But I glossed over *how* it does all that. The cat isn't one thing — it's nine things pretending to be one thing, and getting that pretense right is the actual engineering problem.
+I created this post for the purposes of entering the Gemini Live Agent Challenge.
 
 ---
 
-let me start with the question that shaped everything: what does a colleague actually *do*?
+there was a phase where VibeCat looked impressive on paper.
 
-not a chatbot. not a search engine. a colleague. the person sitting next to you who catches your typo on line 23 before you do, notices you've been stuck for 40 minutes, and knows when to shut up because you're in flow.
+it had a graph. it had specialist agents. it had names like mediator, scheduler, celebration trigger, engagement. the architecture diagram got denser and denser, and every new box felt like progress.
 
-I spent a while listing the behaviors:
-- **See** your screen and notice errors
-- **Remember** yesterday's context
-- **Sense** frustration from patterns
-- **Celebrate** when tests pass
-- **Decide** whether to speak or stay silent
-- **Adapt** timing to your rhythm
-- **Reach out** when you've been too quiet
-- **Search** for answers when you're stuck
+it wasn't.
 
-that's not one model doing one thing. that's eight distinct behaviors plus voice (VAD makes nine). so I decomposed the colleague into nine agents.
+the product got better when I stopped trying to make nine equal agents cooperate in real time and started treating the system like what it actually is:
 
-## the graph
+- one agent that talks to the user
+- one worker that does the next concrete thing
+- one local executor that can actually click, focus, and type
 
-all nine agents run through Google ADK's workflow agents. the key insight: not all agents need each other's results. VisionAgent doesn't care about MemoryAgent's output. MoodDetector doesn't need CelebrationTrigger. so I split them into three waves:
+that's the version that feels fast, legible, and trustworthy.
 
-```go
-// Wave 1 — Perception (parallel)
-wave1, _ := parallelagent.New(parallelagent.Config{
-    AgentConfig: agent.Config{
-        Name:      "wave1_perception",
-        SubAgents: []agent.Agent{visionAgent, memoryAgent},
-    },
-})
+## the mistake
 
-// Wave 2 — Emotion (parallel)
-wave2, _ := parallelagent.New(parallelagent.Config{
-    AgentConfig: agent.Config{
-        Name:      "wave2_emotion",
-        SubAgents: []agent.Agent{moodAgent, celebrationAgent},
-    },
-})
+the early VibeCat idea was "AI colleague." if you follow that idea too literally, you end up decomposing personality into a graph:
 
-// Wave 3 — Decision (sequential, because each depends on the previous)
-wave3, _ := sequentialagent.New(sequentialagent.Config{
-    AgentConfig: agent.Config{
-        Name:      "wave3_decision",
-        SubAgents: []agent.Agent{mediatorAgent, schedulerAgent, engagementAgent, searchLoop},
-    },
-})
+- something that sees
+- something that remembers
+- something that senses frustration
+- something that decides whether to speak
+- something that celebrates
+- something that schedules
+- something that searches
 
-// The full graph
-graph, _ := sequentialagent.New(sequentialagent.Config{
-    AgentConfig: agent.Config{
-        Name:      "vibecat_graph",
-        SubAgents: []agent.Agent{wave1, wave2, wave3},
-    },
-})
+that architecture is defensible for background analysis. it is not a good hot path for UI action.
+
+every extra agent adds:
+
+- another model call
+- another serialization boundary
+- another state handoff
+- another place for latency to hide
+- another place for product intent to blur
+
+for a desktop UI navigator, those costs are brutal. if the user says "open the official docs" or "type this in the search box," they do not care that your internal graph is elegant. they care whether the system moves now, and whether it moves safely.
+
+## the split that finally worked
+
+the architecture that made VibeCat click is much simpler:
+
+```text
+User
+  ↕ voice / chat
+Live PM (Gemini Live + VAD)
+  ↕ structured handoff
+Single-Task Action Worker
+  ↕ step execution
+Local AX Executor on macOS
 ```
 
-waves 1 and 2 run in parallel — `parallelagent` fires both sub-agents simultaneously. wave 3 runs sequentially because the Mediator needs mood + celebration results, the Scheduler needs the Mediator's decision, and so on.
+the **Live PM** is the only thing that talks to the user. it handles:
 
-the result: ~35% latency reduction compared to running all 9 sequentially. from ~3.5 seconds down to ~2.1-2.5 seconds for the full graph. that matters when a developer is waiting for the cat to react to their screen.
+- natural language intent
+- short clarification questions
+- progress narration
+- results and next-step explanations
 
-## the mediator problem
+the **action worker** does not try to be charming. it does not improvise. it handles:
 
-making AI talk is easy. every LLM wants to talk. the hard part is making it know when to *shut up*.
+- task creation
+- risk checks
+- one-step planning
+- verification
+- completion or fallback
 
-the Mediator agent is the gatekeeper. it reads everything — vision analysis, mood state, celebration events — and makes one binary decision: speak or stay silent. here's the core logic:
+the **local executor** is even narrower. it just:
 
-```go
-const (
-    defaultCooldown  = 10 * time.Second
-    moodCooldown     = 180 * time.Second
-    highSignificance = 7
-)
+- finds the target
+- focuses it
+- clicks it
+- types into it
+- reports what happened
 
-func (a *Agent) decide(vision *models.VisionAnalysis, mood *models.MoodState, celebration *models.CelebrationEvent) *models.MediatorDecision {
-    // ... read from state, check cooldown, check flow state
+that is the boundary that matters.
 
-    // celebration always bypasses cooldown
-    if celebration != nil && celebration.Message != "" {
-        return &models.MediatorDecision{ShouldSpeak: true, Reason: "celebration"}
-    }
+## one task at a time
 
-    // high significance + error = speak immediately
-    if vision != nil && vision.Significance >= highSignificance && vision.ErrorDetected {
-        return &models.MediatorDecision{ShouldSpeak: true, Reason: "error_detected", Urgency: "high"}
-    }
+the real architectural pivot was this rule:
 
-    // flow state = extend cooldown, stay silent
-    if isInFlowState(ctx) {
-        return &models.MediatorDecision{ShouldSpeak: false, Reason: "flow_state"}
-    }
+**only one executable task can be active at a time.**
 
-    // ... more rules
-}
-```
+if the user asks for something else mid-flight, VibeCat does not silently fork the work. it asks:
 
-but it gets more nuanced. the Mediator also tracks recent speech to avoid repeating itself:
+"I am already working on that. Do you want me to stop and switch?"
 
-```go
-func (a *Agent) isSimilarToRecent(text string) bool {
-    // if we said something similar in the last 5 utterances, stay silent
-}
-```
+that sounds small, but it changes everything:
 
-and it generates mood-support messages dynamically using `gemini-3.1-flash-lite-preview` when it detects sustained frustration but hasn't spoken about mood in the last 3 minutes:
+- state gets simpler
+- verification gets more reliable
+- traces get easier to read
+- failure handling gets less magical
+- the product feels more honest
 
-```go
-if mood != nil && !decision.ShouldSpeak {
-    sinceMood := time.Since(a.lastMoodSpoke)
-    if sinceMood > moodCooldown {
-        msg := a.generateMoodMessage(ctx, mood, vision, language)
-        if msg != "" {
-            decision.ShouldSpeak = true
-            decision.Reason = "mood_support"
-            a.lastMoodSpoke = time.Now()
-        }
-    }
-}
-```
+you stop building a swarm and start building a control plane.
 
-no hardcoded messages. every utterance is generated by LLM, considering the developer's current context, mood, language, and what they're working on. the hardcoded pool exists only as a fallback if LLM generation fails.
+## the role of specialists now
 
-## multimodal mood detection
+I didn't delete the idea of specialists. I demoted them.
 
-the MoodDetector doesn't just look at text. it fuses three signals:
+that's the important move.
 
-1. **Vision signals** — error frequency, repeated errors (same error 3+ times = frustrated), app switches
-2. **Voice tone** — from Gemini's AffectiveDialog, the Live API reports the emotional tone of the user's voice
-3. **Temporal patterns** — how long since last interaction, silence duration, error-to-fix time
+specialist intelligence still matters for:
 
-```go
-voiceTone, voiceConfidence := readVoiceToneFromState(ctx)
-mood := a.classify(vision, voiceTone, voiceConfidence)
-```
+- research
+- memory
+- replay labeling
+- session summaries
+- low-confidence multimodal cross-checks
 
-the voice tone comes from ADK session state — the gateway extracts it from the Live API's AffectiveDialog output and writes it to `voice_tone` in the session state. the MoodDetector reads it alongside the vision analysis to produce a fused mood classification.
+but it should sit **behind** the action worker, not beside the PM in the user-facing hot path.
 
-this is genuinely multimodal — not just "look at the screen" or "listen to the voice" but both, simultaneously, informing a single emotional model.
+in other words:
 
-## rest reminders and proactive engagement
+- background specialists: yes
+- equal peer agents arguing over the next click: no
 
-the EngagementAgent handles two kinds of proactive behavior:
+## why this is better for a voice-first product
 
-**silence engagement** — if the developer hasn't interacted in 3 minutes, it speaks up:
+VibeCat uses Gemini Live + VAD as the main interaction layer. that means the conversation channel is always on, low-latency, and interruption-friendly.
 
-```go
-if sinceLast > silenceThreshold {
-    result.Decision.ShouldSpeak = true
-    result.Decision.Reason = "silence_engagement"
-    result.SpeechText = a.generateSilenceMessage(ctx, language)
-}
-```
+once you already have that, the cleanest structure is not "many speaking agents." it's one persistent PM that always owns the conversation, and one worker that gets called when the PM has something concrete to do.
 
-**rest reminders** — the client tracks `activityMinutes` from session start and sends it with every screen capture. after 50 minutes of continuous coding:
+the PM says:
 
-```go
-const restReminderInterval = 50 * time.Minute
-const restReminderCooldown = 30 * time.Minute
+- "I can do that now."
+- "Do you want me to apply it, or just explain it?"
+- "I found the input field."
 
-if activityMin >= int(restReminderInterval.Minutes()) && sinceLastReminder > restReminderCooldown {
-    result.Decision.ShouldSpeak = true
-    result.Decision.Reason = "rest_reminder"
-    result.SpeechText = a.generateRestMessage(ctx, lang, activityMin)
-}
-```
+the worker decides:
 
-the full pipeline: macOS client calculates minutes since session start → sends `activityMinutes` in the WebSocket payload → Gateway passes it to Orchestrator in `POST /analyze` → EngagementAgent reads it from session state → triggers LLM-generated rest suggestion in the developer's language.
+- what the task is
+- what the next step is
+- whether the request is risky
+- whether the target is safe enough
 
-## adk advanced features
+the executor performs the step.
 
-VibeCat doesn't just use ADK's basic agents. it uses the advanced stuff:
+the PM comes back with the result.
 
-**`retryandreflect` plugin** — if an agent fails (network timeout, LLM error), it automatically reflects on why it failed and retries:
+that's a product architecture, not just a model architecture.
 
-```go
-import "google.golang.org/adk/plugin/retryandreflect"
+## what changed in the codebase
 
-r, _ := runner.New(runner.Config{
-    Agent:   graphAgent,
-    Plugins: []runner.Plugin{retryandreflect.New(retryandreflect.WithTrackingScope(retryandreflect.Invocation))},
-})
-```
+the current direction is explicit:
 
-**`loopagent`** — the SearchBuddy is wrapped in a loop agent that runs up to 2 iterations, refining search results:
+- Gemini Live stays as the user-facing PM session
+- the gateway runs a single-task navigator worker
+- the macOS client runs a local action worker and AX-first executor
+- task ids tie planning, execution, and verification together
+- new action requests do not run in parallel
 
-```go
-searchLoop, _ := loopagent.New(loopagent.Config{
-    AgentConfig: agent.Config{
-        Name:      "search_refinement_loop",
-        SubAgents: searchSubAgents,
-    },
-    MaxIterations: 2,
-})
-```
+the biggest product win from this pivot was not theoretical elegance. it was that text entry, focused input targeting, and action replacement finally became debuggable.
 
-**`BeforeModel/AfterModel` callbacks** — the LLM search agent has callbacks for logging and guard-rails:
+## the lesson
 
-```go
-llmSearchAgent, _ := llmagent.New(llmagent.Config{
-    BeforeModelCallback: func(ctx agent.CallbackContext, req *model.LLMRequest) (*model.LLMResponse, error) {
-        slog.Info("[LLM_SEARCH] before model", "agent", ctx.AgentName())
-        return nil, nil
-    },
-    AfterModelCallback: func(ctx agent.CallbackContext, resp *model.LLMResponse, err error) (*model.LLMResponse, error) {
-        slog.Info("[LLM_SEARCH] after model", "agent", ctx.AgentName(), "has_error", err != nil)
-        return resp, nil
-    },
-})
-```
+I still think multi-agent systems are useful.
 
-14 ADK features total. `agent.New`, `sequentialagent`, `parallelagent`, `loopagent`, `llmagent`, `session.InMemoryService`, `memory.InMemoryService`, `runner.New`, `telemetry`, `session.State`, `functiontool`, `geminitool.GoogleSearch`, `retryandreflect`, and `BeforeModel/AfterModel` callbacks.
+I just think they are easy to over-apply.
 
-## what I learned
+for VibeCat, the right answer was not "how do I add more agents?" it was "which single agent should the user actually trust, and which single worker should actually act?"
 
-the hardest thing about building a multi-agent system isn't the graph. it's the boundaries. when does MoodDetector's responsibility end and Mediator's begin? who owns the "should I speak" decision when both EngagementAgent and Mediator have opinions?
+that question killed a lot of architectural vanity.
 
-the answer that worked: each agent writes to session state, and downstream agents read from it. no agent calls another agent directly. the graph topology IS the API contract. Vision writes `vision_analysis` to state. Mood reads it and writes `mood_state`. Mediator reads both. clean, testable, and you can swap any agent without touching the others.
-
-nine agents. three waves. one decision. and a cat that knows when to shut up.
+good.
 
 ---
 

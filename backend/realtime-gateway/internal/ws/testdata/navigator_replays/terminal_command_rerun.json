@@ -1,0 +1,27 @@
+{
+  "name": "terminal_command_rerun",
+  "command": "다시 실행해",
+  "context": {
+    "appName": "Terminal",
+    "bundleId": "com.apple.Terminal",
+    "frontmostBundleId": "com.apple.Terminal",
+    "windowTitle": "zsh",
+    "focusedRole": "AXTextArea",
+    "focusedLabel": "Terminal",
+    "selectedText": "go test ./...",
+    "axSnapshot": "window:zsh\nterminal:AXTextArea:Terminal",
+    "inputFieldHint": "",
+    "lastInputFieldDescriptor": "",
+    "focusStableMs": 1180,
+    "captureConfidence": 0.78,
+    "visibleInputCandidateCount": 0,
+    "accessibilityPermission": "trusted",
+    "accessibilityTrusted": true
+  },
+  "expect": {
+    "intentClass": "execute_now",
+    "stepCount": 2,
+    "firstAction": "paste_text",
+    "lastAction": "hotkey"
+  }
+}

@@ -52,4 +52,30 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(event.emotion, .neutral)
         XCTAssertEqual(event.urgency, "normal")
     }
+
+    func testNavigatorContextPayloadCodableRoundTripPreservesExtendedFields() throws {
+        let original = NavigatorContextPayload(
+            appName: "Google Chrome",
+            bundleId: "com.google.Chrome",
+            frontmostBundleId: "com.google.Chrome",
+            windowTitle: "Google",
+            focusedRole: "AXTextField",
+            focusedLabel: "Search",
+            selectedText: "gemini live api",
+            axSnapshot: "window:Google\nfocused:input:AXTextField:Search",
+            inputFieldHint: "Search",
+            lastInputFieldDescriptor: "bundle=com.google.Chrome|window=Google|role=textfield|label=Search",
+            screenshot: "base64-jpeg",
+            focusStableMs: 420,
+            captureConfidence: 0.82,
+            visibleInputCandidateCount: 2,
+            accessibilityPermission: "trusted",
+            accessibilityTrusted: true
+        )
+
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(NavigatorContextPayload.self, from: data)
+
+        XCTAssertEqual(decoded, original)
+    }
 }

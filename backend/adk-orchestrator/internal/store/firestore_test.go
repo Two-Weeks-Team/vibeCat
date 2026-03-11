@@ -7,7 +7,7 @@ import (
 )
 
 func TestCollectionConstants(t *testing.T) {
-	if SessionsCollection != "sessions" || MetricsCollection != "metrics" || HistoryCollection != "history" || SearchesCollection != "searches" || UsersCollection != "users" || MemorySubcollection != "memory" {
+	if SessionsCollection != "sessions" || MetricsCollection != "metrics" || HistoryCollection != "history" || SearchesCollection != "searches" || NavigatorReplaysCollection != "navigator_replays" || UsersCollection != "users" || MemorySubcollection != "memory" {
 		t.Fatal("collection constants changed unexpectedly")
 	}
 }
@@ -34,6 +34,7 @@ func TestNilInputGuards(t *testing.T) {
 		{name: "UpdateSession nil session", err: c.UpdateSession(ctx, nil), want: "session cannot be nil"},
 		{name: "AddHistoryEntry nil entry", err: c.AddHistoryEntry(ctx, "s1", nil), want: "history entry cannot be nil"},
 		{name: "CacheSearchResult nil entry", err: c.CacheSearchResult(ctx, "s1", nil), want: "search cache entry cannot be nil"},
+		{name: "StoreNavigatorReplay nil entry", err: c.StoreNavigatorReplay(ctx, nil), want: "navigator replay cannot be nil"},
 	}
 
 	for _, tt := range tests {

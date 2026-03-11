@@ -111,6 +111,10 @@ final class VibeCatTests: XCTestCase {
         XCTAssertEqual(VibeCatL10n.processingStateDetail(stage: "tool_running", tool: "maps"), "Checking Google Maps")
         XCTAssertEqual(VibeCatL10n.menuPrivacy(), "Privacy")
         XCTAssertEqual(VibeCatL10n.captureIndicatorLive(), "Screen Capture On")
+        XCTAssertEqual(VibeCatL10n.menuAudioInput(), "Audio Input")
+        XCTAssertEqual(VibeCatL10n.audioInputCurrent("MacBook Pro Microphone"), "Current Input: MacBook Pro Microphone")
+        XCTAssertEqual(VibeCatL10n.audioInputFollowingSystem(), "Following System Default Input")
+        XCTAssertEqual(VibeCatL10n.audioInputListening(), "Status: Listening")
 
         settings.language = "ja"
         XCTAssertEqual(VibeCatL10n.screenReadingTitle(), "画面を読み取り中...")
@@ -118,11 +122,13 @@ final class VibeCatTests: XCTestCase {
         XCTAssertEqual(VibeCatL10n.characterName("cat"), "猫")
         XCTAssertEqual(VibeCatL10n.toolDisplayName("file_search"), "ファイル検索")
         XCTAssertEqual(VibeCatL10n.menuNoScreenshotsStored(), "スクリーンショットは保存しません")
+        XCTAssertEqual(VibeCatL10n.audioInputRecovering(attempt: 2), "状態: 復旧中 (2 回目)")
 
         settings.language = "ko"
         XCTAssertEqual(VibeCatL10n.sourceCount(3), "근거 3개")
         XCTAssertEqual(VibeCatL10n.processingStateDetail(stage: "grounding", tool: "search", sourceCount: 2), "Google 검색 · 근거 2개 확인")
         XCTAssertEqual(VibeCatL10n.captureIndicatorManual(), "수동 분석 모드")
+        XCTAssertEqual(VibeCatL10n.audioInputFailed(), "상태: 입력 복구 대기 중")
     }
 
     private func clearSettings() {

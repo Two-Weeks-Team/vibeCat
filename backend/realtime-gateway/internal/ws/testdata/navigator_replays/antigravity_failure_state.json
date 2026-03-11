@@ -1,0 +1,27 @@
+{
+  "name": "antigravity_failure_state",
+  "command": "이거 반영해",
+  "context": {
+    "appName": "Antigravity IDE",
+    "bundleId": "dev.antigravity.ide",
+    "frontmostBundleId": "dev.antigravity.ide",
+    "windowTitle": "AuthServiceTests.swift",
+    "focusedRole": "AXTextArea",
+    "focusedLabel": "Editor",
+    "selectedText": "AuthServiceTests failing with nil dependency",
+    "axSnapshot": "window:AuthServiceTests.swift\neditor:AXTextArea:Editor",
+    "inputFieldHint": "",
+    "lastInputFieldDescriptor": "",
+    "focusStableMs": 960,
+    "captureConfidence": 0.86,
+    "visibleInputCandidateCount": 0,
+    "accessibilityPermission": "trusted",
+    "accessibilityTrusted": true
+  },
+  "expect": {
+    "intentClass": "execute_now",
+    "stepCount": 3,
+    "firstAction": "hotkey",
+    "lastAction": "hotkey"
+  }
+}

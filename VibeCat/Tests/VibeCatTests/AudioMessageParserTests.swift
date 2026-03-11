@@ -154,16 +154,18 @@ final class AudioMessageParserTests: XCTestCase {
     func testParseNavigatorCommandAccepted() throws {
         let payload = try makeJSON([
             "type": "navigator.commandAccepted",
+            "taskId": "task_123",
             "command": "take me to the docs",
             "intentClass": "find_or_lookup",
             "intentConfidence": 0.87
         ])
 
         let message = AudioMessageParser.parse(payload)
-        guard case .navigatorCommandAccepted(let command, let intentClass, let confidence) = message else {
+        guard case .navigatorCommandAccepted(let taskId, let command, let intentClass, let confidence) = message else {
             XCTFail("Expected .navigatorCommandAccepted")
             return
         }
+        XCTAssertEqual(taskId, "task_123")
         XCTAssertEqual(command, "take me to the docs")
         XCTAssertEqual(intentClass, .findOrLookup)
         XCTAssertEqual(confidence, 0.87, accuracy: 0.0001)
@@ -172,6 +174,7 @@ final class AudioMessageParserTests: XCTestCase {
     func testParseNavigatorStepPlanned() throws {
         let payload = try makeJSON([
             "type": "navigator.stepPlanned",
+            "taskId": "task_abc",
             "message": "I can open the relevant docs now.",
             "step": [
                 "id": "open_docs_search",
@@ -193,10 +196,11 @@ final class AudioMessageParserTests: XCTestCase {
         ])
 
         let message = AudioMessageParser.parse(payload)
-        guard case .navigatorStepPlanned(let step, let messageText) = message else {
+        guard case .navigatorStepPlanned(let taskId, let step, let messageText) = message else {
             XCTFail("Expected .navigatorStepPlanned")
             return
         }
+        XCTAssertEqual(taskId, "task_abc")
         XCTAssertEqual(messageText, "I can open the relevant docs now.")
         XCTAssertEqual(step.id, "open_docs_search")
         XCTAssertEqual(step.actionType, .openURL)
@@ -225,13 +229,15 @@ final class AudioMessageParserTests: XCTestCase {
 
         let completedPayload = try makeJSON([
             "type": "navigator.completed",
+            "taskId": "task_done",
             "summary": "Chrome opened the official docs and Antigravity is frontmost again."
         ])
         let completedMessage = AudioMessageParser.parse(completedPayload)
-        guard case .navigatorCompleted(let summary) = completedMessage else {
+        guard case .navigatorCompleted(let taskId, let summary) = completedMessage else {
             XCTFail("Expected .navigatorCompleted")
             return
         }
+        XCTAssertEqual(taskId, "task_done")
         XCTAssertTrue(summary.contains("Chrome opened"))
     }
 

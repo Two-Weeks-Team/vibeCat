@@ -48,6 +48,8 @@ type adkService interface {
 	Search(context.Context, adk.SearchRequest) (*adk.SearchResult, error)
 	Tool(context.Context, adk.ToolRequest) (*adk.ToolResult, error)
 	SaveSessionSummary(context.Context, adk.SessionSummaryRequest) error
+	NavigatorEscalate(context.Context, adk.NavigatorEscalationRequest) (*adk.NavigatorEscalationResult, error)
+	NavigatorBackground(context.Context, adk.NavigatorBackgroundRequest) (*adk.NavigatorBackgroundResult, error)
 	MemoryContext(context.Context, adk.MemoryContextRequest) (string, error)
 }
 
@@ -1243,7 +1245,10 @@ func saveSessionMemory(ctx context.Context, adkClient adkService, cfg live.Confi
 // Handler returns an http.HandlerFunc that upgrades connections to WebSocket.
 // liveMgr may be nil — in that case audio is echoed back (stub mode).
 // adkClient may be nil — in that case screen captures are ignored.
-func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClient ttsSpeaker, metrics *Metrics) http.HandlerFunc {
+func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClient ttsSpeaker, metrics *Metrics, actionStore ActionStateStore) http.HandlerFunc {
+	if actionStore == nil {
+		actionStore = NewInMemoryActionStateStore()
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		rawConn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -1261,7 +1266,102 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 
 		ls := &liveSessionState{errChan: make(chan error, 1)}
 		runtime := newSessionRuntime("default", c.ID)
-		navState := &navigatorSessionState{}
+		navState := &navigatorSessionState{connectionID: c.ID}
+		actionStateOwner := strings.TrimSpace(c.ID)
+
+		persistNavigatorState := func() {
+			navState.bindLease(strings.TrimSpace(ls.getConfig().DeviceID), c.ID)
+			if actionStore == nil {
+				return
+			}
+			if !navState.hasPersistableState() {
+				if err := actionStore.Delete(context.Background(), actionStateOwner); err != nil {
+					slog.Warn("action state delete failed", "conn_id", c.ID, "owner", actionStateOwner, "error", err)
+				}
+				return
+			}
+			if err := actionStore.Save(context.Background(), actionStateOwner, *navState); err != nil {
+				slog.Warn("action state save failed", "conn_id", c.ID, "owner", actionStateOwner, "error", err)
+			}
+		}
+
+		syncNavigatorState := func() bool {
+			if actionStore == nil {
+				return true
+			}
+			restored, ok, err := actionStore.Load(context.Background(), actionStateOwner)
+			if err != nil {
+				slog.Warn("action state sync failed", "conn_id", c.ID, "owner", actionStateOwner, "error", err)
+				return true
+			}
+			if !ok {
+				if !navState.hasPersistableState() {
+					*navState = navigatorSessionState{
+						deviceID:     strings.TrimSpace(ls.getConfig().DeviceID),
+						connectionID: c.ID,
+					}
+				}
+				return true
+			}
+			if !restored.ownsLease(c.ID) {
+				lockedSendJSON(c, map[string]any{
+					"type":   "navigator.failed",
+					"taskId": restored.activeTaskID,
+					"reason": "This VibeCat connection is stale after reconnect. Continue from the newest session.",
+				})
+				return false
+			}
+			*navState = restored
+			navState.bindLease(strings.TrimSpace(ls.getConfig().DeviceID), c.ID)
+			return true
+		}
+
+		recordFirstActionMetric := func() {
+			first, ok := navState.firstPlannedStep()
+			if !ok || len(navState.stepHistory) != 1 {
+				return
+			}
+			if metrics != nil && !navState.createdAt.IsZero() {
+				metrics.RecordTimeToFirstAction(context.Background(), navigatorSurfaceFromState(*navState), first.PlannedAt.Sub(navState.createdAt))
+			}
+		}
+
+		recordGuidedMetrics := func(reason string, step *navigatorStep, observedOutcome string, surface string) {
+			if metrics == nil {
+				return
+			}
+			metrics.RecordGuidedMode(context.Background(), reason, surface)
+			if step == nil {
+				return
+			}
+			metrics.RecordVerificationFailure(context.Background(), step.ActionType, surface)
+			if isInputFieldFocusStep(*step) {
+				metrics.RecordInputFieldFocusResult(context.Background(), "guided_mode", surface)
+			}
+			if shouldRecordWrongTarget(observedOutcome) {
+				metrics.RecordWrongTarget(context.Background(), step.ActionType, surface)
+			}
+		}
+
+		recordFailureMetrics := func(step navigatorStep, observedOutcome string, surface string) {
+			if metrics == nil {
+				return
+			}
+			metrics.RecordVerificationFailure(context.Background(), step.ActionType, surface)
+			if isInputFieldFocusStep(step) {
+				metrics.RecordInputFieldFocusResult(context.Background(), "failed", surface)
+			}
+			if shouldRecordWrongTarget(observedOutcome) {
+				metrics.RecordWrongTarget(context.Background(), step.ActionType, surface)
+			}
+		}
+
+		finalizeNavigatorTask := func(outcome, outcomeDetail, traceID string) {
+			snapshot := navState.snapshotTask(time.Now().UTC())
+			enqueueNavigatorBackground(context.Background(), adkClient, runtime, ls.getConfig(), snapshot, outcome, outcomeDetail, traceID)
+			navState.clearPlan()
+			persistNavigatorState()
+		}
 
 		defer func() {
 			saveSessionMemory(context.Background(), adkClient, ls.getConfig(), runtime)
@@ -1369,6 +1469,38 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 					ls.setConfig(cfg)
 					ls.setResumeHandle(setupMsg.ResumptionHandle)
 					runtime.setIdentity(cfg.DeviceID, c.ID)
+					previousActionStateOwner := actionStateOwner
+					if strings.TrimSpace(cfg.DeviceID) != "" {
+						actionStateOwner = strings.TrimSpace(cfg.DeviceID)
+					}
+					if restored, ok, err := actionStore.Load(ctx, actionStateOwner); err != nil {
+						slog.Warn("action state restore failed", "conn_id", c.ID, "owner", actionStateOwner, "error", err)
+					} else if ok {
+						*navState = restored
+						navState.bindLease(strings.TrimSpace(cfg.DeviceID), c.ID)
+						persistNavigatorState()
+						if previousActionStateOwner != actionStateOwner {
+							if err := actionStore.Delete(context.Background(), previousActionStateOwner); err != nil {
+								slog.Warn("legacy action state delete failed", "conn_id", c.ID, "owner", previousActionStateOwner, "error", err)
+							}
+						}
+						if navState.hasActiveTask() {
+							lockedSendJSON(c, map[string]any{
+								"type":        "navigator.guidedMode",
+								"taskId":      navState.activeTaskID,
+								"reason":      "restored_task_state",
+								"instruction": fmt.Sprintf("I restored the previous action state for %q. Ask me to resume it or give me a new command.", navState.activeCommand),
+							})
+						}
+					} else {
+						navState.bindLease(strings.TrimSpace(cfg.DeviceID), c.ID)
+						if previousActionStateOwner != actionStateOwner && navState.hasPersistableState() {
+							persistNavigatorState()
+							if err := actionStore.Delete(context.Background(), previousActionStateOwner); err != nil {
+								slog.Warn("legacy action state delete failed", "conn_id", c.ID, "owner", previousActionStateOwner, "error", err)
+							}
+						}
+					}
 					if liveMgr == nil {
 						lockedSendJSON(c, setupCompleteMsg{Type: "setupComplete", SessionID: c.ID})
 						continue
@@ -1501,50 +1633,94 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 					if traceID == "" {
 						traceID = newTraceID("navigator")
 					}
+					if !syncNavigatorState() {
+						continue
+					}
 					rootAt := time.Now()
 					sendTraceEvent(c, "navigator", traceID, "command_received", rootAt, truncateText(navMsg.Command, 120))
 					plan := planNavigatorCommand(navMsg.Command, navMsg.Context, false)
+					plan = maybeEscalateNavigatorPlan(ctx, adkClient, metrics, ls.getConfig().Language, navMsg.Command, navMsg.Context, plan, traceID)
 					switch {
 					case plan.IntentClass == navigatorIntentAmbiguous:
-						navState.pendingClarificationCommand = navMsg.Command
+						navState.stageClarification(navigatorPromptIntent, navMsg.Command)
+						persistNavigatorState()
+						if metrics != nil {
+							metrics.RecordClarification(context.Background(), string(navigatorPromptIntent), navigatorSurfaceFromContext(navMsg.Context))
+						}
 						lockedSendJSON(c, map[string]any{
 							"type":     "navigator.intentClarificationNeeded",
 							"command":  navMsg.Command,
 							"question": plan.ClarifyQuestion,
 						})
-					case plan.RiskQuestion != "":
-						navState.pendingRiskyCommand = navMsg.Command
-						lockedSendJSON(c, map[string]any{
-							"type":     "navigator.riskyActionBlocked",
-							"command":  navMsg.Command,
-							"question": plan.RiskQuestion,
-							"reason":   plan.RiskReason,
-						})
 					case plan.IntentClass == navigatorIntentAnalyzeOnly:
 						lockedSendJSON(c, map[string]any{
 							"type":             "navigator.commandAccepted",
+							"taskId":           "",
 							"command":          navMsg.Command,
 							"intentClass":      plan.IntentClass,
 							"intentConfidence": plan.IntentConfidence,
 						})
 						handleUserTextQuery(ctx, c, ls, adkClient, ttsClient, metrics, runtime, navMsg.Command, traceID, rootAt)
 					case len(plan.Steps) == 0:
+						recordGuidedMetrics("no_supported_step", nil, "", navigatorSurfaceFromContext(navMsg.Context))
 						lockedSendJSON(c, map[string]any{
 							"type":        "navigator.guidedMode",
+							"taskId":      "",
 							"reason":      "no_supported_step",
 							"instruction": "I can see the request, but I need a more specific target or a supported surface.",
 						})
+					case navState.hasActiveTask():
+						activeTaskID, activeCommand, currentStepID, _ := navState.activeTaskSnapshot()
+						if strings.TrimSpace(navMsg.Command) == strings.TrimSpace(activeCommand) {
+							lockedSendJSON(c, map[string]any{
+								"type":   "navigator.stepRunning",
+								"taskId": activeTaskID,
+								"stepId": currentStepID,
+								"status": "already_running",
+							})
+							continue
+						}
+						navState.stageClarification(navigatorPromptReplace, navMsg.Command)
+						persistNavigatorState()
+						if metrics != nil {
+							surface := navigatorSurfaceFromState(*navState)
+							metrics.RecordClarification(context.Background(), string(navigatorPromptReplace), surface)
+							metrics.RecordTaskReplacement(context.Background(), surface)
+						}
+						lockedSendJSON(c, map[string]any{
+							"type":     "navigator.intentClarificationNeeded",
+							"command":  navMsg.Command,
+							"question": buildTaskReplacementQuestion(activeCommand, navMsg.Command),
+						})
+					case plan.RiskQuestion != "":
+						navState.pendingRiskyCommand = navMsg.Command
+						persistNavigatorState()
+						lockedSendJSON(c, map[string]any{
+							"type":     "navigator.riskyActionBlocked",
+							"command":  navMsg.Command,
+							"question": plan.RiskQuestion,
+							"reason":   plan.RiskReason,
+						})
 					default:
-						navState.startPlan(navMsg.Command, plan.Steps)
+						taskID := navState.startPlan(navMsg.Command, plan.Steps)
+						navState.rememberInitialContext(navMsg.Context)
+						persistNavigatorState()
+						if metrics != nil {
+							metrics.RecordNavigatorTask(context.Background(), navigatorSurfaceFromState(*navState), plan.IntentClass)
+						}
 						lockedSendJSON(c, map[string]any{
 							"type":             "navigator.commandAccepted",
+							"taskId":           taskID,
 							"command":          navMsg.Command,
 							"intentClass":      plan.IntentClass,
 							"intentConfidence": plan.IntentConfidence,
 						})
 						if step, ok := navState.nextStep(); ok {
+							persistNavigatorState()
+							recordFirstActionMetric()
 							lockedSendJSON(c, map[string]any{
 								"type":    "navigator.stepPlanned",
+								"taskId":  taskID,
 								"step":    step,
 								"message": navigatorMessageForStep(step),
 							})
@@ -1561,49 +1737,87 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 						slog.Warn("parse navigator clarification response failed", "conn_id", c.ID, "error", parseErr)
 						continue
 					}
-					command := strings.TrimSpace(confirmMsg.Command)
-					if command == "" {
-						command = navState.pendingClarificationCommand
+					if !syncNavigatorState() {
+						continue
 					}
+					clarifyKind, command := navState.consumeClarification(confirmMsg.Command)
 					if explanationAnswer(confirmMsg.Answer) {
-						navState.clearPlan()
-						lockedSendJSON(c, map[string]any{
-							"type":        "navigator.guidedMode",
-							"reason":      "clarification_explanation_only",
-							"instruction": "I will explain the next step instead of acting.",
-						})
-						handleUserTextQuery(ctx, c, ls, adkClient, ttsClient, metrics, runtime, command, newTraceID("text"), time.Now())
+						switch clarifyKind {
+						case navigatorPromptReplace:
+							persistNavigatorState()
+							lockedSendJSON(c, map[string]any{
+								"type":   "navigator.failed",
+								"taskId": "",
+								"reason": "I kept the current task and did not switch actions.",
+							})
+						default:
+							navState.clearPlan()
+							persistNavigatorState()
+							recordGuidedMetrics("clarification_explanation_only", nil, "", navigatorSurfaceFromContext(confirmMsg.Context))
+							lockedSendJSON(c, map[string]any{
+								"type":        "navigator.guidedMode",
+								"taskId":      "",
+								"reason":      "clarification_explanation_only",
+								"instruction": "I will explain the next step instead of acting.",
+							})
+							handleUserTextQuery(ctx, c, ls, adkClient, ttsClient, metrics, runtime, command, newTraceID("text"), time.Now())
+						}
 						continue
 					}
 					if !affirmativeAnswer(confirmMsg.Answer) {
+						instruction := "I did not get a clear execution confirmation, so I stopped before acting."
+						if clarifyKind == navigatorPromptReplace {
+							instruction = "I kept the current task and did not switch actions."
+						}
+						recordGuidedMetrics("clarification_not_confirmed", nil, "", navigatorSurfaceFromContext(confirmMsg.Context))
 						lockedSendJSON(c, map[string]any{
 							"type":        "navigator.guidedMode",
+							"taskId":      "",
 							"reason":      "clarification_not_confirmed",
-							"instruction": "I did not get a clear execution confirmation, so I stopped before acting.",
+							"instruction": instruction,
 						})
-						navState.clearPlan()
+						if clarifyKind != navigatorPromptReplace {
+							navState.clearPlan()
+						}
+						persistNavigatorState()
 						continue
 					}
+					if clarifyKind == navigatorPromptReplace {
+						finalizeNavigatorTask("replaced", "task replaced by a newer command", "")
+					}
 					plan := planNavigatorCommand(command+" "+confirmMsg.Answer, confirmMsg.Context, false)
+					plan = maybeEscalateNavigatorPlan(ctx, adkClient, metrics, ls.getConfig().Language, command, confirmMsg.Context, plan, "")
 					if len(plan.Steps) == 0 {
+						recordGuidedMetrics("clarified_but_not_supported", nil, "", navigatorSurfaceFromContext(confirmMsg.Context))
 						lockedSendJSON(c, map[string]any{
 							"type":        "navigator.guidedMode",
+							"taskId":      "",
 							"reason":      "clarified_but_not_supported",
 							"instruction": "I understand the intent now, but I still need a more specific or supported target.",
 						})
 						navState.clearPlan()
+						persistNavigatorState()
 						continue
 					}
-					navState.startPlan(command, plan.Steps)
+					taskID := navState.startPlan(command, plan.Steps)
+					navState.rememberInitialContext(confirmMsg.Context)
+					persistNavigatorState()
+					if metrics != nil {
+						metrics.RecordNavigatorTask(context.Background(), navigatorSurfaceFromState(*navState), plan.IntentClass)
+					}
 					lockedSendJSON(c, map[string]any{
 						"type":             "navigator.commandAccepted",
+						"taskId":           taskID,
 						"command":          command,
 						"intentClass":      plan.IntentClass,
 						"intentConfidence": plan.IntentConfidence,
 					})
 					if step, ok := navState.nextStep(); ok {
+						persistNavigatorState()
+						recordFirstActionMetric()
 						lockedSendJSON(c, map[string]any{
 							"type":    "navigator.stepPlanned",
+							"taskId":  taskID,
 							"step":    step,
 							"message": navigatorMessageForStep(step),
 						})
@@ -1619,38 +1833,56 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 						slog.Warn("parse navigator risky response failed", "conn_id", c.ID, "error", parseErr)
 						continue
 					}
+					if !syncNavigatorState() {
+						continue
+					}
 					command := strings.TrimSpace(confirmMsg.Command)
 					if command == "" {
 						command = navState.pendingRiskyCommand
 					}
 					if explanationAnswer(confirmMsg.Answer) || !affirmativeAnswer(confirmMsg.Answer) {
+						recordGuidedMetrics("risky_action_not_confirmed", nil, "", navigatorSurfaceFromContext(confirmMsg.Context))
 						lockedSendJSON(c, map[string]any{
 							"type":        "navigator.guidedMode",
+							"taskId":      "",
 							"reason":      "risky_action_not_confirmed",
 							"instruction": "I stopped before the risky action. I can still explain the next step.",
 						})
 						navState.clearPlan()
+						persistNavigatorState()
 						continue
 					}
 					plan := planNavigatorCommand(command, confirmMsg.Context, true)
+					plan = maybeEscalateNavigatorPlan(ctx, adkClient, metrics, ls.getConfig().Language, command, confirmMsg.Context, plan, "")
 					if len(plan.Steps) == 0 {
 						lockedSendJSON(c, map[string]any{
 							"type":   "navigator.failed",
+							"taskId": "",
 							"reason": "I could not build a safe step even after confirmation.",
 						})
 						navState.clearPlan()
+						persistNavigatorState()
 						continue
 					}
-					navState.startPlan(command, plan.Steps)
+					taskID := navState.startPlan(command, plan.Steps)
+					navState.rememberInitialContext(confirmMsg.Context)
+					persistNavigatorState()
+					if metrics != nil {
+						metrics.RecordNavigatorTask(context.Background(), navigatorSurfaceFromState(*navState), plan.IntentClass)
+					}
 					lockedSendJSON(c, map[string]any{
 						"type":             "navigator.commandAccepted",
+						"taskId":           taskID,
 						"command":          command,
 						"intentClass":      plan.IntentClass,
 						"intentConfidence": plan.IntentConfidence,
 					})
 					if step, ok := navState.nextStep(); ok {
+						persistNavigatorState()
+						recordFirstActionMetric()
 						lockedSendJSON(c, map[string]any{
 							"type":    "navigator.stepPlanned",
+							"taskId":  taskID,
 							"step":    step,
 							"message": navigatorMessageForStep(step),
 						})
@@ -1659,6 +1891,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 				case "navigator.refreshContext":
 					var refreshMsg struct {
 						Command         string           `json:"command"`
+						TaskID          string           `json:"taskId"`
 						Step            navigatorStep    `json:"step"`
 						Status          string           `json:"status"`
 						ObservedOutcome string           `json:"observedOutcome"`
@@ -1668,45 +1901,64 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 						slog.Warn("parse navigator refresh failed", "conn_id", c.ID, "error", parseErr)
 						continue
 					}
-					if !navState.acceptsRefresh(refreshMsg.Command, refreshMsg.Step.ID) {
-						slog.Warn("navigator refresh ignored", "conn_id", c.ID, "command", refreshMsg.Command, "step_id", refreshMsg.Step.ID, "active_command", navState.activeCommand)
+					if !syncNavigatorState() {
+						continue
+					}
+					if !navState.acceptsRefresh(refreshMsg.Command, refreshMsg.TaskID, refreshMsg.Step.ID) {
+						slog.Warn("navigator refresh ignored", "conn_id", c.ID, "command", refreshMsg.Command, "task_id", refreshMsg.TaskID, "step_id", refreshMsg.Step.ID, "active_command", navState.activeCommand)
 						continue
 					}
 					switch refreshMsg.Status {
 					case "success":
+						navState.recordStepResult(refreshMsg.Step, refreshMsg.Status, refreshMsg.ObservedOutcome)
 						navState.clearCurrentStep()
+						navState.markVerifiedContext(refreshMsg.Context)
+						persistNavigatorState()
+						if metrics != nil && isInputFieldFocusStep(refreshMsg.Step) {
+							metrics.RecordInputFieldFocusResult(context.Background(), "success", navigatorSurfaceFromState(*navState))
+						}
 						lockedSendJSON(c, map[string]any{
 							"type":            "navigator.stepVerified",
+							"taskId":          refreshMsg.TaskID,
 							"stepId":          refreshMsg.Step.ID,
 							"status":          "success",
 							"observedOutcome": refreshMsg.ObservedOutcome,
 						})
 						if next, ok := navState.nextStep(); ok {
+							persistNavigatorState()
 							lockedSendJSON(c, map[string]any{
 								"type":    "navigator.stepPlanned",
+								"taskId":  refreshMsg.TaskID,
 								"step":    next,
 								"message": navigatorMessageForStep(next),
 							})
 						} else {
 							lockedSendJSON(c, map[string]any{
 								"type":    "navigator.completed",
+								"taskId":  refreshMsg.TaskID,
 								"summary": refreshMsg.ObservedOutcome,
 							})
-							navState.clearPlan()
+							finalizeNavigatorTask("completed", refreshMsg.ObservedOutcome, "")
 						}
 					case "guided_mode":
+						navState.recordStepResult(refreshMsg.Step, refreshMsg.Status, refreshMsg.ObservedOutcome)
+						recordGuidedMetrics("verification_guided_mode", &refreshMsg.Step, refreshMsg.ObservedOutcome, navigatorSurfaceFromState(*navState))
 						lockedSendJSON(c, map[string]any{
 							"type":        "navigator.guidedMode",
+							"taskId":      refreshMsg.TaskID,
 							"reason":      "verification_guided_mode",
 							"instruction": refreshMsg.ObservedOutcome,
 						})
-						navState.clearPlan()
+						finalizeNavigatorTask("guided_mode", refreshMsg.ObservedOutcome, "")
 					default:
+						navState.recordStepResult(refreshMsg.Step, refreshMsg.Status, refreshMsg.ObservedOutcome)
+						recordFailureMetrics(refreshMsg.Step, refreshMsg.ObservedOutcome, navigatorSurfaceFromState(*navState))
 						lockedSendJSON(c, map[string]any{
 							"type":   "navigator.failed",
+							"taskId": refreshMsg.TaskID,
 							"reason": refreshMsg.ObservedOutcome,
 						})
-						navState.clearPlan()
+						finalizeNavigatorTask("failed", refreshMsg.ObservedOutcome, "")
 					}
 
 				case "screenCapture", "forceCapture":

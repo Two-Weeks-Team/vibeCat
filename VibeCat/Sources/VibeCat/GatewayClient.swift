@@ -215,12 +215,13 @@ final class GatewayClient {
         ])
     }
 
-    func sendNavigatorRefresh(command: String, step: NavigatorStep, status: String, observedOutcome: String, context: NavigatorContextPayload) {
+    func sendNavigatorRefresh(taskId: String, command: String, step: NavigatorStep, status: String, observedOutcome: String, context: NavigatorContextPayload) {
         guard case .connected = state else { return }
         guard let contextObject = encodableJSONObject(context) as? [String: Any],
               let stepObject = encodableJSONObject(step) as? [String: Any] else { return }
         sendJSON([
             "type": "navigator.refreshContext",
+            "taskId": taskId,
             "command": command,
             "step": stepObject,
             "status": status,
@@ -389,7 +390,7 @@ final class GatewayClient {
             "language": settings.language,
             "liveModel": settings.liveModel,
             "chattiness": settings.chattiness,
-            "proactiveAudio": settings.navigatorModeEnabled ? false : settings.proactiveAudio,
+            "proactiveAudio": settings.proactiveAudio,
             "searchEnabled": settings.searchEnabled,
             "affectiveDialog": true,
             "deviceId": Self.deviceIdentifier()

@@ -129,12 +129,22 @@ func main() {
 		wsMetrics = createdMetrics
 	}
 
+	memoryActionStateStore := ws.NewInMemoryActionStateStore()
+	var actionStateStore ws.ActionStateStore = memoryActionStateStore
+	if firestoreActionStateStore, err := ws.NewFirestoreActionStateStore(context.Background(), projectID, os.Getenv("ACTION_STATE_FIRESTORE_COLLECTION")); err != nil {
+		slog.Warn("action state firestore init failed — using in-memory only", "error", err)
+	} else {
+		defer firestoreActionStateStore.Close()
+		actionStateStore = ws.NewChainedActionStateStore(memoryActionStateStore, firestoreActionStateStore)
+		slog.Info("action state firestore initialized", "project", projectID)
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)
 	mux.HandleFunc("/readyz", readyHandler)
 	mux.HandleFunc("/api/v1/auth/register", auth.RegisterHandler(jwtMgr))
 	mux.HandleFunc("/api/v1/auth/refresh", auth.RefreshHandler(jwtMgr))
-	mux.Handle("/ws/live", auth.Middleware(jwtMgr, ws.Handler(registry, liveMgr, adkClient, ttsClient, wsMetrics)))
+	mux.Handle("/ws/live", auth.Middleware(jwtMgr, ws.Handler(registry, liveMgr, adkClient, ttsClient, wsMetrics, actionStateStore)))
 
 	addr := ":" + portOrDefault("8080")
 	slog.Info("starting server", "service", serviceName, "addr", addr)

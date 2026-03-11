@@ -38,6 +38,7 @@ import (
 	"vibecat/adk-orchestrator/internal/agents/search"
 	"vibecat/adk-orchestrator/internal/agents/tooluse"
 	"vibecat/adk-orchestrator/internal/models"
+	navprocessor "vibecat/adk-orchestrator/internal/navigator"
 	"vibecat/adk-orchestrator/internal/store"
 )
 
@@ -51,6 +52,7 @@ type orchestrator struct {
 	searchAgent    *search.Agent
 	toolAgent      *tooluse.Agent
 	memoryAgent    *memoryagent.Agent
+	navigator      *navprocessor.Processor
 	storeClient    *store.Client
 	appName        string
 	analyzeCounter metric.Int64Counter
@@ -229,6 +231,7 @@ func main() {
 		searchAgent:    search.New(genaiClient),
 		toolAgent:      tooluse.New(genaiClient, parseCSVEnv("GEMINI_FILE_SEARCH_STORES")),
 		memoryAgent:    memoryagent.New(genaiClient, storeClient),
+		navigator:      navprocessor.NewProcessor(genaiClient, search.New(genaiClient), memoryagent.New(genaiClient, storeClient), storeClient),
 		storeClient:    storeClient,
 		appName:        "vibecat",
 		analyzeCounter: analyzeCounter,
@@ -242,6 +245,8 @@ func main() {
 	mux.HandleFunc("/analyze", orch.analyzeHandler)
 	mux.HandleFunc("/search", orch.searchHandler)
 	mux.HandleFunc("/tool", orch.toolHandler)
+	mux.HandleFunc("/navigator/escalate", orch.navigatorEscalationHandler)
+	mux.HandleFunc("/navigator/background", orch.navigatorBackgroundHandler)
 	mux.HandleFunc("/memory/session-summary", orch.sessionSummaryHandler)
 	mux.HandleFunc("/memory/context", orch.memoryContextHandler)
 
@@ -564,6 +569,80 @@ func (o *orchestrator) toolHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(result); err != nil {
 		slog.Error("failed to encode tool response", "error", err)
+	}
+}
+
+func (o *orchestrator) navigatorEscalationHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req models.NavigatorEscalationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.Command) == "" {
+		http.Error(w, "command is required", http.StatusBadRequest)
+		return
+	}
+	if o.navigator == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	start := time.Now()
+	result := o.navigator.ResolveTarget(r.Context(), req)
+	if result == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	slog.Info("navigator escalation resolved",
+		"trace_id", req.TraceID,
+		"elapsed", time.Since(start).String(),
+		"confidence", result.Confidence,
+		"fallback", result.FallbackRecommendation,
+	)
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		slog.Error("failed to encode navigator escalation response", "error", err)
+	}
+}
+
+func (o *orchestrator) navigatorBackgroundHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req models.NavigatorBackgroundRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.TaskID) == "" || strings.TrimSpace(req.Command) == "" {
+		http.Error(w, "taskId and command are required", http.StatusBadRequest)
+		return
+	}
+	if o.navigator == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	start := time.Now()
+	result := o.navigator.ProcessBackground(r.Context(), req)
+	if result == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	slog.Info("navigator background processed",
+		"trace_id", req.TraceID,
+		"elapsed", time.Since(start).String(),
+		"task_id", req.TaskID,
+		"surface", result.Surface,
+	)
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		slog.Error("failed to encode navigator background response", "error", err)
 	}
 }
 

@@ -253,7 +253,7 @@ func TestHandlerScreenCaptureTimeoutReturnsSilentFallbackQuickly(t *testing.T) {
 		},
 	}
 
-	server := httptest.NewServer(Handler(reg, nil, fakeADK, nil, nil))
+	server := httptest.NewServer(Handler(reg, nil, fakeADK, nil, nil, NewInMemoryActionStateStore()))
 	defer server.Close()
 
 	conn := dialTestWebSocket(t, server.URL)
@@ -355,7 +355,7 @@ func TestHandlerForceCaptureSpeaksContextHintBeforeAnalyzeCompletes(t *testing.T
 		},
 	}
 
-	server := httptest.NewServer(Handler(reg, nil, fakeADK, fakeTTS, nil))
+	server := httptest.NewServer(Handler(reg, nil, fakeADK, fakeTTS, nil, NewInMemoryActionStateStore()))
 	defer server.Close()
 
 	conn := dialTestWebSocket(t, server.URL)
@@ -466,7 +466,7 @@ func TestHandlerLiveSearchFallbackSpeaksViaTTSWithoutLiveSession(t *testing.T) {
 		},
 	}
 
-	server := httptest.NewServer(Handler(reg, nil, fakeADK, fakeTTS, nil))
+	server := httptest.NewServer(Handler(reg, nil, fakeADK, fakeTTS, nil, NewInMemoryActionStateStore()))
 	defer server.Close()
 
 	conn := dialTestWebSocket(t, server.URL)
@@ -634,7 +634,7 @@ func TestHandlerToolRoutingStartsTraceSpan(t *testing.T) {
 		},
 	}
 
-	server := httptest.NewServer(Handler(reg, nil, fakeADK, nil, nil))
+	server := httptest.NewServer(Handler(reg, nil, fakeADK, nil, nil, NewInMemoryActionStateStore()))
 	defer server.Close()
 
 	conn := dialTestWebSocket(t, server.URL)
@@ -736,6 +736,8 @@ type stubADK struct {
 	searchFn             func(context.Context, adk.SearchRequest) (*adk.SearchResult, error)
 	toolFn               func(context.Context, adk.ToolRequest) (*adk.ToolResult, error)
 	saveSessionSummaryFn func(context.Context, adk.SessionSummaryRequest) error
+	navigatorEscalateFn  func(context.Context, adk.NavigatorEscalationRequest) (*adk.NavigatorEscalationResult, error)
+	navigatorBackgroundFn func(context.Context, adk.NavigatorBackgroundRequest) (*adk.NavigatorBackgroundResult, error)
 	memoryContextFn      func(context.Context, adk.MemoryContextRequest) (string, error)
 }
 
@@ -765,6 +767,20 @@ func (s *stubADK) SaveSessionSummary(ctx context.Context, req adk.SessionSummary
 		return s.saveSessionSummaryFn(ctx, req)
 	}
 	return nil
+}
+
+func (s *stubADK) NavigatorEscalate(ctx context.Context, req adk.NavigatorEscalationRequest) (*adk.NavigatorEscalationResult, error) {
+	if s.navigatorEscalateFn != nil {
+		return s.navigatorEscalateFn(ctx, req)
+	}
+	return nil, nil
+}
+
+func (s *stubADK) NavigatorBackground(ctx context.Context, req adk.NavigatorBackgroundRequest) (*adk.NavigatorBackgroundResult, error) {
+	if s.navigatorBackgroundFn != nil {
+		return s.navigatorBackgroundFn(ctx, req)
+	}
+	return nil, nil
 }
 
 func (s *stubADK) MemoryContext(ctx context.Context, req adk.MemoryContextRequest) (string, error) {

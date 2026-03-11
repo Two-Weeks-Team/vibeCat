@@ -19,15 +19,15 @@ public enum ServerMessage: Sendable {
     case ttsStart(text: String?)
     case ttsEnd
     case pong
-    case navigatorCommandAccepted(command: String, intentClass: NavigatorIntentClass, intentConfidence: Double)
+    case navigatorCommandAccepted(taskId: String?, command: String, intentClass: NavigatorIntentClass, intentConfidence: Double)
     case navigatorIntentClarificationNeeded(command: String, question: String)
-    case navigatorStepPlanned(step: NavigatorStep, message: String)
-    case navigatorStepRunning(stepId: String, status: String)
-    case navigatorStepVerified(stepId: String, status: String, observedOutcome: String)
+    case navigatorStepPlanned(taskId: String, step: NavigatorStep, message: String)
+    case navigatorStepRunning(taskId: String, stepId: String, status: String)
+    case navigatorStepVerified(taskId: String, stepId: String, status: String, observedOutcome: String)
     case navigatorRiskyActionBlocked(command: String, question: String, reason: String)
-    case navigatorGuidedMode(reason: String, instruction: String)
-    case navigatorCompleted(summary: String)
-    case navigatorFailed(reason: String)
+    case navigatorGuidedMode(taskId: String?, reason: String, instruction: String)
+    case navigatorCompleted(taskId: String, summary: String)
+    case navigatorFailed(taskId: String?, reason: String)
     case error(code: String, message: String)
     case unknown
 }
@@ -134,46 +134,53 @@ public enum AudioMessageParser {
         case "pong":
             return .pong
         case "navigator.commandAccepted":
+            let taskId = (json["taskId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
             let command = json["command"] as? String ?? ""
             let rawIntent = json["intentClass"] as? String ?? NavigatorIntentClass.ambiguous.rawValue
             let intent = NavigatorIntentClass(rawValue: rawIntent) ?? .ambiguous
             let confidence = json["intentConfidence"] as? Double ?? 0
-            return .navigatorCommandAccepted(command: command, intentClass: intent, intentConfidence: confidence)
+            return .navigatorCommandAccepted(taskId: taskId?.isEmpty == true ? nil : taskId, command: command, intentClass: intent, intentConfidence: confidence)
         case "navigator.intentClarificationNeeded":
             let command = json["command"] as? String ?? ""
             let question = json["question"] as? String ?? ""
             return .navigatorIntentClarificationNeeded(command: command, question: question)
         case "navigator.stepPlanned":
+            let taskId = json["taskId"] as? String ?? ""
             let message = json["message"] as? String ?? ""
             guard let stepJSON = json["step"] as? [String: Any],
                   let step = parseNavigatorStep(stepJSON) else {
                 return .unknown
             }
-            return .navigatorStepPlanned(step: step, message: message)
+            return .navigatorStepPlanned(taskId: taskId, step: step, message: message)
         case "navigator.stepRunning":
+            let taskId = json["taskId"] as? String ?? ""
             let stepId = json["stepId"] as? String ?? ""
             let status = json["status"] as? String ?? ""
-            return .navigatorStepRunning(stepId: stepId, status: status)
+            return .navigatorStepRunning(taskId: taskId, stepId: stepId, status: status)
         case "navigator.stepVerified":
+            let taskId = json["taskId"] as? String ?? ""
             let stepId = json["stepId"] as? String ?? ""
             let status = json["status"] as? String ?? ""
             let observedOutcome = json["observedOutcome"] as? String ?? ""
-            return .navigatorStepVerified(stepId: stepId, status: status, observedOutcome: observedOutcome)
+            return .navigatorStepVerified(taskId: taskId, stepId: stepId, status: status, observedOutcome: observedOutcome)
         case "navigator.riskyActionBlocked":
             let command = json["command"] as? String ?? ""
             let question = json["question"] as? String ?? ""
             let reason = json["reason"] as? String ?? ""
             return .navigatorRiskyActionBlocked(command: command, question: question, reason: reason)
         case "navigator.guidedMode":
+            let taskId = (json["taskId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
             let reason = json["reason"] as? String ?? ""
             let instruction = json["instruction"] as? String ?? ""
-            return .navigatorGuidedMode(reason: reason, instruction: instruction)
+            return .navigatorGuidedMode(taskId: taskId?.isEmpty == true ? nil : taskId, reason: reason, instruction: instruction)
         case "navigator.completed":
+            let taskId = json["taskId"] as? String ?? ""
             let summary = json["summary"] as? String ?? ""
-            return .navigatorCompleted(summary: summary)
+            return .navigatorCompleted(taskId: taskId, summary: summary)
         case "navigator.failed":
+            let taskId = (json["taskId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
             let reason = json["reason"] as? String ?? ""
-            return .navigatorFailed(reason: reason)
+            return .navigatorFailed(taskId: taskId?.isEmpty == true ? nil : taskId, reason: reason)
         case "error":
             let code = json["code"] as? String ?? "UNKNOWN"
             let message = json["message"] as? String ?? ""

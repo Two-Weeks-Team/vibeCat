@@ -1,7 +1,7 @@
 ---
 title: six characters, one soul format
 published: false
-description: how VibeCat gives six completely different AI personalities to the same 9-agent pipeline using nothing but a markdown file and a voice name
+description: how VibeCat gives six completely different AI personalities to the same Live PM runtime using nothing but a markdown file and a voice name
 tags: geminiliveagentchallenge, devlog, buildinpublic, go
 cover_image:
 ---
@@ -20,16 +20,16 @@ so we built six of them. and then we had to figure out how to make them all run 
 
 ## the problem with "just add a system prompt"
 
-the naive approach is obvious: swap out the system prompt per character, done. but that breaks down fast when you have a 9-agent pipeline that needs to stay consistent across all characters. the VisionAgent, MemoryAgent, MoodDetector, CelebrationTrigger — all of these need to behave the same way regardless of whether the user picked the zen folklore mentor or the comedy dictator. the *personality* is a surface concern. the *behavior* is infrastructure.
+the naive approach is obvious: swap out the system prompt per character, done. but that breaks down fast when you have one voice-first runtime that needs to stay consistent across all characters. the action worker, the local executor, the safety rules, the clarification behavior — all of these need to behave the same way regardless of whether the user picked the zen folklore mentor or the comedy dictator. the *personality* is a surface concern. the *behavior* is infrastructure.
 
 so we needed a clean separation: one layer that handles what the agent does, and another layer that handles how it sounds.
 
 the answer ended up being embarrassingly simple. each character gets two files:
 
 - `preset.json` — voice, size, language, mood response mappings
-- `soul.md` — a short markdown document that becomes the system instruction
+- `soul.md` — a short markdown document that shapes the Live PM's voice and boundaries
 
-that's it. the entire personality of a character lives in those two files. the 9-agent graph doesn't know or care which character is loaded.
+that's it. the entire personality of a character lives in those two files. the underlying navigator runtime doesn't need a different control flow for each character.
 
 ---
 

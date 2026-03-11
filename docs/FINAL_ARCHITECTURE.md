@@ -3,39 +3,42 @@
 **Last Reviewed:** 2026-03-11
 **Submission Track:** UI Navigator
 
-Current implementation and deployment evidence should be cross-checked with `docs/CURRENT_STATUS_20260311.md`, `docs/evidence/DEPLOYMENT_EVIDENCE.md`, and `docs/deployment/PROOF_OF_GCP_DEPLOYMENT.md`.
+Current deployment and proof assets should be cross-checked with `docs/CURRENT_STATUS_20260311.md`, `docs/evidence/DEPLOYMENT_EVIDENCE.md`, and `docs/deployment/PROOF_OF_GCP_DEPLOYMENT.md`.
 
 ## System Overview
 
 VibeCat is a **desktop UI navigator for developer workflows on macOS**.
 
-It keeps the existing animated on-screen character, voice input, and Cloud-hosted reasoning stack, but the primary behavior is now:
+The runtime is intentionally narrow:
 
-- infer the user's intent from natural language
-- ask a single clarification question if the intent is ambiguous
-- execute low-risk UI actions immediately
-- verify the result after each action
-- replan or fall back to guided mode when confidence is low
+- one user-facing `Live PM` session through Gemini Live + VAD
+- one `single-task action worker` for executable desktop actions
+- one local `AX-first executor` on macOS
+- one narrow `confidence escalator` for low-confidence target resolution
+- one async `background intelligence lane` for summaries, memory writes, research enrichment, and replay labeling
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    U["User Intent"] --> C["macOS Client"]
-    C --> S["Navigator Context<br/>screenshot + AX snapshot + focused element"]
-    S --> G["Realtime Gateway"]
-    G --> P["Intent Parser + Ambiguity Gate"]
-    P --> R["Risk Guard"]
-    R --> T["1-Step Planner"]
-    T --> C
-    C --> X["AX-First Executor"]
-    X --> A["Antigravity IDE / Terminal / Chrome"]
-    C --> V["Step Verifier"]
-    V --> G
-    G --> O["Cloud Logging / Trace / Monitoring"]
+    U["User"] --> C["macOS Client"]
+    C --> PM["Live PM<br/>Gemini Live + VAD"]
+    C --> AX["AX Context + Screenshot Capture"]
+    AX --> G["Realtime Gateway"]
+    G --> P["Intent Parser<br/>Risk + Ambiguity Gate"]
+    P --> S["Action State Store<br/>In-Memory + Firestore"]
+    P --> W["Single-Task Worker"]
+    W --> E["AX-First Executor"]
+    E --> A["Antigravity / Terminal / Chrome"]
+    W --> V["Step Verifier"]
+    P --> CE["Confidence Escalator<br/>multimodal target resolver"]
+    W --> BG["Background Intelligence Lane"]
+    BG --> O["ADK Orchestrator"]
+    O --> R["Replay + Memory + Research"]
+    G --> OBS["Cloud Logging / Trace / Monitoring"]
 ```
 
-## Layer Breakdown
+## Runtime Layers
 
 ### 1. macOS Client
 
@@ -43,29 +46,37 @@ Location: `VibeCat/`
 
 Responsibilities:
 
-- overlay character and action-status UI
-- chat input and clarification prompt handling
+- Gemini Live voice/text session UI
 - screen capture and frontmost app/window discovery
-- accessibility snapshot capture
-- accessibility-backed action execution
-- post-action verification and guided-mode fallback
+- AX snapshot capture and normalized before-action context
+- local single-task action execution
+- post-step verification
+- guided-mode fallback when verification is unsafe
 
-Implementation evidence:
-
-- `VibeCat/Sources/VibeCat/AccessibilityNavigator.swift`
-- `VibeCat/Sources/VibeCat/GatewayClient.swift`
-- `VibeCat/Sources/VibeCat/AppDelegate.swift`
-
-Key navigator context fields:
+Current navigator context includes:
 
 - `appName`
 - `bundleId`
+- `frontmostBundleId`
 - `windowTitle`
 - `focusedRole`
 - `focusedLabel`
 - `selectedText`
 - `axSnapshot`
-- `priorSteps`
+- `inputFieldHint`
+- `lastInputFieldDescriptor`
+- `screenshot`
+- `focusStableMs`
+- `captureConfidence`
+- `visibleInputCandidateCount`
+- `accessibilityPermission`
+
+Implementation anchors:
+
+- `VibeCat/Sources/VibeCat/AccessibilityNavigator.swift`
+- `VibeCat/Sources/VibeCat/NavigatorActionWorker.swift`
+- `VibeCat/Sources/VibeCat/AppDelegate.swift`
+- `VibeCat/Sources/VibeCat/GatewayClient.swift`
 
 ### 2. Realtime Gateway
 
@@ -74,133 +85,108 @@ Location: `backend/realtime-gateway/`
 Responsibilities:
 
 - websocket transport and auth
-- navigator intent classification
-- ambiguity handling
-- risk gating
-- one-step planning
-- completion / failure / guided-mode responses
-- trace and logging for every navigator step
+- keep `Live PM` and executable worker boundaries separate
+- one active task max per session
+- action state persistence and reconnect-safe lease handling
+- intent classification, ambiguity handling, and risk gating
+- one-step planning, verification, and completion tracking
+- confidence escalator invocation when AX confidence is too low
+- async background work dispatch after task completion
+- per-step metrics and replay-fixture coverage
 
-Implementation evidence:
+State and evaluation features now include:
+
+- `ActionStateStore` with in-memory hot cache + Firestore persistence
+- persisted active task metadata, prompt state, current step, initial context snapshot, verified context hash, and step history
+- metrics for `time_to_first_action_ms`, clarifications, replacements, guided mode, verification failure, input-field focus result, and wrong-target detection
+- replay fixtures under `backend/realtime-gateway/internal/ws/testdata/navigator_replays/`
+
+Implementation anchors:
 
 - `backend/realtime-gateway/internal/ws/handler.go`
 - `backend/realtime-gateway/internal/ws/navigator.go`
-
-Core public navigator events:
-
-- client -> gateway
-  - `navigator.command`
-  - `navigator.refreshContext`
-  - `navigator.confirmAmbiguousIntent`
-  - `navigator.confirmRiskyAction`
-  - `navigator.abort`
-  - `navigator.requestGuidance`
-- gateway -> client
-  - `navigator.commandAccepted`
-  - `navigator.intentClarificationNeeded`
-  - `navigator.stepPlanned`
-  - `navigator.stepRunning`
-  - `navigator.stepVerified`
-  - `navigator.riskyActionBlocked`
-  - `navigator.guidedMode`
-  - `navigator.completed`
-  - `navigator.failed`
+- `backend/realtime-gateway/internal/ws/action_state_store.go`
+- `backend/realtime-gateway/internal/ws/metrics.go`
 
 ### 3. ADK Orchestrator
 
 Location: `backend/adk-orchestrator/`
 
-Responsibilities retained in the pivot:
+Responsibilities in the navigator runtime:
 
-- contextual analysis
-- search grounding
-- supporting research and memory paths
+- narrow screenshot + AX `confidence escalator`
+- async post-task summary generation
+- async cross-session memory writes
+- docs research enrichment when a task implies follow-up lookup
+- replay labeling and Firestore replay persistence
 
-The orchestrator is no longer the primary submission-critical path for proactive companion behavior. It remains available to enrich navigation and research flows when helpful.
+Relevant endpoints:
 
-Deployment evidence:
+- `POST /navigator/escalate`
+- `POST /navigator/background`
+- `POST /memory/session-summary`
+- `POST /memory/context`
+- existing `/analyze`, `/search`, `/tool`
 
-- `docs/evidence/DEPLOYMENT_EVIDENCE.md`
-- `docs/deployment/PROOF_OF_GCP_DEPLOYMENT.md`
+Implementation anchors:
+
+- `backend/adk-orchestrator/internal/navigator/processor.go`
+- `backend/adk-orchestrator/internal/agents/memory/memory.go`
+- `backend/adk-orchestrator/internal/store/models.go`
 
 ## Execution Contract
 
-The runtime contract is:
+The execution contract is now:
 
-1. classify the user's utterance into `execute_now`, `open_or_navigate`, `find_or_lookup`, `analyze_only`, or `ambiguous`
-2. if ambiguous, ask one short clarification question
-3. if risky, block or require explicit confirmation
-4. if clear and low-risk, plan exactly one action
-5. execute through AX-first resolution
-6. verify through frontmost state, AX state, or observed UI change
-7. continue to the next step only after verification
-
-## Supported Action Types
-
-Current navigator action vocabulary:
-
-- `focus_app`
-- `open_url`
-- `hotkey`
-- `paste_text`
-- `copy_selection`
-- `press_ax`
-- `wait_for`
-
-Each step includes:
-
-- `actionType`
-- `targetApp`
-- `targetDescriptor`
-- `expectedOutcome`
-- `confidence`
-- `intentConfidence`
-- `riskLevel`
-- `executionPolicy`
-- `fallbackPolicy`
-
-## Gold-Tier Surfaces
-
-Submission-critical support is concentrated on:
-
-- **Antigravity IDE**
-- **Terminal**
-- **Chrome**
-
-This is the hero workflow path used for acceptance and demo reliability.
+1. user speaks or types to the `Live PM`
+2. gateway classifies the utterance into `execute_now`, `open_or_navigate`, `find_or_lookup`, `analyze_only`, or `ambiguous`
+3. `analyze_only` requests stay in the PM plane
+4. ambiguous requests ask one clarification question
+5. active-task conflicts ask whether to replace the current task
+6. risky requests require explicit confirmation
+7. clear low-risk requests produce exactly one planned step
+8. low-confidence targets escalate through the narrow multimodal resolver instead of blind clicking
+9. the macOS worker executes one step
+10. the macOS verifier confirms success, guided mode, or failure
+11. completed tasks enqueue async summary/replay/memory/research work off the hot path
 
 ## Safety
 
 VibeCat uses **safe-immediate execution**:
 
-- clear low-risk actions run immediately
-- ambiguous requests never auto-execute
-- risky actions never bypass confirmation
-- low-confidence element resolution downgrades to guided mode instead of guessing
+- low-risk, well-targeted steps may execute immediately
+- ambiguous intent never auto-executes
+- low-confidence targets downgrade to clarification or guided mode
+- risky actions require confirmation
+- wrong-target verification is counted separately from generic failure
 
 Blocked or confirmation-only actions include:
 
 - passwords and tokens
 - destructive shell commands
-- deployment and publish actions
-- send/submit flows
+- deploy/publish/send/submit flows
 - `git push`
-- long bulk code insertion
+- bulk text insertion into unclear fields
+
+## Gold-Tier Surfaces
+
+Submission-critical reliability is concentrated on:
+
+- **Antigravity IDE**
+- **Terminal**
+- **Chrome**
 
 ## Observability
 
-Every navigator turn is expected to emit:
+The navigator path emits proof-oriented telemetry for:
 
-- intent classification outcome
-- ambiguity/risk decision
-- planned action
-- action execution timing
-- verification timing
-- completion or failure outcome
+- task acceptance
+- clarification prompts
+- replacement prompts
+- time to first action
+- guided-mode outcomes
+- step verification failures
+- input-field focus success/failure
+- wrong-target detections
 
-These feed Cloud Logging, Cloud Trace, and Cloud Monitoring for submission proof.
-
-Operational evidence is tracked in:
-
-- `docs/evidence/DEPLOYMENT_EVIDENCE.md`
-- `docs/deployment/PROOF_OF_GCP_DEPLOYMENT.md`
+These feed Cloud Logging, Cloud Trace, and Cloud Monitoring, while completed task replays are persisted for regression comparison.

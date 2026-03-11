@@ -1,95 +1,100 @@
 # VibeCat Current Status (2026-03-11)
 
-This document is the current-state snapshot for the repository, deployment, and submission direction.
+This is the current repository and submission snapshot for the **UI Navigator** pivot.
 
-Cross-check deployment and submission evidence with `docs/evidence/DEPLOYMENT_EVIDENCE.md` and `docs/deployment/PROOF_OF_GCP_DEPLOYMENT.md`.
+Cross-check deployment and submission proof with:
 
-## Submission Direction
+- `docs/evidence/DEPLOYMENT_EVIDENCE.md`
+- `docs/deployment/PROOF_OF_GCP_DEPLOYMENT.md`
+- `docs/FINAL_ARCHITECTURE.md`
 
-- challenge category: **UI Navigator**
+## Submission Truth
+
+- category: **UI Navigator**
 - product framing: **desktop UI navigator for developer workflows on macOS**
-- interaction contract: **acts when intent is clear, asks when it is not**
-- gold-tier workflow surfaces: **Antigravity IDE, Terminal, Chrome**
+- contract: **acts when intent is clear, asks when it is not**
+- hero surfaces: **Antigravity IDE, Terminal, Chrome**
 
-Historical Live Agent planning still exists in the repo, but it is no longer the submission truth.
+Historical companion framing should be treated as archival unless a document was explicitly rewritten for the navigator pivot.
 
-## Repository Snapshot
-
-- branch: `codex/ui-navigator-pivot`
-- working tree: active implementation branch with navigator pivot in progress
-- backend services: deployed in `asia-northeast3`
-- client: Swift 6 macOS app under `VibeCat/`
-
-## What Exists Today
+## What Is Implemented
 
 ### Client
 
-The macOS client already includes:
+The macOS client now provides:
 
-- status bar shell, onboarding, tray animation, overlay cat, chat panel
-- ScreenCaptureKit capture loop
-- speech recognition and audio playback
-- gateway websocket client with reconnect handling
-- processing state bubbles and status UI
+- Gemini Live + VAD PM session
+- chat input and clarification flow
+- AX-first local action worker
+- before-action context with screenshot + AX metadata
+- input-field-aware `focus -> paste` execution
+- wrong-target-aware verification
 
-Navigator-direction additions now become the primary path:
+### Gateway
 
-- command-driven chat input
-- desktop context capture for app/window/focused element state
-- accessibility-backed action execution
-- clarification prompts for ambiguous requests
-- visible step planning and verification UI
+The Realtime Gateway now provides:
 
-### Backend
+- one-active-task runtime with replacement handoff
+- Firestore-backed `ActionStateStore` plus in-memory cache
+- reconnect-safe lease enforcement and stale-connection rejection
+- risk gating and clarification prompts
+- narrow confidence escalator invocation for low-confidence targets
+- step history persistence and per-step outcome tracking
+- navigator metrics and replay fixtures
+- async background lane dispatch after task completion
 
-The backend remains split into two Go services:
+### Orchestrator
 
-- `backend/realtime-gateway/`: websocket transport, auth, Gemini Live integration, navigator intent/risk/step handling
-- `backend/adk-orchestrator/`: ADK graph for contextual analysis, search, and retained supporting intelligence
+The ADK Orchestrator now provides:
 
-### Deployed Baseline
+- multimodal confidence escalator at `/navigator/escalate`
+- async task summary / replay labeling / memory write path at `/navigator/background`
+- retained search, tool, analyze, and session-memory endpoints
+- Firestore-backed replay persistence
+
+## Implementation Plan Status
+
+`docs/PRD/DETAILS/UI_NAVIGATOR_IMPLEMENTATION_PLAN_20260311.md` is now reflected in code:
+
+1. `Live PM + single-task worker` boundary lock
+2. action state externalization
+3. before-action context expansion
+4. confidence escalator
+5. background intelligence lane
+6. continuous evaluation metrics + replay fixtures
+7. submission-pack alignment docs
+
+## Evaluation Coverage
+
+Planner and worker regression coverage now includes:
+
+- ambiguous command
+- risky command
+- low-confidence target
+- active-task replacement
+- Antigravity failure-state replay fixture
+- Chrome docs lookup replay fixture
+- Terminal command re-run replay fixture
+- input field focus and text insertion replay fixture
+
+Fixture location:
+
+- `backend/realtime-gateway/internal/ws/testdata/navigator_replays/`
+
+## Deployment Baseline
 
 - project: `vibecat-489105`
 - region: `asia-northeast3`
 - gateway URL: `https://realtime-gateway-a4akw2crra-du.a.run.app`
 - orchestrator URL: `https://adk-orchestrator-a4akw2crra-du.a.run.app`
 - Firestore: `(default)` native database
-- Secret Manager: Gemini API key and gateway auth secret present
+- required secrets: present
 
-## Submission-Critical Acceptance
+## Remaining Non-Plan Work
 
-The current submission-critical goals are:
+The implementation plan itself is now represented in code, but production hardening items outside that plan still remain in the issue tracker, especially:
 
-1. natural-language intent inference without exact trigger phrases
-2. ambiguity gate with a single clarification prompt
-3. safe-immediate execution for low-risk actions
-4. no blind clicks on low-confidence targets
-5. one-step plan -> execute -> verify -> replan loop
-6. hero workflow across Antigravity IDE, Terminal, and Chrome
-7. Cloud Run, trace, logging, monitoring, and proof assets aligned with the UI Navigator story
-
-## Documents To Trust First
-
-- `README.md`
-- `docs/CURRENT_STATUS_20260311.md`
-- `docs/FINAL_ARCHITECTURE.md`
-- `docs/analysis/DEMO_STORYBOARD.md`
-- `docs/evidence/DEPLOYMENT_EVIDENCE.md`
-- `docs/deployment/PROOF_OF_GCP_DEPLOYMENT.md`
-
-These are the only documents that should be used to support current UI Navigator submission claims without additional validation.
-
-## Documents To Treat As Historical
-
-- `docs/PRD/LIVE_AGENTS_PRD.md`
-- `docs/SPEECH_BUBBLE_ARCHITECTURE.md`
-- `docs/SCREEN_CAPTURE_REDESIGN.md`
-- most older `docs/analysis/` files that still describe proactive companion behavior as the main submission path
-
-## Current Work Focus
-
-- document-first UI Navigator conversion
-- gateway intent classification, ambiguity handling, and risk gating
-- client-side accessibility execution and verification loop
-- Antigravity IDE + Terminal + Chrome golden workflow hardening
-- final demo/proof asset alignment
+- deployment/operations evidence polish
+- privacy controls UI
+- Cloud Monitoring / Trace dashboard completion
+- end-to-end fallback polish for Gemini / ADK failure modes

@@ -203,6 +203,10 @@ public enum VibeCatL10n {
         pick(currentLanguage(language), ko: "개인정보", en: "Privacy", ja: "プライバシー")
     }
 
+    public static func menuAudioInput(language: String? = nil) -> String {
+        pick(currentLanguage(language), ko: "오디오 입력", en: "Audio Input", ja: "音声入力")
+    }
+
     public static func menuBackgroundMusic(language: String? = nil) -> String {
         pick(currentLanguage(language), ko: "배경 음악", en: "Background Music", ja: "BGM")
     }
@@ -257,6 +261,38 @@ public enum VibeCatL10n {
 
     public static func menuQuit(language: String? = nil) -> String {
         pick(currentLanguage(language), ko: "VibeCat 종료", en: "Quit VibeCat", ja: "VibeCatを終了")
+    }
+
+    public static func audioInputCurrent(_ name: String, language: String? = nil) -> String {
+        pick(currentLanguage(language), ko: "현재 입력: \(name)", en: "Current Input: \(name)", ja: "現在の入力: \(name)")
+    }
+
+    public static func audioInputFollowingSystem(language: String? = nil) -> String {
+        pick(currentLanguage(language), ko: "시스템 기본 입력 자동 추종", en: "Following System Default Input", ja: "システム既定の入力を追従")
+    }
+
+    public static func audioInputListening(language: String? = nil) -> String {
+        pick(currentLanguage(language), ko: "상태: 듣는 중", en: "Status: Listening", ja: "状態: 聞き取り中")
+    }
+
+    public static func audioInputRecovering(attempt: Int, language: String? = nil) -> String {
+        pick(currentLanguage(language), ko: "상태: 복구 중 (\(attempt)차 시도)", en: "Status: Recovering (attempt \(attempt))", ja: "状態: 復旧中 (\(attempt) 回目)")
+    }
+
+    public static func audioInputPaused(language: String? = nil) -> String {
+        pick(currentLanguage(language), ko: "상태: 일시정지", en: "Status: Paused", ja: "状態: 一時停止")
+    }
+
+    public static func audioInputFailed(language: String? = nil) -> String {
+        pick(currentLanguage(language), ko: "상태: 입력 복구 대기 중", en: "Status: Waiting to recover input", ja: "状態: 入力の復旧待ち")
+    }
+
+    public static func audioInputStopped(language: String? = nil) -> String {
+        pick(currentLanguage(language), ko: "상태: 중지됨", en: "Status: Stopped", ja: "状態: 停止")
+    }
+
+    public static func audioInputUnknown(language: String? = nil) -> String {
+        pick(currentLanguage(language), ko: "알 수 없음", en: "Unknown", ja: "不明")
     }
 
     public static func statusConnected(latencyMs: Int, interactions: Int, sessionDuration: String, language: String? = nil) -> String {
