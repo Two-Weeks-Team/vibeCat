@@ -89,8 +89,13 @@ jobs:
         run: |
           XCODE_PATH=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
           if [ -z "$XCODE_PATH" ]; then XCODE_PATH="/Applications/Xcode.app"; fi
-          echo "DEVELOPER_DIR=$XCODE_PATH/Contents/Developer" >> "$GITHUB_ENV"
-          sudo xcodebuild -license accept 2>/dev/null || true
+          export DEVELOPER_DIR="$XCODE_PATH/Contents/Developer"
+          echo "DEVELOPER_DIR=$DEVELOPER_DIR" >> "$GITHUB_ENV"
+          if sudo -n true 2>/dev/null; then
+            sudo -n env DEVELOPER_DIR="$DEVELOPER_DIR" xcodebuild -runFirstLaunch >/dev/null 2>&1 || true
+            sudo -n env DEVELOPER_DIR="$DEVELOPER_DIR" xcodebuild -license accept >/dev/null 2>&1 || true
+          fi
+          xcodebuild -checkFirstLaunchStatus
           swift --version
 
       - name: Build
