@@ -69,6 +69,50 @@ func TestPlanNavigatorCommandBuildsDocsLookupSteps(t *testing.T) {
 	}
 }
 
+func TestPlanNavigatorCommandBypassesRiskBlockForAnalyzeOnlySensitiveRequest(t *testing.T) {
+	plan := planNavigatorCommand("배포 토큰이 왜 필요한지 설명해줘", navigatorContext{
+		AppName: "Antigravity IDE",
+	}, false)
+
+	if plan.IntentClass != navigatorIntentAnalyzeOnly {
+		t.Fatalf("intent = %q, want %q", plan.IntentClass, navigatorIntentAnalyzeOnly)
+	}
+	if plan.RiskQuestion != "" {
+		t.Fatalf("risk question = %q, want empty", plan.RiskQuestion)
+	}
+	if len(plan.Steps) != 0 {
+		t.Fatalf("steps = %d, want 0", len(plan.Steps))
+	}
+}
+
+func TestPlanNavigatorCommandAllowsSafeDocsLookupForSensitiveTopic(t *testing.T) {
+	plan := planNavigatorCommand("공식 토큰 문서 열어줘", navigatorContext{
+		AppName: "Antigravity IDE",
+	}, false)
+
+	if plan.RiskQuestion != "" {
+		t.Fatalf("risk question = %q, want empty", plan.RiskQuestion)
+	}
+	if len(plan.Steps) == 0 {
+		t.Fatal("expected docs lookup steps")
+	}
+}
+
+func TestAffirmativeAnswerRequiresClearApproval(t *testing.T) {
+	if affirmativeAnswer("maybe") {
+		t.Fatal("maybe should not count as affirmative")
+	}
+	if affirmativeAnswer("why") {
+		t.Fatal("why should not count as affirmative")
+	}
+	if !affirmativeAnswer("y") {
+		t.Fatal("single-letter y should count as affirmative")
+	}
+	if !affirmativeAnswer("yes, do it") {
+		t.Fatal("clear confirmation should count as affirmative")
+	}
+}
+
 func TestHandlerNavigatorCommandClarifiesAmbiguousRequest(t *testing.T) {
 	reg := NewRegistry()
 	server := httptest.NewServer(Handler(reg, nil, nil, nil, nil))

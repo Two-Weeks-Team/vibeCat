@@ -114,10 +114,7 @@ func planNavigatorCommand(command string, ctx navigatorContext, allowRisky bool)
 	if intentClass == navigatorIntentAmbiguous {
 		return plan
 	}
-
-	if riskReason := navigatorRiskReason(command); riskReason != "" && !allowRisky {
-		plan.RiskReason = riskReason
-		plan.RiskQuestion = buildRiskQuestion(command)
+	if intentClass == navigatorIntentAnalyzeOnly {
 		return plan
 	}
 
@@ -137,6 +134,16 @@ func planNavigatorCommand(command string, ctx navigatorContext, allowRisky bool)
 	default:
 		plan.ClarifyQuestion = defaultClarifyQuestion(command)
 		plan.IntentClass = navigatorIntentAmbiguous
+	}
+
+	if plan.IntentClass == navigatorIntentAnalyzeOnly || plan.IntentClass == navigatorIntentAmbiguous {
+		return plan
+	}
+
+	if riskReason := navigatorRiskReason(command); riskReason != "" && !allowRisky && stepsRequireRiskConfirmation(plan.Steps) {
+		plan.RiskReason = riskReason
+		plan.RiskQuestion = buildRiskQuestion(command)
+		plan.Steps = nil
 	}
 
 	return plan
@@ -184,6 +191,11 @@ func classifyNavigatorIntent(command string) (navigatorIntentClass, float64, str
 	}
 	if strings.Contains(lowered, "official docs") || strings.Contains(lowered, "공식 문서") {
 		findScore = maxFloat(findScore, 0.88)
+	}
+	if (strings.Contains(lowered, "explain") || strings.Contains(lowered, "설명해") || strings.Contains(lowered, "알려줘") ||
+		strings.Contains(lowered, "what is") || strings.Contains(lowered, "why")) &&
+		executeScore < 0.4 && openScore < 0.4 && findScore < 0.4 {
+		analyzeScore = maxFloat(analyzeScore, 0.72)
 	}
 
 	topClass := navigatorIntentAmbiguous
@@ -239,6 +251,20 @@ func navigatorRiskReason(command string) string {
 	return ""
 }
 
+func stepsRequireRiskConfirmation(steps []navigatorStep) bool {
+	for _, step := range steps {
+		switch step.ActionType {
+		case "paste_text", "press_ax":
+			return true
+		case "hotkey":
+			if len(step.Hotkey) == 1 && strings.EqualFold(step.Hotkey[0], "return") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func buildRiskQuestion(command string) string {
 	return "This could change something important. Do you want me to proceed, or should I only explain the next step?"
 }
@@ -249,7 +275,11 @@ func defaultClarifyQuestion(command string) string {
 
 func shouldUseDocsLookup(command string) bool {
 	lowered := strings.ToLower(command)
-	return strings.Contains(lowered, "official") || strings.Contains(lowered, "docs") || strings.Contains(lowered, "documentation") || strings.Contains(lowered, "공식 문서")
+	return strings.Contains(lowered, "official") ||
+		strings.Contains(lowered, "docs") ||
+		strings.Contains(lowered, "documentation") ||
+		strings.Contains(lowered, "공식 문서") ||
+		strings.Contains(lowered, "문서")
 }
 
 func wantsAntigravityAction(command string, ctx navigatorContext) bool {
@@ -569,7 +599,7 @@ func navigatorMessageForStep(step navigatorStep) string {
 func affirmativeAnswer(answer string) bool {
 	lowered := strings.ToLower(strings.TrimSpace(answer))
 	for _, keyword := range []string{"yes", "y", "do it", "go ahead", "proceed", "apply", "run it", "맞아", "응", "그래", "진행", "해줘", "실행"} {
-		if strings.Contains(lowered, keyword) {
+		if matchesAnswerKeyword(lowered, keyword) {
 			return true
 		}
 	}
@@ -579,11 +609,41 @@ func affirmativeAnswer(answer string) bool {
 func explanationAnswer(answer string) bool {
 	lowered := strings.ToLower(strings.TrimSpace(answer))
 	for _, keyword := range []string{"explain", "just explain", "tell me", "설명", "말만", "방법만", "안내만"} {
-		if strings.Contains(lowered, keyword) {
+		if matchesAnswerKeyword(lowered, keyword) {
 			return true
 		}
 	}
 	return false
+}
+
+func matchesAnswerKeyword(answer string, keyword string) bool {
+	answer = strings.TrimSpace(answer)
+	keyword = strings.TrimSpace(keyword)
+	if answer == "" || keyword == "" {
+		return false
+	}
+	if answer == keyword {
+		return true
+	}
+
+	for _, token := range strings.FieldsFunc(answer, func(r rune) bool {
+		switch {
+		case r >= 'a' && r <= 'z':
+			return false
+		case r >= '0' && r <= '9':
+			return false
+		case r >= '가' && r <= '힣':
+			return false
+		default:
+			return true
+		}
+	}) {
+		if token == keyword {
+			return true
+		}
+	}
+
+	return len(keyword) > 1 && strings.Contains(answer, keyword)
 }
 
 func maxFloat(a, b float64) float64 {
