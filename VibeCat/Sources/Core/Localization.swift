@@ -199,6 +199,10 @@ public enum VibeCatL10n {
         pick(currentLanguage(language), ko: "고급", en: "Advanced", ja: "詳細")
     }
 
+    public static func menuPrivacy(language: String? = nil) -> String {
+        pick(currentLanguage(language), ko: "개인정보", en: "Privacy", ja: "プライバシー")
+    }
+
     public static func menuBackgroundMusic(language: String? = nil) -> String {
         pick(currentLanguage(language), ko: "배경 음악", en: "Background Music", ja: "BGM")
     }
@@ -209,6 +213,18 @@ public enum VibeCatL10n {
 
     public static func menuProactiveAudio(language: String? = nil) -> String {
         pick(currentLanguage(language), ko: "선제 음성", en: "Proactive Audio", ja: "プロアクティブ音声")
+    }
+
+    public static func menuManualAnalysisOnly(language: String? = nil) -> String {
+        pick(currentLanguage(language), ko: "수동 분석만", en: "Manual Analyze Only", ja: "手動分析のみ")
+    }
+
+    public static func menuAnalyzeNow(language: String? = nil) -> String {
+        pick(currentLanguage(language), ko: "지금 분석", en: "Analyze Now", ja: "今すぐ分析")
+    }
+
+    public static func menuNoScreenshotsStored(language: String? = nil) -> String {
+        pick(currentLanguage(language), ko: "스크린샷 저장 안 함", en: "No screenshots saved", ja: "スクリーンショットは保存しません")
     }
 
     public static func menuConnect(language: String? = nil) -> String {
@@ -390,6 +406,22 @@ public enum VibeCatL10n {
 
     public static func characterChanging(language: String? = nil) -> String {
         pick(currentLanguage(language), ko: "캐릭터 변경 중...", en: "Switching character...", ja: "キャラクター切り替え中...")
+    }
+
+    public static func captureIndicatorLive(language: String? = nil) -> String {
+        pick(currentLanguage(language), ko: "화면 캡처 켜짐", en: "Screen Capture On", ja: "画面キャプチャ ON")
+    }
+
+    public static func captureIndicatorManual(language: String? = nil) -> String {
+        pick(currentLanguage(language), ko: "수동 분석 모드", en: "Manual Analyze Mode", ja: "手動分析モード")
+    }
+
+    public static func captureIndicatorPaused(language: String? = nil) -> String {
+        pick(currentLanguage(language), ko: "캡처 일시정지", en: "Capture Paused", ja: "キャプチャ一時停止")
+    }
+
+    public static func captureIndicatorNoStorage(language: String? = nil) -> String {
+        pick(currentLanguage(language), ko: "스크린샷 저장 안 함", en: "No screenshots saved", ja: "スクリーンショットは保存しません")
     }
 
     public static func characterAppeared(_ name: String, language: String? = nil) -> String {

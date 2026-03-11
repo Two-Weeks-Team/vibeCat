@@ -8,6 +8,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
 func TestNewClient(t *testing.T) {
@@ -133,5 +137,42 @@ func TestClientAnalyze(t *testing.T) {
 				tc.checkResult(t, got)
 			}
 		})
+	}
+}
+
+func TestPrepareJSONRequestInjectsTraceparent(t *testing.T) {
+	previousPropagator := otel.GetTextMapPropagator()
+	previousProvider := otel.GetTracerProvider()
+	t.Cleanup(func() {
+		otel.SetTextMapPropagator(previousPropagator)
+		otel.SetTracerProvider(previousProvider)
+	})
+
+	tp := sdktrace.NewTracerProvider()
+	t.Cleanup(func() {
+		_ = tp.Shutdown(context.Background())
+	})
+
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+
+	ctx, span := otel.Tracer("test").Start(context.Background(), "prepare")
+	defer span.End()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://example.test/analyze", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+
+	c := &Client{}
+	if err := c.prepareJSONRequest(req); err != nil {
+		t.Fatalf("prepareJSONRequest() error = %v", err)
+	}
+
+	if got := req.Header.Get("Content-Type"); got != "application/json" {
+		t.Fatalf("Content-Type = %q, want application/json", got)
+	}
+	if got := req.Header.Get("Traceparent"); got == "" {
+		t.Fatal("expected traceparent header to be injected")
 	}
 }

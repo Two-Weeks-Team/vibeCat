@@ -13,7 +13,8 @@ final class VibeCatTests: XCTestCase {
         "vibecat.musicEnabled",
         "vibecat.gatewayURL",
         "vibecat.searchEnabled",
-        "vibecat.proactiveAudio"
+        "vibecat.proactiveAudio",
+        "vibecat.manualAnalysisOnly"
     ]
 
     override func setUp() {
@@ -40,6 +41,7 @@ final class VibeCatTests: XCTestCase {
         XCTAssertEqual(settings.gatewayURL, "wss://realtime-gateway-163070481841.asia-northeast3.run.app")
         XCTAssertTrue(settings.searchEnabled)
         XCTAssertTrue(settings.proactiveAudio)
+        XCTAssertFalse(settings.manualAnalysisOnly)
     }
 
     func testAppSettingsPersistedValuesAreReturned() {
@@ -56,6 +58,7 @@ final class VibeCatTests: XCTestCase {
         settings.gatewayURL = "wss://example.test/ws/live"
         settings.searchEnabled = true
         settings.proactiveAudio = true
+        settings.manualAnalysisOnly = true
 
         XCTAssertEqual(settings.language, "en")
         XCTAssertEqual(settings.voice, "Kore")
@@ -68,6 +71,7 @@ final class VibeCatTests: XCTestCase {
         XCTAssertEqual(settings.gatewayURL, "wss://example.test/ws/live")
         XCTAssertTrue(settings.searchEnabled)
         XCTAssertTrue(settings.proactiveAudio)
+        XCTAssertTrue(settings.manualAnalysisOnly)
     }
 
     func testCaptureIntervalFallsBackToDefaultWhenNonPositive() {
@@ -101,16 +105,20 @@ final class VibeCatTests: XCTestCase {
         XCTAssertEqual(VibeCatL10n.captureTargetModeTitle(.frontmostWindow), "Frontmost Window")
         XCTAssertEqual(VibeCatL10n.processingStateLabel(stage: "searching"), "Searching...")
         XCTAssertEqual(VibeCatL10n.processingStateDetail(stage: "tool_running", tool: "maps"), "Checking Google Maps")
+        XCTAssertEqual(VibeCatL10n.menuPrivacy(), "Privacy")
+        XCTAssertEqual(VibeCatL10n.captureIndicatorLive(), "Screen Capture On")
 
         settings.language = "ja"
         XCTAssertEqual(VibeCatL10n.screenReadingTitle(), "画面を読み取り中...")
         XCTAssertEqual(VibeCatL10n.listeningDetail(), "話を聞いています")
         XCTAssertEqual(VibeCatL10n.characterName("cat"), "猫")
         XCTAssertEqual(VibeCatL10n.toolDisplayName("file_search"), "ファイル検索")
+        XCTAssertEqual(VibeCatL10n.menuNoScreenshotsStored(), "スクリーンショットは保存しません")
 
         settings.language = "ko"
         XCTAssertEqual(VibeCatL10n.sourceCount(3), "근거 3개")
         XCTAssertEqual(VibeCatL10n.processingStateDetail(stage: "grounding", tool: "search", sourceCount: 2), "Google 검색 · 근거 2개 확인")
+        XCTAssertEqual(VibeCatL10n.captureIndicatorManual(), "수동 분석 모드")
     }
 
     private func clearSettings() {

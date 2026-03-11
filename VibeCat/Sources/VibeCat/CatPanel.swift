@@ -3,10 +3,30 @@ import VibeCatCore
 
 @MainActor
 final class CatPanel: NSPanel {
+    private enum PrivacyBadgeLayout {
+        static let cornerRadius: CGFloat = 11
+        static let horizontalPadding: CGFloat = 30
+        static let verticalPadding: CGFloat = 14
+        static let sideSpacing: CGFloat = 12
+        static let minimumInset: CGFloat = 8
+        static let titleLeading: CGFloat = 24
+        static let titleTopInset: CGFloat = 6
+        static let detailLeading: CGFloat = 10
+        static let detailHorizontalPadding: CGFloat = 16
+        static let detailBottomInset: CGFloat = 5
+        static let badgeBackgroundOpacity: CGFloat = 0.56
+        static let dotSize = NSSize(width: 8, height: 8)
+        static let dotTopInset: CGFloat = 17
+    }
+
     private let imageView = NSImageView()
     private let emotionIndicator = NSTextField(labelWithString: "")
     private let bubbleView = ChatBubbleView()
     private let spinnerView = NSProgressIndicator()
+    private let privacyBadgeView = NSVisualEffectView()
+    private let privacyDotView = NSView()
+    private let privacyTitleLabel = NSTextField(labelWithString: "")
+    private let privacyDetailLabel = NSTextField(labelWithString: "")
     private let catViewModel: CatViewModel
     private let spriteAnimator: SpriteAnimator
     private var spriteSize: CGFloat = 100
@@ -67,6 +87,27 @@ final class CatPanel: NSPanel {
         spinnerView.isHidden = true
         spinnerView.frame = NSRect(x: 0, y: 0, width: 24, height: 24)
         contentView.addSubview(spinnerView)
+
+        privacyBadgeView.material = .hudWindow
+        privacyBadgeView.blendingMode = .withinWindow
+        privacyBadgeView.state = .active
+        privacyBadgeView.wantsLayer = true
+        privacyBadgeView.layer?.cornerRadius = PrivacyBadgeLayout.cornerRadius
+        privacyBadgeView.layer?.masksToBounds = true
+        privacyBadgeView.layer?.backgroundColor = NSColor.black.withAlphaComponent(PrivacyBadgeLayout.badgeBackgroundOpacity).cgColor
+        contentView.addSubview(privacyBadgeView)
+
+        privacyDotView.wantsLayer = true
+        privacyDotView.layer?.cornerRadius = PrivacyBadgeLayout.dotSize.width / 2
+        privacyBadgeView.addSubview(privacyDotView)
+
+        privacyTitleLabel.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        privacyTitleLabel.textColor = .white
+        privacyBadgeView.addSubview(privacyTitleLabel)
+
+        privacyDetailLabel.font = NSFont.systemFont(ofSize: 10, weight: .regular)
+        privacyDetailLabel.textColor = NSColor.white.withAlphaComponent(0.78)
+        privacyBadgeView.addSubview(privacyDetailLabel)
 
         emotionIndicator.font = NSFont.systemFont(ofSize: 18)
         emotionIndicator.textColor = .white
@@ -301,6 +342,13 @@ final class CatPanel: NSPanel {
         self.screenAnalyzer = screenAnalyzer
     }
 
+    func updateCapturePrivacyBadge(title: String, detail: String, accentColor: NSColor) {
+        privacyTitleLabel.stringValue = title
+        privacyDetailLabel.stringValue = detail
+        privacyDotView.layer?.backgroundColor = accentColor.cgColor
+        layoutPrivacyBadge()
+    }
+
     func beginCharacterTransition() {
         showBubble(text: VibeCatL10n.characterChanging())
         spinnerView.isHidden = false
@@ -349,6 +397,7 @@ final class CatPanel: NSPanel {
         let catFrame = imageView.frame
         emotionIndicator.frame.origin = NSPoint(x: catFrame.maxX - 4, y: catFrame.maxY - 4)
         layoutSpinner()
+        layoutPrivacyBadge()
         if currentBubbleText != nil {
             updateBubbleFrame()
         }
@@ -359,6 +408,42 @@ final class CatPanel: NSPanel {
         spinnerView.frame.origin = NSPoint(
             x: catFrame.midX - spinnerView.frame.width / 2,
             y: catFrame.midY - spinnerView.frame.height / 2
+        )
+    }
+
+    private func layoutPrivacyBadge() {
+        let titleSize = privacyTitleLabel.intrinsicContentSize
+        let detailSize = privacyDetailLabel.intrinsicContentSize
+        let badgeWidth = max(titleSize.width, detailSize.width) + PrivacyBadgeLayout.horizontalPadding
+        let badgeHeight = titleSize.height + detailSize.height + PrivacyBadgeLayout.verticalPadding
+        let catFrame = imageView.frame
+
+        var badgeX = catFrame.maxX + PrivacyBadgeLayout.sideSpacing
+        let badgeY = max(catFrame.midY - badgeHeight / 2, PrivacyBadgeLayout.minimumInset)
+
+        if let visibleFrame = screen?.visibleFrame ?? NSScreen.main?.visibleFrame,
+           frame.minX + badgeX + badgeWidth > visibleFrame.maxX - PrivacyBadgeLayout.minimumInset {
+            badgeX = max(catFrame.minX - badgeWidth - PrivacyBadgeLayout.sideSpacing, PrivacyBadgeLayout.minimumInset)
+        }
+
+        privacyBadgeView.frame = NSRect(x: badgeX, y: badgeY, width: badgeWidth, height: badgeHeight)
+        privacyDotView.frame = NSRect(
+            x: PrivacyBadgeLayout.detailLeading,
+            y: badgeHeight - PrivacyBadgeLayout.dotTopInset,
+            width: PrivacyBadgeLayout.dotSize.width,
+            height: PrivacyBadgeLayout.dotSize.height
+        )
+        privacyTitleLabel.frame = NSRect(
+            x: PrivacyBadgeLayout.titleLeading,
+            y: badgeHeight - titleSize.height - PrivacyBadgeLayout.titleTopInset,
+            width: badgeWidth - PrivacyBadgeLayout.horizontalPadding,
+            height: titleSize.height
+        )
+        privacyDetailLabel.frame = NSRect(
+            x: PrivacyBadgeLayout.detailLeading,
+            y: PrivacyBadgeLayout.detailBottomInset,
+            width: badgeWidth - PrivacyBadgeLayout.detailHorizontalPadding,
+            height: detailSize.height
         )
     }
 

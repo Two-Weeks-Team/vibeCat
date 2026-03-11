@@ -4,10 +4,37 @@ import VibeCatCore
 /// Animates the menu bar tray icon through 8 frames from Assets/TrayIcons_Clean/
 @MainActor
 final class TrayIconAnimator {
+    private enum IndicatorLayout {
+        static let minimumDotDiameter: CGFloat = 4.5
+        static let dotSizeRatio: CGFloat = 0.32
+        static let dotPadding: CGFloat = 1.5
+        static let dotOutlineInset: CGFloat = 1.0
+        static let dotOutlineOpacity: CGFloat = 0.32
+    }
+
+    enum CaptureIndicatorState: Hashable {
+        case active
+        case manual
+        case paused
+
+        var color: NSColor {
+            switch self {
+            case .active:
+                return .systemGreen
+            case .manual:
+                return .systemOrange
+            case .paused:
+                return .systemGray
+            }
+        }
+    }
+
     private var frames: [NSImage] = []
     private var currentFrame = 0
     private var timer: Timer?
     private weak var statusItem: NSStatusItem?
+    private var captureIndicatorState: CaptureIndicatorState = .active
+    private var compositedFrames: [CaptureIndicatorState: [NSImage]] = [:]
 
     private let frameInterval: TimeInterval = 0.1
     private let frameCount = 8
@@ -20,6 +47,12 @@ final class TrayIconAnimator {
     func attach(to item: NSStatusItem) {
         self.statusItem = item
         start()
+    }
+
+    func setCaptureState(_ state: CaptureIndicatorState) {
+        guard captureIndicatorState != state else { return }
+        captureIndicatorState = state
+        updateIcon()
     }
 
     /// Update animation state based on companion emotion (MVP: all emotions use same idle frames)
@@ -48,6 +81,7 @@ final class TrayIconAnimator {
                 frames = [fallback]
             }
         }
+        compositedFrames.removeAll()
     }
 
     private func findRepoRoot() -> URL {
@@ -96,6 +130,43 @@ final class TrayIconAnimator {
 
     private func updateIcon() {
         guard currentFrame < frames.count else { return }
-        statusItem?.button?.image = frames[currentFrame]
+        let images = compositedFrames[captureIndicatorState] ?? buildCompositedFrames(for: captureIndicatorState)
+        guard currentFrame < images.count else { return }
+        statusItem?.button?.image = images[currentFrame]
+    }
+
+    private func buildCompositedFrames(for state: CaptureIndicatorState) -> [NSImage] {
+        let images = frames.map { compositedImage(for: $0, state: state) }
+        compositedFrames[state] = images
+        return images
+    }
+
+    private func compositedImage(for base: NSImage, state: CaptureIndicatorState) -> NSImage {
+        let output = NSImage(size: base.size)
+        output.lockFocus()
+        defer { output.unlockFocus() }
+
+        base.draw(in: NSRect(origin: .zero, size: base.size))
+
+        let dotDiameter = max(
+            IndicatorLayout.minimumDotDiameter,
+            min(base.size.width, base.size.height) * IndicatorLayout.dotSizeRatio
+        )
+        let dotRect = NSRect(
+            x: base.size.width - dotDiameter - IndicatorLayout.dotPadding,
+            y: base.size.height - dotDiameter - IndicatorLayout.dotPadding,
+            width: dotDiameter,
+            height: dotDiameter
+        )
+
+        NSColor.black.withAlphaComponent(IndicatorLayout.dotOutlineOpacity).setFill()
+        NSBezierPath(
+            ovalIn: dotRect.insetBy(dx: -IndicatorLayout.dotOutlineInset, dy: -IndicatorLayout.dotOutlineInset)
+        ).fill()
+
+        state.color.setFill()
+        NSBezierPath(ovalIn: dotRect).fill()
+
+        return output
     }
 }

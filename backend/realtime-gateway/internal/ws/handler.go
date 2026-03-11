@@ -20,6 +20,7 @@ import (
 	"vibecat/realtime-gateway/internal/adk"
 	"vibecat/realtime-gateway/internal/lang"
 	"vibecat/realtime-gateway/internal/live"
+	"vibecat/realtime-gateway/internal/tts"
 )
 
 const (
@@ -34,7 +35,23 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-const memoryContextCacheTTL = 5 * time.Minute
+const (
+	memoryContextCacheTTL   = 5 * time.Minute
+	proactiveAnalyzeTimeout = 4 * time.Second
+	forcedAnalyzeTimeout    = 8 * time.Second
+)
+
+type adkService interface {
+	Analyze(context.Context, adk.AnalysisRequest) (*adk.AnalysisResult, error)
+	Search(context.Context, adk.SearchRequest) (*adk.SearchResult, error)
+	Tool(context.Context, adk.ToolRequest) (*adk.ToolResult, error)
+	SaveSessionSummary(context.Context, adk.SessionSummaryRequest) error
+	MemoryContext(context.Context, adk.MemoryContextRequest) (string, error)
+}
+
+type ttsSpeaker interface {
+	StreamSpeak(context.Context, tts.Config, tts.AudioSink) error
+}
 
 type memoryContextCacheEntry struct {
 	context   string
@@ -281,6 +298,14 @@ func (ls *liveSessionState) queueTurnTrace(traceID, flow string, rootAt time.Tim
 	ls.pendingTurnTrace = traceID
 	ls.pendingTurnFlow = flow
 	ls.pendingTurnRootAt = rootAt
+}
+
+func (ls *liveSessionState) clearPendingTurnTrace() {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+	ls.pendingTurnTrace = ""
+	ls.pendingTurnFlow = ""
+	ls.pendingTurnRootAt = time.Time{}
 }
 
 func (ls *liveSessionState) ensureCurrentTurnTrace(defaultFlow string) (string, string, time.Time) {
@@ -562,6 +587,95 @@ func toolPreparingDetail(tool adk.ToolKind, language string) string {
 	}
 }
 
+func liveRecoveringDetail(language string) string {
+	return localizedText(
+		language,
+		"Live 음성이 재연결 중이라 임시 음성 경로로 안내합니다",
+		"Live voice is reconnecting, so I am using the fallback voice path",
+		"Live 音声が再接続中のため、一時的に代替音声で案内します",
+	)
+}
+
+func liveRecoveringSpeech(language string) string {
+	return localizedText(
+		language,
+		"지금 Live 음성을 다시 연결하는 중이야. 잠깐 동안은 임시 음성으로 이어갈게.",
+		"I am reconnecting live voice right now. I will keep going with the fallback voice for a moment.",
+		"いま Live 音声を再接続しています。しばらくは代替音声で続けます。",
+	)
+}
+
+func maybeSpeakLiveUnavailableNotice(ctx context.Context, c *Conn, ls *liveSessionState, ttsClient ttsSpeaker, metrics *Metrics, flow, traceID string, rootAt time.Time, reason string) bool {
+	cfg := ls.getConfig()
+	sendProcessingState(c, flow, traceID, "response_preparing", responsePreparingLabel(cfg.Language), liveRecoveringDetail(cfg.Language), "", 0, true)
+	defer sendProcessingState(c, flow, traceID, "response_preparing", responsePreparingLabel(cfg.Language), liveRecoveringDetail(cfg.Language), "", 0, false)
+	return speakWithTTSFallback(ctx, c, ls, ttsClient, metrics, flow, traceID, rootAt, liveRecoveringSpeech(cfg.Language), reason)
+}
+
+func maybeResolveSearchFallback(
+	ctx context.Context,
+	c *Conn,
+	ls *liveSessionState,
+	adkClient adkService,
+	ttsClient ttsSpeaker,
+	metrics *Metrics,
+	runtime *sessionRuntime,
+	query string,
+	traceID string,
+	rootAt time.Time,
+	reason string,
+) bool {
+	cfg := ls.getConfig()
+	if adkClient == nil {
+		sendTraceEvent(c, "text", traceID, "search_fallback_unavailable", rootAt, "no_adk_client")
+		sendProcessingState(c, "text", traceID, "searching", searchingLabel(cfg.Language), searchDetail(cfg.Language), "google_search", 0, false)
+		return maybeSpeakLiveUnavailableNotice(ctx, c, ls, ttsClient, metrics, "text", traceID, rootAt, reason)
+	}
+
+	sendTraceEvent(c, "text", traceID, "search_fallback_start", rootAt, reason)
+	searchCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	searchCtx, span := otel.Tracer("vibecat/gateway").Start(searchCtx, "adk.search")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("app.trace_id", traceID),
+		attribute.String("fallback.reason", reason),
+	)
+
+	result, err := adkClient.Search(searchCtx, adk.SearchRequest{
+		Query:    query,
+		Language: cfg.Language,
+		TraceID:  traceID,
+	})
+	sendProcessingState(c, "text", traceID, "searching", searchingLabel(cfg.Language), searchDetail(cfg.Language), "google_search", 0, false)
+	if err != nil {
+		slog.Warn("[HANDLER] search fallback failed", "conn_id", c.ID, "trace_id", traceID, "error", err)
+		sendTraceEvent(c, "text", traceID, "search_fallback_failed", rootAt, err.Error())
+		return maybeSpeakLiveUnavailableNotice(ctx, c, ls, ttsClient, metrics, "text", traceID, rootAt, reason)
+	}
+	if result == nil || strings.TrimSpace(result.Summary) == "" {
+		sendTraceEvent(c, "text", traceID, "search_fallback_empty", rootAt, "")
+		return maybeSpeakLiveUnavailableNotice(ctx, c, ls, ttsClient, metrics, "text", traceID, rootAt, reason)
+	}
+
+	sendTraceEvent(c, "text", traceID, "search_fallback_done", rootAt, fmt.Sprintf("sources=%d", len(result.Sources)))
+	sendProcessingState(c, "text", traceID, "grounding", groundingLabel(cfg.Language), groundingDetail(cfg.Language, len(result.Sources)), "google_search", len(result.Sources), true)
+	lockedSendJSON(c, map[string]any{
+		"type":    "toolResult",
+		"tool":    adk.ToolKindSearch,
+		"query":   result.Query,
+		"summary": result.Summary,
+		"sources": result.Sources,
+	})
+	sendProcessingState(c, "text", traceID, "grounding", groundingLabel(cfg.Language), groundingDetail(cfg.Language, len(result.Sources)), "google_search", len(result.Sources), false)
+
+	runtime.append(fmt.Sprintf("search[%s]: %s", traceID, truncateText(result.Summary, 240)))
+	sendProcessingState(c, "text", traceID, "response_preparing", responsePreparingLabel(cfg.Language), toolPreparingDetail(adk.ToolKindSearch, cfg.Language), string(adk.ToolKindSearch), len(result.Sources), true)
+	success := speakWithTTSFallback(ctx, c, ls, ttsClient, metrics, "text", traceID, rootAt, result.Summary, reason)
+	sendProcessingState(c, "text", traceID, "response_preparing", responsePreparingLabel(cfg.Language), toolPreparingDetail(adk.ToolKindSearch, cfg.Language), string(adk.ToolKindSearch), len(result.Sources), false)
+	return success
+}
+
 func memoryContextCacheKey(userID, language string) string {
 	return strings.TrimSpace(userID) + "|" + strings.TrimSpace(language)
 }
@@ -609,7 +723,7 @@ func invalidateCachedMemoryContext(userID, language string) {
 	memoryContextCache.mu.Unlock()
 }
 
-func fetchMemoryContext(ctx context.Context, adkClient *adk.Client, cfg live.Config) string {
+func fetchMemoryContext(ctx context.Context, adkClient adkService, cfg live.Config) string {
 	if adkClient == nil {
 		return ""
 	}
@@ -624,6 +738,11 @@ func fetchMemoryContext(ctx context.Context, adkClient *adk.Client, cfg live.Con
 
 	memoryCtx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
 	defer cancel()
+	memoryCtx, span := otel.Tracer("vibecat/gateway").Start(memoryCtx, "adk.memory_context")
+	defer span.End()
+	span.SetAttributes(
+		attribute.Bool("user.present", userID != ""),
+	)
 
 	contextText, err := adkClient.MemoryContext(memoryCtx, adk.MemoryContextRequest{
 		UserID:   userID,
@@ -732,7 +851,43 @@ func buildToolPrompt(cfg live.Config, result *adk.ToolResult) string {
 	return b.String()
 }
 
-func maybeResolveTool(ctx context.Context, c *Conn, ls *liveSessionState, adkClient *adk.Client, runtime *sessionRuntime, requestedTool adk.ToolKind, query string, traceID string, rootAt time.Time) bool {
+func speakWithTTSFallback(ctx context.Context, c *Conn, ls *liveSessionState, ttsClient ttsSpeaker, metrics *Metrics, flow, traceID string, rootAt time.Time, text, reason string) bool {
+	text = strings.TrimSpace(text)
+	if ttsClient == nil || text == "" {
+		return false
+	}
+
+	cfg := ls.getConfig()
+	if metrics != nil {
+		metrics.RecordFallback(ctx, "tts", flow, reason)
+	}
+	sendTraceEvent(c, flow, traceID, "tts_fallback_start", rootAt, reason)
+	sendTraceEvent(c, flow, traceID, "turn_started", rootAt, "source=tts_fallback")
+	sendTraceEvent(c, flow, traceID, "first_output_text", rootAt, fmt.Sprintf("text_len=%d", len(text)))
+	lockedSendJSON(c, map[string]any{
+		"type": "ttsStart",
+		"text": text,
+	})
+
+	err := ttsClient.StreamSpeak(ctx, tts.Config{
+		Voice:    cfg.Voice,
+		Language: cfg.Language,
+		Text:     text,
+	}, func(chunk []byte) error {
+		return lockedSendBinary(c, chunk)
+	})
+	lockedSendJSON(c, map[string]any{"type": "ttsEnd"})
+	if err != nil {
+		slog.Warn("[HANDLER] TTS fallback failed", "conn_id", c.ID, "trace_id", traceID, "reason", reason, "error", err)
+		sendTraceEvent(c, flow, traceID, "turn_failed", rootAt, err.Error())
+		return false
+	}
+
+	sendTraceEvent(c, flow, traceID, "turn_complete", rootAt, "source=tts_fallback")
+	return true
+}
+
+func maybeResolveTool(ctx context.Context, c *Conn, ls *liveSessionState, adkClient adkService, ttsClient ttsSpeaker, metrics *Metrics, runtime *sessionRuntime, requestedTool adk.ToolKind, query string, traceID string, rootAt time.Time) bool {
 	query = strings.TrimSpace(query)
 	if query == "" || adkClient == nil {
 		return false
@@ -750,6 +905,14 @@ func maybeResolveTool(ctx context.Context, c *Conn, ls *liveSessionState, adkCli
 	sendProcessingState(c, "tool", traceID, "tool_running", toolRunningLabel(cfg.Language), toolStatusDetail(requestedTool, cfg.Language), string(requestedTool), 0, true)
 	toolCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
+	toolCtx, span := otel.Tracer("vibecat/gateway").Start(toolCtx, "adk.tool")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("app.trace_id", traceID),
+		attribute.String("tool.requested", string(requestedTool)),
+		attribute.Bool("user.present", strings.TrimSpace(userID) != ""),
+		attribute.Bool("session.present", strings.TrimSpace(sessionID) != ""),
+	)
 	result, err := adkClient.Tool(toolCtx, adk.ToolRequest{
 		Query:     query,
 		Language:  cfg.Language,
@@ -785,16 +948,27 @@ func maybeResolveTool(ctx context.Context, c *Conn, ls *liveSessionState, adkCli
 
 	liveSess := ls.getSession()
 	if liveSess == nil {
-		slog.Warn("[HANDLER] grounded tool prompt dropped: no live session", "conn_id", c.ID)
-		sendTraceEvent(c, "tool", traceID, "tool_prompt_dropped", rootAt, "no_live_session")
+		sendProcessingState(c, "tool", traceID, "response_preparing", responsePreparingLabel(cfg.Language), toolPreparingDetail(result.Tool, cfg.Language), string(result.Tool), len(result.Sources), true)
+		if speakWithTTSFallback(ctx, c, ls, ttsClient, metrics, "tool", traceID, rootAt, result.Summary, "tool_no_live_session") {
+			slog.Info("[HANDLER] grounded tool result spoken via TTS fallback", "conn_id", c.ID, "tool", result.Tool)
+		} else {
+			slog.Warn("[HANDLER] grounded tool prompt dropped: no live session", "conn_id", c.ID)
+			sendTraceEvent(c, "tool", traceID, "tool_prompt_dropped", rootAt, "no_live_session")
+		}
 		sendProcessingState(c, "tool", traceID, "response_preparing", responsePreparingLabel(cfg.Language), toolPreparingDetail(result.Tool, cfg.Language), string(result.Tool), len(result.Sources), false)
 		return true
 	}
 	ls.queueTurnTrace(traceID, "tool", rootAt)
 	sendProcessingState(c, "tool", traceID, "response_preparing", responsePreparingLabel(cfg.Language), toolPreparingDetail(result.Tool, cfg.Language), string(result.Tool), len(result.Sources), true)
 	if err := liveSess.SendText(buildToolPrompt(ls.getConfig(), result)); err != nil {
+		ls.clearPendingTurnTrace()
 		slog.Warn("[HANDLER] grounded tool prompt injection failed", "conn_id", c.ID, "error", err)
 		sendTraceEvent(c, "tool", traceID, "tool_prompt_injection_failed", rootAt, err.Error())
+		ttsRecovered := speakWithTTSFallback(ctx, c, ls, ttsClient, metrics, "tool", traceID, rootAt, result.Summary, "tool_live_prompt_failed")
+		if ttsRecovered {
+			slog.Info("[HANDLER] grounded tool result recovered via TTS fallback", "conn_id", c.ID, "tool", result.Tool)
+			return true
+		}
 		sendProcessingState(c, "tool", traceID, "response_preparing", responsePreparingLabel(cfg.Language), toolPreparingDetail(result.Tool, cfg.Language), string(result.Tool), len(result.Sources), false)
 		return false
 	}
@@ -804,7 +978,7 @@ func maybeResolveTool(ctx context.Context, c *Conn, ls *liveSessionState, adkCli
 	return true
 }
 
-func saveSessionMemory(ctx context.Context, adkClient *adk.Client, cfg live.Config, runtime *sessionRuntime) {
+func saveSessionMemory(ctx context.Context, adkClient adkService, cfg live.Config, runtime *sessionRuntime) {
 	if adkClient == nil || runtime == nil {
 		return
 	}
@@ -816,6 +990,13 @@ func saveSessionMemory(ctx context.Context, adkClient *adk.Client, cfg live.Conf
 
 	saveCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
+	saveCtx, span := otel.Tracer("vibecat/gateway").Start(saveCtx, "adk.save_session_summary")
+	defer span.End()
+	span.SetAttributes(
+		attribute.Bool("user.present", strings.TrimSpace(userID) != ""),
+		attribute.Bool("session.present", strings.TrimSpace(sessionID) != ""),
+		attribute.Int("history.length", len(history)),
+	)
 	if err := adkClient.SaveSessionSummary(saveCtx, adk.SessionSummaryRequest{
 		UserID:    userID,
 		SessionID: sessionID,
@@ -833,7 +1014,7 @@ func saveSessionMemory(ctx context.Context, adkClient *adk.Client, cfg live.Conf
 // Handler returns an http.HandlerFunc that upgrades connections to WebSocket.
 // liveMgr may be nil — in that case audio is echoed back (stub mode).
 // adkClient may be nil — in that case screen captures are ignored.
-func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client) http.HandlerFunc {
+func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClient ttsSpeaker, metrics *Metrics) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		rawConn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -846,6 +1027,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client) http.H
 			conn: rawConn,
 		}
 		reg.Add(c)
+		metrics.ConnectionOpened(r.Context())
 		slog.Info("websocket connected", "conn_id", c.ID, "remote", r.RemoteAddr)
 
 		ls := &liveSessionState{errChan: make(chan error, 1)}
@@ -857,6 +1039,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client) http.H
 				sess.Close()
 			}
 			reg.Remove(c.ID)
+			metrics.ConnectionClosed(context.Background())
 			rawConn.Close()
 			slog.Info("websocket disconnected", "conn_id", c.ID)
 		}()
@@ -922,8 +1105,8 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client) http.H
 						if sendErr := sess.SendAudio(data); sendErr != nil {
 							slog.Warn("send audio to gemini failed", "conn_id", c.ID, "error", sendErr)
 						}
-					} else if !ls.isReconnecting() {
-						_ = rawConn.WriteMessage(websocket.BinaryMessage, data)
+					} else if liveMgr == nil && !ls.isReconnecting() {
+						_ = lockedSendBinary(c, data)
 					}
 				}
 
@@ -940,10 +1123,6 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client) http.H
 
 				switch msg.Type {
 				case "setup":
-					if liveMgr == nil {
-						lockedSendJSON(c, setupCompleteMsg{Type: "setupComplete", SessionID: c.ID})
-						continue
-					}
 					setupMsg, parseErr := live.ParseSetup(data)
 					if parseErr != nil {
 						slog.Error("parse setup failed", "conn_id", c.ID, "error", parseErr)
@@ -960,6 +1139,10 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client) http.H
 					ls.setConfig(cfg)
 					ls.setResumeHandle(setupMsg.ResumptionHandle)
 					runtime.setIdentity(cfg.DeviceID, c.ID)
+					if liveMgr == nil {
+						lockedSendJSON(c, setupCompleteMsg{Type: "setupComplete", SessionID: c.ID})
+						continue
+					}
 					if old := ls.getSession(); old != nil {
 						old.Close()
 						ls.setSession(nil)
@@ -977,7 +1160,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client) http.H
 					ls.setSession(sess)
 					slog.Info("device registered", "conn_id", c.ID, "device_id", cfg.DeviceID)
 					lockedSendJSON(c, setupCompleteMsg{Type: "setupComplete", SessionID: c.ID})
-					go receiveFromGemini(ctx, c, sess, ls, adkClient, runtime)
+					go receiveFromGemini(ctx, c, sess, ls, adkClient, ttsClient, metrics, runtime)
 
 					if !reconnectStarted {
 						reconnectStarted = true
@@ -996,6 +1179,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client) http.H
 
 									reconnected := false
 									for attempt := 1; attempt <= 3; attempt++ {
+										metrics.ReconnectAttempt(ctx, "gemini_live")
 										lockedSendJSON(c, map[string]any{
 											"type":    "liveSessionReconnecting",
 											"attempt": attempt,
@@ -1020,7 +1204,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client) http.H
 
 										ls.setSession(newSess)
 										ls.setReconnecting(false)
-										go receiveFromGemini(ctx, c, newSess, ls, adkClient, runtime)
+										go receiveFromGemini(ctx, c, newSess, ls, adkClient, ttsClient, metrics, runtime)
 										lockedSendJSON(c, map[string]any{"type": "liveSessionReconnected"})
 										slog.Info("live session reconnected", "conn_id", c.ID, "attempt", attempt)
 										reconnected = true
@@ -1115,12 +1299,18 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client) http.H
 						cfg := ls.getConfig()
 						sendTraceEvent(c, "proactive", traceID, "adk_analyze_start", rootAt, "")
 						sendProcessingState(c, "proactive", traceID, "screen_analyzing", screenAnalyzingLabel(cfg.Language), screenAnalyzingDetail(cfg.Language), "", 0, true)
-						analyzeCtx, analyzeCancel := context.WithTimeout(ctx, 30*time.Second)
+						analyzeTimeout := proactiveAnalyzeTimeout
+						if captureMsg.Type == "forceCapture" {
+							analyzeTimeout = forcedAnalyzeTimeout
+						}
+						analyzeCtx, analyzeCancel := context.WithTimeout(ctx, analyzeTimeout)
 						defer analyzeCancel()
 						tracer := otel.Tracer("vibecat/gateway")
 						analyzeCtx, span := tracer.Start(analyzeCtx, "adk.analyze")
 						defer span.End()
 						span.SetAttributes(
+							attribute.String("app.trace_id", traceID),
+							attribute.String("capture.type", captureMsg.Type),
 							attribute.Int("image.bytes", len(captureMsg.Image)),
 							attribute.String("conn.id", c.ID),
 						)
@@ -1136,9 +1326,17 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client) http.H
 							TraceID:         traceID,
 						})
 						elapsed := time.Since(startTime)
+						metrics.RecordADKAnalyzeDuration(analyzeCtx, captureMsg.Type, elapsed)
 						if analyzeErr != nil {
-							slog.Warn("[HANDLER] <<< ADK analyze FAILED", "conn_id", c.ID, "error", analyzeErr, "elapsed", elapsed.String())
-							sendTraceEvent(c, "proactive", traceID, "adk_analyze_failed", rootAt, analyzeErr.Error())
+							if errors.Is(analyzeErr, context.DeadlineExceeded) {
+								slog.Info("[HANDLER] <<< ADK analyze timed out; silent fallback", "conn_id", c.ID, "trace_id", traceID, "elapsed", elapsed.String(), "capture_type", captureMsg.Type)
+								sendTraceEvent(c, "proactive", traceID, "adk_analyze_timed_out", rootAt, captureMsg.Type)
+								metrics.RecordADKAnalyzeError(analyzeCtx, captureMsg.Type, "timeout")
+							} else {
+								slog.Warn("[HANDLER] <<< ADK analyze FAILED", "conn_id", c.ID, "error", analyzeErr, "elapsed", elapsed.String())
+								sendTraceEvent(c, "proactive", traceID, "adk_analyze_failed", rootAt, analyzeErr.Error())
+								metrics.RecordADKAnalyzeError(analyzeCtx, captureMsg.Type, "error")
+							}
 							sendProcessingState(c, "proactive", traceID, "screen_analyzing", screenAnalyzingLabel(cfg.Language), screenAnalyzingDetail(cfg.Language), "", 0, false)
 							return
 						}
@@ -1191,8 +1389,12 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client) http.H
 							sess := ls.getSession()
 							switch {
 							case sess == nil:
-								slog.Warn("[HANDLER] proactive prompt dropped: no live session", "conn_id", c.ID)
-								sendTraceEvent(c, "proactive", traceID, "live_prompt_dropped", rootAt, "no_live_session")
+								if speakWithTTSFallback(ctx, c, ls, ttsClient, metrics, "proactive", traceID, rootAt, result.SpeechText, "proactive_no_live_session") {
+									slog.Info("[HANDLER] proactive response recovered via TTS fallback", "conn_id", c.ID, "trace_id", traceID)
+								} else {
+									slog.Warn("[HANDLER] proactive prompt dropped: no live session", "conn_id", c.ID)
+									sendTraceEvent(c, "proactive", traceID, "live_prompt_dropped", rootAt, "no_live_session")
+								}
 								sendProcessingState(c, "proactive", traceID, "response_preparing", responsePreparingLabel(cfg.Language), currentWindowPreparingDetail(cfg.Language), "", 0, false)
 							case ls.isModelSpeaking():
 								slog.Info("[HANDLER] proactive prompt dropped: model already speaking", "conn_id", c.ID)
@@ -1202,8 +1404,12 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client) http.H
 								prompt := buildProactivePrompt(cfg, result)
 								ls.queueTurnTrace(traceID, "proactive", rootAt)
 								if sendErr := sess.SendText(prompt); sendErr != nil {
+									ls.clearPendingTurnTrace()
 									slog.Warn("[HANDLER] proactive prompt injection failed", "conn_id", c.ID, "error", sendErr)
 									sendTraceEvent(c, "proactive", traceID, "live_prompt_injection_failed", rootAt, sendErr.Error())
+									if speakWithTTSFallback(ctx, c, ls, ttsClient, metrics, "proactive", traceID, rootAt, result.SpeechText, "proactive_live_prompt_failed") {
+										slog.Info("[HANDLER] proactive response recovered via TTS fallback", "conn_id", c.ID, "trace_id", traceID)
+									}
 									sendProcessingState(c, "proactive", traceID, "response_preparing", responsePreparingLabel(cfg.Language), currentWindowPreparingDetail(cfg.Language), "", 0, false)
 								} else {
 									slog.Info("[HANDLER] proactive prompt injected into live session",
@@ -1220,6 +1426,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client) http.H
 								contextMsg := fmt.Sprintf("[Screen Context] %s", result.Vision.Content)
 								ls.queueTurnTrace(traceID, "context", rootAt)
 								if sendErr := sess.SendText(contextMsg); sendErr != nil {
+									ls.clearPendingTurnTrace()
 									slog.Debug("inject screen context failed", "conn_id", c.ID, "error", sendErr)
 									sendTraceEvent(c, "context", traceID, "context_injection_failed", rootAt, sendErr.Error())
 									sendProcessingState(c, "context", traceID, "screen_analyzing", screenAnalyzingLabel(cfg.Language), screenAnalyzingDetail(cfg.Language), "", 0, false)
@@ -1235,11 +1442,6 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client) http.H
 					}()
 
 				case "clientContent":
-					sess := ls.getSession()
-					if sess == nil {
-						slog.Warn("[HANDLER] clientContent received but no live session", "conn_id", c.ID)
-						continue
-					}
 					var ccMsg struct {
 						ClientContent struct {
 							TurnComplete bool `json:"turnComplete"`
@@ -1268,13 +1470,31 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client) http.H
 								route := resolveQueryRoute(ls.getConfig(), part.Text)
 								switch route.Kind {
 								case queryRouteADKTool:
-									if maybeResolveTool(ctx, c, ls, adkClient, runtime, route.Tool, part.Text, traceID, rootAt) {
+									if maybeResolveTool(ctx, c, ls, adkClient, ttsClient, metrics, runtime, route.Tool, part.Text, traceID, rootAt) {
 										slog.Info("[HANDLER] clientContent handled via grounded tool", "conn_id", c.ID, "tool", route.Tool)
 										continue
 									}
 								case queryRouteLiveSearch:
 									sendTraceEvent(c, "text", traceID, "live_native_search_enabled", rootAt, "google_search")
 									sendProcessingState(c, "text", traceID, "searching", searchingLabel(ls.getConfig().Language), searchDetail(ls.getConfig().Language), "google_search", 0, true)
+								}
+								sess := ls.getSession()
+								if sess == nil {
+									switch route.Kind {
+									case queryRouteLiveSearch:
+										if maybeResolveSearchFallback(ctx, c, ls, adkClient, ttsClient, metrics, runtime, part.Text, traceID, rootAt, "live_search_no_session") {
+											continue
+										}
+										sendProcessingState(c, "text", traceID, "searching", searchingLabel(ls.getConfig().Language), searchDetail(ls.getConfig().Language), "google_search", 0, false)
+									case queryRoutePlainLive:
+										if maybeSpeakLiveUnavailableNotice(ctx, c, ls, ttsClient, metrics, "text", traceID, rootAt, "live_query_no_session") {
+											continue
+										}
+									}
+									slog.Warn("[HANDLER] clientContent received but no live session", "conn_id", c.ID, "trace_id", traceID)
+									sendTraceEvent(c, "text", traceID, "live_text_forward_failed", rootAt, "no_live_session")
+									sendProcessingState(c, "text", traceID, "response_preparing", responsePreparingLabel(ls.getConfig().Language), "", "", 0, false)
+									continue
 								}
 								slog.Info("[HANDLER] >>> forwarding clientContent to Gemini",
 									"conn_id", c.ID,
@@ -1283,8 +1503,21 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client) http.H
 								)
 								ls.queueTurnTrace(traceID, "text", rootAt)
 								if sendErr := sess.SendText(part.Text); sendErr != nil {
+									ls.clearPendingTurnTrace()
 									slog.Warn("[HANDLER] Gemini SendText failed", "conn_id", c.ID, "error", sendErr)
 									sendTraceEvent(c, "text", traceID, "live_text_forward_failed", rootAt, sendErr.Error())
+									switch route.Kind {
+									case queryRouteLiveSearch:
+										if maybeResolveSearchFallback(ctx, c, ls, adkClient, ttsClient, metrics, runtime, part.Text, traceID, rootAt, "live_search_forward_failed") {
+											continue
+										}
+										sendProcessingState(c, "text", traceID, "searching", searchingLabel(ls.getConfig().Language), searchDetail(ls.getConfig().Language), "google_search", 0, false)
+									case queryRoutePlainLive:
+										if maybeSpeakLiveUnavailableNotice(ctx, c, ls, ttsClient, metrics, "text", traceID, rootAt, "live_query_forward_failed") {
+											continue
+										}
+									}
+									sendProcessingState(c, "text", traceID, "response_preparing", responsePreparingLabel(ls.getConfig().Language), "", "", 0, false)
 								} else {
 									sendTraceEvent(c, "text", traceID, "live_text_forwarded", rootAt, "")
 								}
@@ -1300,7 +1533,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient *adk.Client) http.H
 	}
 }
 
-func receiveFromGemini(ctx context.Context, c *Conn, sess *live.Session, ls *liveSessionState, adkClient *adk.Client, runtime *sessionRuntime) {
+func receiveFromGemini(ctx context.Context, c *Conn, sess *live.Session, ls *liveSessionState, adkClient adkService, ttsClient ttsSpeaker, metrics *Metrics, runtime *sessionRuntime) {
 	turnHasAudio := false
 	inputTranscript := ""
 	outputTranscript := ""
@@ -1320,7 +1553,6 @@ func receiveFromGemini(ctx context.Context, c *Conn, sess *live.Session, ls *liv
 			"finished": true,
 		})
 		sendTraceEvent(c, flow, traceID, "input_transcription_finished", rootAt, fmt.Sprintf("text_len=%d", len(query)))
-		ls.queueTurnTrace(traceID, flow, rootAt)
 		if triggerTool {
 			cfg := ls.getConfig()
 			route := resolveQueryRoute(cfg, query)
@@ -1328,14 +1560,19 @@ func receiveFromGemini(ctx context.Context, c *Conn, sess *live.Session, ls *liv
 			case queryRouteLiveSearch:
 				sendTraceEvent(c, flow, traceID, "live_native_search_enabled", rootAt, "google_search")
 				sendProcessingState(c, flow, traceID, "searching", searchingLabel(cfg.Language), searchDetail(cfg.Language), "google_search", 0, true)
+				ls.queueTurnTrace(traceID, flow, rootAt)
 			case queryRouteADKTool:
 				if adkClient == nil {
 					slog.Warn("[HANDLER] grounded tool lookup skipped: no adk client", "conn_id", c.ID)
 					sendTraceEvent(c, flow, traceID, "tool_lookup_skipped", rootAt, "no_adk_client")
 				} else {
-					go maybeResolveTool(ctx, c, ls, adkClient, runtime, route.Tool, query, traceID, rootAt)
+					go maybeResolveTool(ctx, c, ls, adkClient, ttsClient, metrics, runtime, route.Tool, query, traceID, rootAt)
 				}
+			default:
+				ls.queueTurnTrace(traceID, flow, rootAt)
 			}
+		} else {
+			ls.queueTurnTrace(traceID, flow, rootAt)
 		}
 		inputTranscript = ""
 	}
@@ -1573,6 +1810,17 @@ func lockedSendJSON(c *Conn, v any) {
 	if writeErr := c.conn.WriteMessage(websocket.TextMessage, data); writeErr != nil {
 		slog.Warn("write json to client failed", "conn_id", c.ID, "error", writeErr)
 	}
+}
+
+func lockedSendBinary(c *Conn, payload []byte) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+	if err := c.conn.WriteMessage(websocket.BinaryMessage, payload); err != nil {
+		slog.Warn("write binary to client failed", "conn_id", c.ID, "error", err)
+		return err
+	}
+	return nil
 }
 
 const minTranscriptionLen = 4

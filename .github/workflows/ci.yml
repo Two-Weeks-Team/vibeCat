@@ -78,14 +78,14 @@ jobs:
 
   swift:
     name: Client (Swift 6 / macOS) — Build + Test
-    runs-on: [self-hosted, macOS, ARM64]
+    runs-on: macos-15
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
         with:
           clean: true
 
-      - name: Select Xcode 16+ and accept license
+      - name: Select licensed Xcode 16+
         run: |
           xcodes=($(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V))
           if [ ${#xcodes[@]} -eq 0 ]; then
@@ -99,6 +99,11 @@ jobs:
             if [ ! -d "$devdir" ]; then
               continue
             fi
+            version=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$candidate/Contents/Info.plist" 2>/dev/null || true)
+            major="${version%%.*}"
+            if [ -z "$major" ] || [ "$major" -lt 16 ]; then
+              continue
+            fi
             if DEVELOPER_DIR="$devdir" xcodebuild -checkFirstLaunchStatus >/dev/null 2>&1; then
               selected="$devdir"
               break
@@ -106,18 +111,10 @@ jobs:
           done
 
           if [ -z "$selected" ]; then
-            latest="${xcodes[$((${#xcodes[@]}-1))]}"
-            selected="$latest/Contents/Developer"
-            if sudo -n true 2>/dev/null; then
-              sudo -n env DEVELOPER_DIR="$selected" xcodebuild -runFirstLaunch >/dev/null 2>&1 || true
-              sudo -n env DEVELOPER_DIR="$selected" xcodebuild -license accept >/dev/null 2>&1 || true
-            fi
-            if ! DEVELOPER_DIR="$selected" xcodebuild -checkFirstLaunchStatus >/dev/null 2>&1; then
-              echo "::error::No licensed Xcode installation is available on this runner."
-              echo "::error::Checked candidates: ${xcodes[*]}"
-              xcode-select -p || true
-              exit 69
-            fi
+            echo "::error::No licensed Xcode 16+ installation is available on this runner."
+            echo "::error::Checked candidates: ${xcodes[*]}"
+            xcode-select -p || true
+            exit 69
           fi
 
           export DEVELOPER_DIR="$selected"

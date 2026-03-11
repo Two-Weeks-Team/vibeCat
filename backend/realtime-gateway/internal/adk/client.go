@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 	"golang.org/x/oauth2"
 	"google.golang.org/api/idtoken"
 )
@@ -168,15 +170,8 @@ func (c *Client) Analyze(ctx context.Context, req AnalysisRequest) (*AnalysisRes
 	if err != nil {
 		return nil, fmt.Errorf("adk client: create request: %w", err)
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	if c.tokenSource != nil {
-		token, tokenErr := c.tokenSource.Token()
-		if tokenErr == nil {
-			httpReq.Header.Set("Authorization", "Bearer "+token.AccessToken)
-		} else {
-			slog.Warn("[ADK-CLIENT] failed to get ID token", "error", tokenErr)
-		}
+	if err := c.prepareJSONRequest(httpReq); err != nil {
+		slog.Warn("[ADK-CLIENT] failed to prepare analyze request", "error", err)
 	}
 
 	startTime := time.Now()
@@ -224,13 +219,8 @@ func (c *Client) Search(ctx context.Context, req SearchRequest) (*SearchResult, 
 	if err != nil {
 		return nil, fmt.Errorf("adk client: create search request: %w", err)
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	if c.tokenSource != nil {
-		token, tokenErr := c.tokenSource.Token()
-		if tokenErr == nil {
-			httpReq.Header.Set("Authorization", "Bearer "+token.AccessToken)
-		}
+	if err := c.prepareJSONRequest(httpReq); err != nil {
+		slog.Warn("[ADK-CLIENT] failed to prepare search request", "error", err)
 	}
 
 	startTime := time.Now()
@@ -271,12 +261,8 @@ func (c *Client) Tool(ctx context.Context, req ToolRequest) (*ToolResult, error)
 	if err != nil {
 		return nil, fmt.Errorf("adk client: create tool request: %w", err)
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	if c.tokenSource != nil {
-		if token, tokenErr := c.tokenSource.Token(); tokenErr == nil {
-			httpReq.Header.Set("Authorization", "Bearer "+token.AccessToken)
-		}
+	if err := c.prepareJSONRequest(httpReq); err != nil {
+		slog.Warn("[ADK-CLIENT] failed to prepare tool request", "error", err)
 	}
 
 	startTime := time.Now()
@@ -313,12 +299,8 @@ func (c *Client) SaveSessionSummary(ctx context.Context, req SessionSummaryReque
 	if err != nil {
 		return fmt.Errorf("adk client: create session summary request: %w", err)
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	if c.tokenSource != nil {
-		if token, tokenErr := c.tokenSource.Token(); tokenErr == nil {
-			httpReq.Header.Set("Authorization", "Bearer "+token.AccessToken)
-		}
+	if err := c.prepareJSONRequest(httpReq); err != nil {
+		slog.Warn("[ADK-CLIENT] failed to prepare session summary request", "error", err)
 	}
 
 	resp, err := c.httpClient.Do(httpReq)
@@ -346,12 +328,8 @@ func (c *Client) MemoryContext(ctx context.Context, req MemoryContextRequest) (s
 	if err != nil {
 		return "", fmt.Errorf("adk client: create memory context request: %w", err)
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	if c.tokenSource != nil {
-		if token, tokenErr := c.tokenSource.Token(); tokenErr == nil {
-			httpReq.Header.Set("Authorization", "Bearer "+token.AccessToken)
-		}
+	if err := c.prepareJSONRequest(httpReq); err != nil {
+		slog.Warn("[ADK-CLIENT] failed to prepare memory context request", "error", err)
 	}
 
 	resp, err := c.httpClient.Do(httpReq)
@@ -372,4 +350,20 @@ func (c *Client) MemoryContext(ctx context.Context, req MemoryContextRequest) (s
 		return "", fmt.Errorf("adk client: decode memory context response: %w", err)
 	}
 	return result.Context, nil
+}
+
+func (c *Client) prepareJSONRequest(req *http.Request) error {
+	req.Header.Set("Content-Type", "application/json")
+	otel.GetTextMapPropagator().Inject(req.Context(), propagation.HeaderCarrier(req.Header))
+
+	if c.tokenSource == nil {
+		return nil
+	}
+
+	token, err := c.tokenSource.Token()
+	if err != nil {
+		return fmt.Errorf("adk client: get ID token: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token.AccessToken)
+	return nil
 }

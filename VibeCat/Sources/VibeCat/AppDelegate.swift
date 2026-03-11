@@ -334,6 +334,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func refreshCapturePrivacyUI() {
+        guard let panel = catPanel else { return }
+
+        let title: String
+        let color: NSColor
+        if isPaused {
+            title = VibeCatL10n.captureIndicatorPaused()
+            color = .systemGray
+        } else if AppSettings.shared.manualAnalysisOnly {
+            title = VibeCatL10n.captureIndicatorManual()
+            color = .systemOrange
+        } else {
+            title = VibeCatL10n.captureIndicatorLive()
+            color = .systemGreen
+        }
+
+        panel.updateCapturePrivacyBadge(
+            title: title,
+            detail: VibeCatL10n.captureIndicatorNoStorage(),
+            accentColor: color
+        )
+        statusBarController?.updateCaptureIndicator(
+            isPaused: isPaused,
+            isManualOnly: AppSettings.shared.manualAnalysisOnly
+        )
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
@@ -384,6 +411,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.clearTraceIfReady()
         }
         panel.show()
+        refreshCapturePrivacyUI()
         NSLog("[AppDelegate] CatPanel shown. frame=%@ level=%d isVisible=%d", NSStringFromRect(panel.frame), panel.level.rawValue, panel.isVisible ? 1 : 0)
 
         gateway.setSoul(initialPreset.soul)
@@ -437,6 +465,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         sbc.attachEmotionTransitionStore(emotionTransitionStore)
         sbc.onQuit = { NSApp.terminate(nil) }
         sbc.onReconnect = { [weak self] in self?.handleReconnect() }
+        sbc.onAnalyzeNow = { [weak self] in self?.handleAnalyzeNow() }
         sbc.onPause = { [weak self] in self?.handlePause() }
         sbc.onMute = { [weak self] in self?.handleMute() }
         sbc.onShowOnboarding = { [weak self] in self?.showOnboarding() }
@@ -452,10 +481,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         sbc.onProactiveAudioToggled = { [weak self] in
             self?.gatewayClient?.resendSetupPayloadIfConnected()
         }
+        sbc.onManualAnalysisToggled = { [weak self] _ in
+            self?.handleManualAnalysisToggle()
+        }
         sbc.onLanguageChanged = { [weak self] in
             self?.gatewayClient?.resendSetupPayloadIfConnected()
             self?.onboardingController?.refreshLocalizedText()
             self?.companionChatPanel?.refreshLocalizedText()
+            self?.refreshCapturePrivacyUI()
         }
         self.statusBarController = sbc
         self.trayAnimator = tray
@@ -483,6 +516,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         gateway.connect()
         analyzer.start()
+        sbc.updatePauseState(isPaused)
+        sbc.updateManualAnalysisMode(AppSettings.shared.manualAnalysisOnly)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -814,6 +849,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         gatewayClient?.reconnect()
     }
 
+    private func handleAnalyzeNow() {
+        guard !isPaused else { return }
+        showStatusBubbleIfAllowed(
+            panel: catPanel,
+            text: VibeCatL10n.screenReadingTitle(),
+            detail: VibeCatL10n.screenReadingDetail(),
+            context: "screen_capture_menu"
+        )
+        Task { @MainActor [weak self] in
+            await self?.screenAnalyzer?.forceAnalysis()
+        }
+    }
+
     private func handlePause() {
         if isPaused {
             screenAnalyzer?.resume()
@@ -827,6 +875,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             isPaused = true
         }
         statusBarController?.updatePauseState(isPaused)
+        refreshCapturePrivacyUI()
+    }
+
+    private func handleManualAnalysisToggle() {
+        screenAnalyzer?.reloadCapturePolicy()
+        refreshCapturePrivacyUI()
     }
 
     private func handleMute() {

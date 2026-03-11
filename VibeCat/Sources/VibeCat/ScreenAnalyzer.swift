@@ -53,22 +53,23 @@ final class ScreenAnalyzer {
         guard !isRunning else { return }
         isRunning = true
         sessionStartTime = Date()
-        startCaptureLoop()
-        observeAppSwitches()
+        refreshCapturePolicy()
     }
 
     func pause() {
         isRunning = false
-        captureLoopTask?.cancel()
-        captureLoopTask = nil
-        removeAppSwitchObserver()
+        stopAutomaticCapture()
     }
 
     func resume() {
         guard !isRunning else { return }
         isRunning = true
-        startCaptureLoop()
-        observeAppSwitches()
+        refreshCapturePolicy()
+    }
+
+    func reloadCapturePolicy() {
+        guard isRunning else { return }
+        refreshCapturePolicy()
     }
 
     // MARK: - App Switch Detection
@@ -109,6 +110,23 @@ final class ScreenAnalyzer {
     // MARK: - Capture Scheduling
 
     private let initialStabilizationDelay: UInt64 = 10_000_000_000
+
+    private var automaticCaptureEnabled: Bool {
+        !AppSettings.shared.manualAnalysisOnly
+    }
+
+    private func refreshCapturePolicy() {
+        stopAutomaticCapture()
+        guard isRunning, automaticCaptureEnabled else { return }
+        startCaptureLoop()
+        observeAppSwitches()
+    }
+
+    private func stopAutomaticCapture() {
+        captureLoopTask?.cancel()
+        captureLoopTask = nil
+        removeAppSwitchObserver()
+    }
 
     private func startCaptureLoop() {
         captureLoopTask?.cancel()

@@ -6,6 +6,12 @@
 
 This document reflects the live deployment and CI state verified on 2026-03-11. It replaces older evidence that still referenced pre-`00040`/`00038` revisions or older CI runs.
 
+Submission-oriented cross-links:
+
+- evidence pack index: `docs/evidence/OPERATIONS_EVIDENCE_PACK_20260311.md`
+- concise proof view: `docs/deployment/PROOF_OF_GCP_DEPLOYMENT.md`
+- exported live artifacts: `docs/evidence/artifacts/20260311/`
+
 ## 1. Cloud Run Services
 
 ### Realtime Gateway
@@ -100,16 +106,32 @@ Recent trace IDs were returned by the Cloud Trace API on 2026-03-11:
 028b73af0956f4bd59081485878a5a33
 ```
 
-Trace export is active. What is still incomplete is the acceptance-level verification of end-to-end Gateway-to-Orchestrator propagation.
+Trace export is active. This branch also wires explicit Gateway-to-Orchestrator OpenTelemetry propagation in:
+
+- `backend/realtime-gateway/internal/adk/client.go`
+- `backend/realtime-gateway/main.go`
+- `backend/adk-orchestrator/main.go`
+
+That propagation becomes visible in Cloud Trace after the updated backend revisions are deployed.
 
 ### Cloud Monitoring
 
 | Item | Status |
 |------|--------|
 | metric exporter in code | present |
-| dashboards in project | none configured |
+| dashboard in project | `VibeCat Operations Overview` |
+| dashboard resource | `projects/163070481841/dashboards/752c1986-5674-4963-a967-6f3595902be2` |
+| dashboard definition in repo | `infra/monitoring/vibecat-operations-dashboard.yaml` |
+| dashboard apply script | `infra/configure_observability.sh` |
+| custom-metrics dashboard in project | `VibeCat Runtime Overview` |
+| custom-metrics dashboard resource | `projects/163070481841/dashboards/0425463d-47b5-4235-a2e9-f7c9002ba2f6` |
+| custom-metrics repo definition | `infra/observability/vibecat-runtime-dashboard.json` |
+| custom-metrics apply script | `infra/observability/sync_dashboard.sh` |
 
-Cloud Monitoring is not complete enough to close the operational acceptance on its own.
+Cloud Monitoring now has both a Cloud Run operations dashboard and a gateway custom-metrics dashboard. Live dashboard exports are stored in:
+
+- `docs/evidence/artifacts/20260311/monitoring-dashboard-vibecat-operations-overview.json`
+- `docs/evidence/artifacts/20260311/monitoring-dashboard-vibecat-runtime-overview.json`
 
 ## 4. CI/CD Baseline
 
@@ -153,7 +175,7 @@ What still remains is not foundational implementation but release hardening:
 
 - ops evidence pack completion
 - privacy controls UI
-- Cloud Monitoring dashboard and trace verification
+- trace verification after deploying the updated backend revisions
 - full companion-intelligence E2E proof
 - degraded-mode fallback behavior for Gemini and ADK failures
 
