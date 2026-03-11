@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -53,6 +55,39 @@ type orchestrator struct {
 	analyzeCounter metric.Int64Counter
 	analyzeDurHist metric.Float64Histogram
 	errorCounter   metric.Int64Counter
+}
+
+func shortHash(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(trimmed))
+	return hex.EncodeToString(sum[:])[:12]
+}
+
+func appendIdentityLogFields(fields []any, userID, sessionID string) []any {
+	userID = strings.TrimSpace(userID)
+	sessionID = strings.TrimSpace(sessionID)
+	fields = append(fields,
+		"user_present", userID != "",
+		"session_present", sessionID != "",
+	)
+	if userID != "" {
+		fields = append(fields, "user_ref", shortHash(userID))
+	}
+	if sessionID != "" {
+		fields = append(fields, "session_ref", shortHash(sessionID))
+	}
+	return fields
+}
+
+func appendContextLogFields(fields []any, contextText string) []any {
+	contextText = strings.TrimSpace(contextText)
+	return append(fields,
+		"context_present", contextText != "",
+		"context_len", len(contextText),
+	)
 }
 
 func main() {
@@ -246,7 +281,13 @@ func (o *orchestrator) analyzeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	imageLen := len(req.Image)
-	slog.Info("analyze request parsed", "trace_id", req.TraceID, "image_bytes", imageLen, "context", req.Context, "user_id", req.UserID, "session_id", req.SessionID)
+	requestFields := []any{
+		"trace_id", req.TraceID,
+		"image_bytes", imageLen,
+	}
+	requestFields = appendContextLogFields(requestFields, req.Context)
+	requestFields = appendIdentityLogFields(requestFields, req.UserID, req.SessionID)
+	slog.Info("analyze request parsed", requestFields...)
 	attrs := []attribute.KeyValue{
 		attribute.Int("image.bytes", imageLen),
 		attribute.Bool("user.present", strings.TrimSpace(req.UserID) != ""),
@@ -279,7 +320,8 @@ func (o *orchestrator) analyzeHandler(w http.ResponseWriter, r *http.Request) {
 			SessionID: sessionID,
 		})
 		if createErr != nil {
-			slog.Warn("failed to create session", "error", createErr, "session_id", sessionID)
+			sessionFields := appendIdentityLogFields([]any{"error", createErr}, userID, sessionID)
+			slog.Warn("failed to create session", sessionFields...)
 		} else if createResp != nil && createResp.Session != nil {
 			getResp = &session.GetResponse{Session: createResp.Session}
 		}
@@ -335,7 +377,8 @@ func (o *orchestrator) analyzeHandler(w http.ResponseWriter, r *http.Request) {
 		SessionID: sessionID,
 	})
 	if getErr != nil {
-		slog.Warn("failed to load session state after run", "error", getErr, "user_id", userID, "session_id", sessionID)
+		sessionFields := appendIdentityLogFields([]any{"error", getErr}, userID, sessionID)
+		slog.Warn("failed to load session state after run", sessionFields...)
 	} else if getResp != nil && getResp.Session != nil && getResp.Session.State() != nil {
 		if val, err := getResp.Session.State().Get("analysis_result"); err == nil {
 			if str, ok := val.(string); ok {
@@ -351,19 +394,25 @@ func (o *orchestrator) analyzeHandler(w http.ResponseWriter, r *http.Request) {
 
 	if lastResult.Decision == nil && lastResult.Vision == nil && lastResult.SpeechText == "" {
 		o.errorCounter.Add(r.Context(), 1)
-		slog.Warn("agent graph produced no usable result", "trace_id", req.TraceID, "user_id", userID, "session_id", sessionID, "had_error", hadError, "elapsed", time.Since(analyzeStart).String())
+		resultFields := []any{
+			"trace_id", req.TraceID,
+			"had_error", hadError,
+			"elapsed", time.Since(analyzeStart).String(),
+		}
+		resultFields = appendIdentityLogFields(resultFields, userID, sessionID)
+		slog.Warn("agent graph produced no usable result", resultFields...)
 		http.Error(w, "agent graph failed to produce result", http.StatusServiceUnavailable)
 		return
 	}
 
-	slog.Info("[TIMING] analyze complete",
+	completeFields := []any{
 		"trace_id", req.TraceID,
-		"user_id", userID,
-		"session_id", sessionID,
 		"elapsed", time.Since(analyzeStart).String(),
 		"should_speak", lastResult.Decision != nil && lastResult.Decision.ShouldSpeak,
 		"speech_text_len", len(lastResult.SpeechText),
-	)
+	}
+	completeFields = appendIdentityLogFields(completeFields, userID, sessionID)
+	slog.Info("[TIMING] analyze complete", completeFields...)
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(lastResult); err != nil {
@@ -467,7 +516,8 @@ func (o *orchestrator) sessionSummaryHandler(w http.ResponseWriter, r *http.Requ
 
 	if o.memoryAgent != nil {
 		if err := o.memoryAgent.SaveSessionSummary(r.Context(), req.UserID, req.History, req.Language); err != nil {
-			slog.Warn("failed to save session summary", "user_id", req.UserID, "session_id", req.SessionID, "error", err)
+			summaryFields := appendIdentityLogFields([]any{"error", err}, req.UserID, req.SessionID)
+			slog.Warn("failed to save session summary", summaryFields...)
 			http.Error(w, "failed to save summary", http.StatusBadGateway)
 			return
 		}

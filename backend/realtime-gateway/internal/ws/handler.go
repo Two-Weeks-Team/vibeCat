@@ -964,8 +964,10 @@ func maybeResolveTool(ctx context.Context, c *Conn, ls *liveSessionState, adkCli
 		ls.clearPendingTurnTrace()
 		slog.Warn("[HANDLER] grounded tool prompt injection failed", "conn_id", c.ID, "error", err)
 		sendTraceEvent(c, "tool", traceID, "tool_prompt_injection_failed", rootAt, err.Error())
-		if speakWithTTSFallback(ctx, c, ls, ttsClient, metrics, "tool", traceID, rootAt, result.Summary, "tool_live_prompt_failed") {
+		ttsRecovered := speakWithTTSFallback(ctx, c, ls, ttsClient, metrics, "tool", traceID, rootAt, result.Summary, "tool_live_prompt_failed")
+		if ttsRecovered {
 			slog.Info("[HANDLER] grounded tool result recovered via TTS fallback", "conn_id", c.ID, "tool", result.Tool)
+			return true
 		}
 		sendProcessingState(c, "tool", traceID, "response_preparing", responsePreparingLabel(cfg.Language), toolPreparingDetail(result.Tool, cfg.Language), string(result.Tool), len(result.Sources), false)
 		return false
@@ -1104,7 +1106,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 							slog.Warn("send audio to gemini failed", "conn_id", c.ID, "error", sendErr)
 						}
 					} else if liveMgr == nil && !ls.isReconnecting() {
-						_ = rawConn.WriteMessage(websocket.BinaryMessage, data)
+						_ = lockedSendBinary(c, data)
 					}
 				}
 

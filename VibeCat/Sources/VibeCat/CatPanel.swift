@@ -12,6 +12,7 @@ final class CatPanel: NSPanel {
         static let titleLeading: CGFloat = 24
         static let titleTopInset: CGFloat = 6
         static let detailLeading: CGFloat = 10
+        static let detailHorizontalPadding: CGFloat = 16
         static let detailBottomInset: CGFloat = 5
         static let badgeBackgroundOpacity: CGFloat = 0.56
         static let dotSize = NSSize(width: 8, height: 8)
@@ -441,7 +442,7 @@ final class CatPanel: NSPanel {
         privacyDetailLabel.frame = NSRect(
             x: PrivacyBadgeLayout.detailLeading,
             y: PrivacyBadgeLayout.detailBottomInset,
-            width: badgeWidth - 16,
+            width: badgeWidth - PrivacyBadgeLayout.detailHorizontalPadding,
             height: detailSize.height
         )
     }
