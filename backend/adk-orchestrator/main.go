@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -344,6 +345,16 @@ func (o *orchestrator) analyzeHandler(w http.ResponseWriter, r *http.Request) {
 	// Run the agent graph
 	var lastResult models.AnalysisResult
 	var hadError bool
+	type agentTiming struct {
+		events    int
+		firstAt   time.Time
+		lastAt    time.Time
+		lastGap   time.Duration
+		finalSeen bool
+	}
+	agentTimings := make(map[string]*agentTiming)
+	agentOrder := make([]string, 0, 8)
+	lastEventAt := analyzeStart
 	for event, err := range o.runner.Run(r.Context(), userID, sessionID, msg, agent.RunConfig{}) {
 		if err != nil {
 			slog.Warn("agent graph error", "error", err)
@@ -357,7 +368,42 @@ func (o *orchestrator) analyzeHandler(w http.ResponseWriter, r *http.Request) {
 		if event.Author != "" {
 			agentName = event.Author
 		}
-		slog.Info("[GRAPH] agent event", "agent", agentName, "has_content", event.LLMResponse.Content != nil)
+		if agentName == "" {
+			agentName = "unknown"
+		}
+		eventAt := event.Timestamp
+		if eventAt.IsZero() {
+			eventAt = time.Now()
+		}
+		sincePrev := eventAt.Sub(lastEventAt)
+		if sincePrev < 0 {
+			sincePrev = 0
+		}
+		sinceStart := eventAt.Sub(analyzeStart)
+		if sinceStart < 0 {
+			sinceStart = 0
+		}
+		lastEventAt = eventAt
+		timing, ok := agentTimings[agentName]
+		if !ok {
+			timing = &agentTiming{}
+			agentTimings[agentName] = timing
+			agentOrder = append(agentOrder, agentName)
+		}
+		if timing.events == 0 {
+			timing.firstAt = eventAt
+		}
+		timing.events++
+		timing.lastAt = eventAt
+		timing.lastGap = sincePrev
+		timing.finalSeen = timing.finalSeen || event.IsFinalResponse()
+		slog.Info("[GRAPH] agent event",
+			"agent", agentName,
+			"since_start", sinceStart.String(),
+			"since_prev", sincePrev.String(),
+			"is_final", event.IsFinalResponse(),
+			"has_content", event.LLMResponse.Content != nil,
+		)
 		// Extract the last result from the final agent's output
 		if event.LLMResponse.Content != nil {
 			for _, part := range event.LLMResponse.Content.Parts {
@@ -369,6 +415,33 @@ func (o *orchestrator) analyzeHandler(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+	}
+	if len(agentOrder) > 0 {
+		summaries := make([]string, 0, len(agentOrder))
+		for _, agentName := range agentOrder {
+			timing := agentTimings[agentName]
+			firstOffset := timing.firstAt.Sub(analyzeStart)
+			if firstOffset < 0 {
+				firstOffset = 0
+			}
+			lastOffset := timing.lastAt.Sub(analyzeStart)
+			if lastOffset < 0 {
+				lastOffset = 0
+			}
+			summaries = append(summaries, fmt.Sprintf(
+				"%s(events=%d first=%s last=%s last_gap=%s final=%t)",
+				agentName,
+				timing.events,
+				firstOffset.Round(time.Millisecond),
+				lastOffset.Round(time.Millisecond),
+				timing.lastGap.Round(time.Millisecond),
+				timing.finalSeen,
+			))
+		}
+		slog.Info("[TIMING] analyze agent timeline",
+			"trace_id", req.TraceID,
+			"agents", strings.Join(summaries, " | "),
+		)
 	}
 
 	getResp, getErr = o.sessionService.Get(r.Context(), &session.GetRequest{

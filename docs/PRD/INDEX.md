@@ -4,7 +4,8 @@
 
 ## Core
 
-- `LIVE_AGENTS_PRD.md`: development purpose, business model, core diagram, mandatory requirements
+- `UI_NAVIGATOR_PRD.md`: current submission PRD for the UI Navigator pivot
+- `LIVE_AGENTS_PRD.md`: historical Live Agent PRD kept for auditability only
 
 ## Details
 

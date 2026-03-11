@@ -28,6 +28,7 @@ public final class AppSettings: @unchecked Sendable {
         case searchEnabled = "vibecat.searchEnabled"
         case proactiveAudio = "vibecat.proactiveAudio"
         case manualAnalysisOnly = "vibecat.manualAnalysisOnly"
+        case navigatorModeEnabled = "vibecat.navigatorModeEnabled"
     }
 
     public var language: String {
@@ -103,6 +104,14 @@ public final class AppSettings: @unchecked Sendable {
     public var manualAnalysisOnly: Bool {
         get { defaults.bool(forKey: Key.manualAnalysisOnly.rawValue) }
         set { defaults.set(newValue, forKey: Key.manualAnalysisOnly.rawValue) }
+    }
+
+    public var navigatorModeEnabled: Bool {
+        get {
+            if defaults.object(forKey: Key.navigatorModeEnabled.rawValue) == nil { return true }
+            return defaults.bool(forKey: Key.navigatorModeEnabled.rawValue)
+        }
+        set { defaults.set(newValue, forKey: Key.navigatorModeEnabled.rawValue) }
     }
 
     private init() {}

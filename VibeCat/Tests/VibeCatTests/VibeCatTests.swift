@@ -14,7 +14,8 @@ final class VibeCatTests: XCTestCase {
         "vibecat.gatewayURL",
         "vibecat.searchEnabled",
         "vibecat.proactiveAudio",
-        "vibecat.manualAnalysisOnly"
+        "vibecat.manualAnalysisOnly",
+        "vibecat.navigatorModeEnabled"
     ]
 
     override func setUp() {
@@ -42,6 +43,7 @@ final class VibeCatTests: XCTestCase {
         XCTAssertTrue(settings.searchEnabled)
         XCTAssertTrue(settings.proactiveAudio)
         XCTAssertFalse(settings.manualAnalysisOnly)
+        XCTAssertTrue(settings.navigatorModeEnabled)
     }
 
     func testAppSettingsPersistedValuesAreReturned() {
@@ -59,6 +61,7 @@ final class VibeCatTests: XCTestCase {
         settings.searchEnabled = true
         settings.proactiveAudio = true
         settings.manualAnalysisOnly = true
+        settings.navigatorModeEnabled = false
 
         XCTAssertEqual(settings.language, "en")
         XCTAssertEqual(settings.voice, "Kore")
@@ -72,6 +75,7 @@ final class VibeCatTests: XCTestCase {
         XCTAssertTrue(settings.searchEnabled)
         XCTAssertTrue(settings.proactiveAudio)
         XCTAssertTrue(settings.manualAnalysisOnly)
+        XCTAssertFalse(settings.navigatorModeEnabled)
     }
 
     func testCaptureIntervalFallsBackToDefaultWhenNonPositive() {

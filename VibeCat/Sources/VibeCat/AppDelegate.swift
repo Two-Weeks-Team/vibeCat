@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var speechRecognizer: SpeechRecognizer?
     private var audioDeviceMonitor: AudioDeviceMonitor?
     private var circleGestureDetector: CircleGestureDetector?
+    private var accessibilityNavigator: AccessibilityNavigator?
     private var recentSpeechStore = RecentSpeechStore()
     private var emotionTransitionStore = EmotionTransitionStore()
     private var globalHotkeyMonitor: Any?
@@ -92,6 +93,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var traceReadyForClear = false
     private var activeProcessingTraceID: String?
     private var pendingBubbleMeta: String?
+    private var activeNavigatorCommand: String?
+
+    private enum NavigatorPromptState {
+        case clarification(command: String)
+        case risky(command: String)
+    }
+
+    private var navigatorPromptState: NavigatorPromptState?
 
     private func activeTraceLogContext() -> String? {
         guard let activeTraceContext else { return nil }
@@ -342,6 +351,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if isPaused {
             title = VibeCatL10n.captureIndicatorPaused()
             color = .systemGray
+        } else if AppSettings.shared.navigatorModeEnabled {
+            title = VibeCatL10n.captureIndicatorNavigator()
+            color = .systemBlue
         } else if AppSettings.shared.manualAnalysisOnly {
             title = VibeCatL10n.captureIndicatorManual()
             color = .systemOrange
@@ -377,6 +389,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let audioDeviceMonitor = AudioDeviceMonitor()
         let circleGestureDetector = CircleGestureDetector()
         let companionChatPanel = CompanionChatPanel()
+        let accessibilityNavigator = AccessibilityNavigator()
 
         self.audioPlayer = audio
         self.catVoice = voice
@@ -389,6 +402,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.audioDeviceMonitor = audioDeviceMonitor
         self.circleGestureDetector = circleGestureDetector
         self.companionChatPanel = companionChatPanel
+        self.accessibilityNavigator = accessibilityNavigator
 
         let analyzer = ScreenAnalyzer(
             captureService: capture,
@@ -442,7 +456,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.clearPendingBubbleMeta()
             self.companionChatPanel?.addUserMessage(text)
             self.companionChatPanel?.addLoadingPlaceholder()
-            self.gatewayClient?.sendText(text)
+            self.handleNavigatorTextSubmission(text)
             self.statusBarController?.recordInteraction()
         }
         companionChatPanel.onDismissed = { [weak self] in
@@ -480,6 +494,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         sbc.onProactiveAudioToggled = { [weak self] in
             self?.gatewayClient?.resendSetupPayloadIfConnected()
+        }
+        sbc.onNavigatorModeToggled = { [weak self] _ in
+            self?.handleNavigatorModeToggle()
         }
         sbc.onManualAnalysisToggled = { [weak self] _ in
             self?.handleManualAnalysisToggle()
@@ -716,6 +733,83 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .toolResult(let tool, _, _, let sources):
                 NSLog("[GW-IN] onMessage: toolResult, tool=%@, sources=%lu", tool, sources.count)
                 self.updatePendingBubbleMeta(tool: tool, sourceCount: sources.count)
+            case .navigatorCommandAccepted(let command, let intentClass, let intentConfidence):
+                NSLog("[GW-IN] navigator.commandAccepted command=%@ intent=%@ confidence=%.2f", command, intentClass.rawValue, intentConfidence)
+                self.activeNavigatorCommand = command
+                self.navigatorPromptState = nil
+                chatPanel?.updateLastAssistantMessage(VibeCatL10n.navigatorAccepted(intent: intentClass, confidence: intentConfidence))
+                self.showStatusBubbleIfAllowed(
+                    panel: panel,
+                    text: VibeCatL10n.navigatorActingTitle(),
+                    detail: command,
+                    context: "navigator_command_accepted"
+                )
+            case .navigatorIntentClarificationNeeded(let command, let question):
+                NSLog("[GW-IN] navigator.intentClarificationNeeded command=%@", command)
+                self.activeNavigatorCommand = command
+                self.navigatorPromptState = .clarification(command: command)
+                chatPanel?.updateLastAssistantMessage(question)
+                self.showStatusBubbleIfAllowed(
+                    panel: panel,
+                    text: VibeCatL10n.navigatorClarifyingTitle(),
+                    detail: question,
+                    context: "navigator_clarification"
+                )
+            case .navigatorStepPlanned(let step, let message):
+                NSLog("[GW-IN] navigator.stepPlanned id=%@ action=%@", step.id, step.actionType.rawValue)
+                chatPanel?.updateLastAssistantMessage(message.isEmpty ? step.expectedOutcome : message)
+                self.showStatusBubbleIfAllowed(
+                    panel: panel,
+                    text: VibeCatL10n.navigatorActingTitle(),
+                    detail: step.expectedOutcome,
+                    context: "navigator_step_planned"
+                )
+                self.executeNavigatorStep(step, panel: panel, chatPanel: chatPanel)
+            case .navigatorStepRunning(let stepId, let status):
+                NSLog("[GW-IN] navigator.stepRunning id=%@ status=%@", stepId, status)
+            case .navigatorStepVerified(_, _, let observedOutcome):
+                chatPanel?.updateLastAssistantMessage(observedOutcome)
+            case .navigatorRiskyActionBlocked(let command, let question, let reason):
+                NSLog("[GW-IN] navigator.riskyActionBlocked command=%@ reason=%@", command, reason)
+                self.activeNavigatorCommand = command
+                self.navigatorPromptState = .risky(command: command)
+                chatPanel?.updateLastAssistantMessage(question)
+                self.showStatusBubbleIfAllowed(
+                    panel: panel,
+                    text: VibeCatL10n.navigatorConfirmTitle(),
+                    detail: reason,
+                    context: "navigator_risk"
+                )
+            case .navigatorGuidedMode(_, let instruction):
+                self.navigatorPromptState = nil
+                self.activeNavigatorCommand = nil
+                chatPanel?.updateLastAssistantMessage(instruction)
+                self.showStatusBubbleIfAllowed(
+                    panel: panel,
+                    text: VibeCatL10n.navigatorGuidedModeTitle(),
+                    detail: instruction,
+                    context: "navigator_guided"
+                )
+            case .navigatorCompleted(let summary):
+                self.navigatorPromptState = nil
+                self.activeNavigatorCommand = nil
+                chatPanel?.updateLastAssistantMessage(summary)
+                self.showStatusBubbleIfAllowed(
+                    panel: panel,
+                    text: VibeCatL10n.navigatorDoneTitle(),
+                    detail: summary,
+                    context: "navigator_completed"
+                )
+            case .navigatorFailed(let reason):
+                self.navigatorPromptState = nil
+                self.activeNavigatorCommand = nil
+                chatPanel?.updateLastAssistantMessage(reason)
+                self.showStatusBubbleIfAllowed(
+                    panel: panel,
+                    text: VibeCatL10n.navigatorFailedTitle(),
+                    detail: reason,
+                    context: "navigator_failed"
+                )
             case .inputTranscription(let text, let finished):
                 NSLog("[GW-IN] onMessage: inputTranscription, text=%@, finished=%d", String(text.prefix(60)), finished)
                 if !finished,
@@ -880,6 +974,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func handleManualAnalysisToggle() {
         screenAnalyzer?.reloadCapturePolicy()
+        refreshCapturePrivacyUI()
+    }
+
+    private func handleNavigatorModeToggle() {
+        screenAnalyzer?.reloadCapturePolicy()
+        gatewayClient?.resendSetupPayloadIfConnected()
         refreshCapturePrivacyUI()
     }
 
@@ -1082,5 +1182,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func localizedCharacterName(_ character: String) -> String {
         VibeCatL10n.characterName(character)
+    }
+
+    private func currentNavigatorContext() -> NavigatorContextPayload {
+        accessibilityNavigator?.currentContext()
+            ?? NavigatorContextPayload(
+                appName: "",
+                bundleId: "",
+                windowTitle: "",
+                focusedRole: "",
+                focusedLabel: "",
+                selectedText: "",
+                axSnapshot: "",
+                accessibilityTrusted: false
+            )
+    }
+
+    private func handleNavigatorTextSubmission(_ text: String) {
+        let context = currentNavigatorContext()
+        switch navigatorPromptState {
+        case .clarification(let command):
+            gatewayClient?.sendNavigatorClarificationResponse(
+                originalCommand: command,
+                answer: text,
+                context: context
+            )
+        case .risky(let command):
+            gatewayClient?.sendNavigatorRiskConfirmation(
+                originalCommand: command,
+                answer: text,
+                context: context
+            )
+        case nil:
+            activeNavigatorCommand = text
+            gatewayClient?.sendNavigatorCommand(text, context: context)
+        }
+    }
+
+    private func executeNavigatorStep(_ step: NavigatorStep, panel: CatPanel?, chatPanel: CompanionChatPanel?) {
+        let command = activeNavigatorCommand ?? ""
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let result = await self.accessibilityNavigator?.execute(step: step)
+                ?? NavigatorExecutionResult(status: "failed", observedOutcome: "Navigator executor unavailable")
+            self.gatewayClient?.sendNavigatorRefresh(
+                command: command,
+                step: step,
+                status: result.status,
+                observedOutcome: result.observedOutcome,
+                context: self.currentNavigatorContext()
+            )
+            self.showStatusBubbleIfAllowed(
+                panel: panel,
+                text: VibeCatL10n.navigatorVerifyingTitle(),
+                detail: result.observedOutcome,
+                context: "navigator_step_result"
+            )
+            if result.status == "guided_mode" {
+                chatPanel?.updateLastAssistantMessage(result.observedOutcome)
+            }
+        }
     }
 }
