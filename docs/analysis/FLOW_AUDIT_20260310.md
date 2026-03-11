@@ -1,5 +1,7 @@
 # Flow Audit 2026-03-10
 
+> Historical snapshot note: this audit references the 2026-03-10 runtime and older Cloud Run revisions. Treat it as a dated analysis artifact, not the current operational source of truth.
+
 ## 기준
 
 - 공식 문서

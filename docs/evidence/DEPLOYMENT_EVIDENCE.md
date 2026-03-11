@@ -1,11 +1,10 @@
 # VibeCat Deployment Evidence
 
-**Collected**: 2026-03-09 (updated)
-**Project**: vibecat-489105
-**Region**: asia-northeast3 (Seoul)
-**Last Deploy**: 2026-03-09
+**Collected:** 2026-03-11
+**Project:** `vibecat-489105`
+**Region:** `asia-northeast3`
 
----
+This document reflects the live deployment and CI state verified on 2026-03-11. It replaces older evidence that still referenced pre-`00040`/`00038` revisions or older CI runs.
 
 ## 1. Cloud Run Services
 
@@ -13,59 +12,43 @@
 
 | Field | Value |
 |-------|-------|
-| Service Name | `realtime-gateway` |
-| URL | `https://realtime-gateway-163070481841.asia-northeast3.run.app` |
-| Status | **Ready** (True) |
-| Active Revision | `realtime-gateway-00010-m9p` |
-| Traffic | 100% → latest revision |
-| Created | 2026-03-04T00:28:46Z |
-| Auth | Public (`allUsers` → `roles/run.invoker`) |
+| Service | `realtime-gateway` |
+| Ready Revision | `realtime-gateway-00040-gcd` |
+| Traffic | `100%` to latest revision |
+| Canonical URL | `https://realtime-gateway-a4akw2crra-du.a.run.app` |
+| Legacy URL Alias | `https://realtime-gateway-163070481841.asia-northeast3.run.app` |
+| Ingress | `all` |
+| Access | public |
+| Service Account | `163070481841-compute@developer.gserviceaccount.com` |
 
-**Key Changes in 00010**:
-- Rest reminder pipeline: `activityMinutes` passthrough from client → orchestrator
-- Cloud Monitoring custom metrics via OpenTelemetry metric exporter
-- Live API reconnection race condition fix (`reconnecting` state flag)
-- Conditional session nil with pointer comparison (prevents killing newer sessions)
-- Audio frame drop during reconnect state
+Verified responses:
 
-**Health Check**:
-```
-GET /health → 200 OK
-{"connections":0,"service":"realtime-gateway","status":"ok"}
-
-GET /readyz → 200 OK
-{"service":"realtime-gateway","status":"ok"}
+```text
+GET /health  -> 200 {"connections":0,"service":"realtime-gateway","status":"ok"}
+GET /readyz  -> 200 {"service":"realtime-gateway","status":"ok"}
 ```
 
 ### ADK Orchestrator
 
 | Field | Value |
 |-------|-------|
-| Service Name | `adk-orchestrator` |
-| URL | `https://adk-orchestrator-163070481841.asia-northeast3.run.app` |
-| Status | **Ready** (True) |
-| Active Revision | `adk-orchestrator-00011-qj4` |
-| Traffic | 100% → latest revision |
-| Access | Internal only (invoked by Gateway via `POST /analyze`) |
+| Service | `adk-orchestrator` |
+| Ready Revision | `adk-orchestrator-00038-t4c` |
+| Traffic | `100%` to latest revision |
+| Canonical URL | `https://adk-orchestrator-a4akw2crra-du.a.run.app` |
+| Legacy URL Alias | `https://adk-orchestrator-163070481841.asia-northeast3.run.app` |
+| Ingress | `all` |
+| Access | authenticated invocation required |
+| Service Account | `163070481841-compute@developer.gserviceaccount.com` |
 
-**Key Changes in 00011**:
-- ADK `retryandreflect` plugin for automatic agent failure recovery
-- ADK `loopagent` wrapping search for iterative refinement
-- ADK `BeforeModel/AfterModel` callbacks on LLM search agent (logging, guard-rails)
-- Cloud Monitoring custom metrics (3 OTel instruments: agent duration, active sessions, analysis counter)
-- Rest reminder system: 50-minute activity tracking → proactive break suggestions
-- Session state management for activity minutes tracking
-- LLM dynamic message generation for Mediator, Celebration, Engagement agents
-- All hardcoded speech message pools replaced with `gemini-3.1-flash-lite-preview` generation
-- `llmSearchAgent` wired as live SubAgent in wave3
-- `genaiClient` passed to mediator, celebration, engagement constructors
+Verified responses:
 
-**Health Check**:
-```
-GET /health → 200 OK
+```text
+Anonymous GET /health         -> 403 Forbidden
+Authenticated GET /health     -> {"service":"adk-orchestrator","status":"ok"}
 ```
 
----
+The orchestrator is reachable from Cloud Run but not intended as a public health endpoint.
 
 ## 2. GCP Infrastructure
 
@@ -74,277 +57,116 @@ GET /health → 200 OK
 | Field | Value |
 |-------|-------|
 | Database | `(default)` |
-| Type | FIRESTORE_NATIVE |
-| Location | asia-northeast3 |
-| Collections | sessions, metrics, memory |
+| Type | `FIRESTORE_NATIVE` |
+| Location | `asia-northeast3` |
+| Concurrency | `PESSIMISTIC` |
 
 ### Secret Manager
 
-| Secret | Created |
-|--------|---------|
-| `vibecat-gemini-api-key` | 2026-03-04T00:19:19 |
-| `vibecat-gateway-auth-secret` | 2026-03-04T00:19:22 |
+| Secret | Replication |
+|--------|-------------|
+| `vibecat-gemini-api-key` | user-managed, `asia-northeast3` |
+| `vibecat-gateway-auth-secret` | user-managed, `asia-northeast3` |
 
 ### Artifact Registry
 
-| Repository | Format | Created |
-|------------|--------|---------|
-| `vibecat-images` | DOCKER | 2026-03-04T09:19:04 |
-
-### Observability
-
-| Service | Status | Details |
-|---------|--------|---------|
-| Cloud Trace | ✅ Active | OpenTelemetry → `opentelemetry-operations-go/exporter/trace` |
-| Cloud Logging | ✅ Active | `cloud.google.com/go/logging` structured JSON |
-| Cloud Monitoring | ✅ Active | OpenTelemetry → `opentelemetry-operations-go/exporter/metric` — 3 custom metrics: agent duration histogram, active sessions gauge, analysis counter |
-| ADK Telemetry | ✅ Active | `google.golang.org/adk/telemetry` with GCP resource |
-
----
-
-## 3. CI/CD Pipeline
-
-### GitHub Actions CI — Run #22657462395
-
-**Repository**: `Two-Weeks-Team/vibeCat`
-**Branch**: `master`
-**Status**: **SUCCESS** (all 4 jobs passed)
-**URL**: `https://github.com/Two-Weeks-Team/vibeCat/actions/runs/22657462395`
-
-| Job | Result | Started | Completed |
-|-----|--------|---------|-----------|
-| Client (Swift 6 / macOS) — Build + Test | **success** | 06:10:48 | 06:11:12 |
-| Gateway (Go) — Build + Test + Vet | **success** | 06:10:47 | 06:12:01 |
-| Orchestrator (Go) — Build + Test + Vet | **success** | 06:10:47 | 06:12:06 |
-| Docker — Build images | **success** | 06:10:47 | 06:11:59 |
-
-### CD Pipeline
-
 | Field | Value |
 |-------|-------|
-| File | `.github/workflows/cd.yml` |
-| Trigger | `workflow_dispatch` (manual) |
-| Targets | Cloud Run: realtime-gateway + adk-orchestrator |
-| Post-Deploy | E2E smoke test against deployed services |
+| Repository | `vibecat-images` |
+| Format | `DOCKER` |
+| Location | `asia-northeast3` |
+| Description | `VibeCat backend container images` |
 
----
+## 3. Observability
 
-## 4. Test Coverage
+### Cloud Logging
 
-### Backend — Realtime Gateway (Go)
+Observed on 2026-03-11:
 
-| Package | Coverage |
-|---------|----------|
-| auth | 84.8% |
-| adk | 69.0% |
-| live | 53.7% |
-| ws | 9.2% |
-
-### Backend — ADK Orchestrator (Go)
-
-| Package | Coverage |
-|---------|----------|
-| topic | 100.0% |
-| prompts | 91.7% |
-| engagement | 84.0% |
-| celebration | 78.9% |
-| graph | 67.9% |
-| mood | 64.4% |
-| mediator | 44.8% |
-| search | 34.7% |
-| vision | 33.3% |
-| scheduler | 32.0% |
-| memory | 30.2% |
-| store | 13.8% |
-
-### macOS Client (Swift)
-
-| Test Suite | Tests | Status |
-|------------|-------|--------|
-| ImageDifferTests | 4 | **pass** |
-| ImageProcessorTests | 4 | **pass** |
-| PCMConverterTests | 4 | **pass** |
-| ModelsTests | 4 | **pass** |
-| AudioMessageParserTests | 4 | **pass** |
-| SettingsTests | 4 | **pass** |
-| ScreenAnalyzerTests | 7 | **pass** |
-| **Total** | **31** | **all pass** |
-
-### E2E Tests
-
-| Test | Description | Status |
-|------|-------------|--------|
-| TestHealthCheck | Gateway `/readyz` returns 200 | **pass** |
-| TestJWTRegistration | `POST /api/v1/register` returns JWT | **pass** |
-| TestTokenRefresh | `POST /api/v1/refresh` with valid token | **pass** |
-| TestWebSocketUpgrade | WS upgrade with auth header | **pass** |
-| TestGeminiSetup | Gemini Live session initialization | **pass** |
-| TestAuthRejection | No-auth request → 401 | **pass** |
-| TestInvalidTokenRejection | Bad token → 401 | **pass** |
-
----
-
-## 5. Architecture Verification
-
-### Three-Layer Split (Challenge Requirement)
-
-```
-[macOS Client] ←WebSocket→ [Realtime Gateway] ←HTTP→ [ADK Orchestrator]
-     Swift 6              Go + GenAI SDK          Go + ADK Go SDK
-     Local                Cloud Run               Cloud Run
+```text
+2026-03-11T02:36:18Z realtime-gateway      realtime-gateway-00040-gcd      INFO
+2026-03-11T02:36:25Z adk-orchestrator      adk-orchestrator-00038-t4c      INFO
 ```
 
-- Client NEVER calls Gemini API directly
-- All model calls through backend Gateway
-- API key stored in Secret Manager, never on client
-- Gateway proxies to Gemini Live API via GenAI SDK
-- Orchestrator runs 9-agent graph via ADK Go SDK
+Both services are emitting Cloud Run logs.
 
-### Required Stack (All Present)
+### Cloud Trace
 
-| Requirement | Implementation | Verified |
-|-------------|---------------|----------|
-| GenAI SDK | `google.golang.org/genai v1.48.0` in Gateway + Orchestrator | Yes |
-| Google ADK | `google.golang.org/adk v0.5.0` in Orchestrator | Yes |
-| Gemini Live API | Live session via GenAI SDK | Yes |
-| VAD | `automaticActivityDetection: true` | Yes |
+Recent trace IDs were returned by the Cloud Trace API on 2026-03-11:
 
-### 9 Agents (All Implemented)
-
-| Agent | Package | Status |
-|-------|---------|--------|
-| VAD | Gemini Live API config | Implemented |
-| VisionAgent | `agents/vision` | Implemented + tested |
-| Mediator | `agents/mediator` | Implemented + tested + LLM dynamic messages |
-| AdaptiveScheduler | `agents/scheduler` | Implemented + tested |
-| EngagementAgent | `agents/engagement` | Implemented + tested + LLM dynamic messages |
-| MemoryAgent | `agents/memory` | Implemented + tested |
-| MoodDetector | `agents/mood` | Implemented + tested |
-| CelebrationTrigger | `agents/celebration` | Implemented + tested + LLM dynamic messages |
-| SearchBuddy | `agents/search` | Implemented + tested |
-| LLMSearchBuddy | `agents/search` (llmagent) | Implemented (wave3 SubAgent) |
-
-### Agent Graph (3-Wave Architecture)
-
-```
-runner.New(Config{
-  Agent: sequentialagent → [
-    parallelagent → [Vision, Memory]         ← Wave 1: Parallel perception
-    parallelagent → [Mood, Celebration]       ← Wave 2: Parallel emotion
-    sequentialagent → [Mediator, Scheduler, Engagement, SearchBuddy, LLMSearchBuddy]  ← Wave 3: Sequential decision
-  ],
-  SessionService: session.InMemoryService(),
-  MemoryService: memory.InMemoryService(),
-})
+```text
+007dec0efd190738d0b27d8df33ca788
+00c2bb5cb274501fbd3a0b8edb7de5e4
+028b73af0956f4bd59081485878a5a33
 ```
 
-### ADK Features Used (14)
+Trace export is active. What is still incomplete is the acceptance-level verification of end-to-end Gateway-to-Orchestrator propagation.
 
-| # | Feature | Import |
-|---|---------|--------|
-| 1 | `agent.New()` | `google.golang.org/adk/agent` |
-| 2 | `sequentialagent.New()` | `.../workflowagents/sequentialagent` |
-| 3 | `parallelagent.New()` | `.../workflowagents/parallelagent` |
-| 4 | `loopagent.New()` | `.../workflowagents/loopagent` |
-| 5 | `llmagent.New()` | `google.golang.org/adk/agent/llmagent` |
-| 6 | `session.InMemoryService()` | `google.golang.org/adk/session` |
-| 7 | `memory.InMemoryService()` | `google.golang.org/adk/memory` |
-| 8 | `runner.New()` | `google.golang.org/adk/runner` |
-| 9 | `telemetry.New()` | `google.golang.org/adk/telemetry` |
-| 10 | `session.State/Event` | `google.golang.org/adk/session` |
-| 11 | `functiontool.New()` | `google.golang.org/adk/tool/functiontool` |
-| 12 | `geminitool.GoogleSearch{}` | `google.golang.org/adk/tool/geminitool` |
-| 13 | `retryandreflect` plugin | `google.golang.org/adk/plugin/retryandreflect` |
-| 14 | `BeforeModel/AfterModel` callbacks | `google.golang.org/adk/agent/llmagent` |
+### Cloud Monitoring
 
-### AI Models Used
+| Item | Status |
+|------|--------|
+| metric exporter in code | present |
+| dashboards in project | none configured |
 
-| Model | Purpose | Location |
-|-------|---------|----------|
-| `gemini-2.5-flash-native-audio-latest` | Live API (voice conversation) | Gateway |
-| `gemini-2.5-flash-preview-tts` | Text-to-speech | Gateway |
-| `gemini-3.1-flash-lite-preview` | Vision analysis | Orchestrator |
-| `gemini-3.1-flash-lite-preview` | LLM Search agent | Orchestrator |
-| `gemini-3.1-flash-lite-preview` | Dynamic message generation (Mediator, Celebration, Engagement) | Orchestrator |
+Cloud Monitoring is not complete enough to close the operational acceptance on its own.
 
----
+## 4. CI/CD Baseline
 
-## 6. Blog Posts (dev.to — username: `combba`)
+### GitHub Actions CI
 
-### Published (4)
+| Run | Commit | Result | Notes |
+|-----|--------|--------|-------|
+| `22932978716` | `ac5e4bf` | success | latest fully green run |
+| `22933714954` | `7356f8c` | failure | only Swift self-hosted runner step failed |
 
-| # | Title | Date | URL |
-|---|-------|------|-----|
-| 1 | "I tried turning scattered features into one experience" | Feb 25 | https://dev.to/combba/today-i-tried-turning-scattered-features-into-one-experience-39cp |
-| 2 | "the websocket cascade from hell" | Feb 25 | https://dev.to/combba/the-websocket-cascade-from-hell-3o1a |
-| 3 | "missless failed at real-time video — so we pivoted to vibeCat" | Mar 4 | https://dev.to/combba/missless-failed-at-real-time-video-so-we-pivoted-to-vibecat-1bdn |
-| 4 | "the empty chair problem — why I'm building a desktop AI instead of another chatbot" | Mar 6 | https://dev.to/combba/the-empty-chair-problem-why-im-building-a-desktop-ai-instead-of-another-chatbot-46fm |
+Latest `master` CI job status on `22933714954`:
 
-### Drafts (1 on dev.to + 3 prepared locally)
+| Job | Result |
+|-----|--------|
+| Gateway (Go) — Build + Test + Vet | success |
+| Orchestrator (Go) — Build + Test + Vet | success |
+| Docker — Build images | success |
+| Client (Swift 6 / macOS) — Build + Test | failure |
 
-| # | Title | Status |
-|---|-------|--------|
-| 5 | "the cat that watches your screen: building vibecat for the gemini live agent challenge" | **Draft** (on dev.to) |
-| 6 | "Teaching Nine Agents to Think Like a Colleague" | **Draft** (prepared) |
-| 7 | "Six Characters, One Soul Format" | **Draft** (prepared) |
-| 8 | "from localhost to Cloud Run: deploying a multi-agent system" | **Draft** (prepared) |
+Swift failure details:
 
-### Narrative Arc
-
-1. missless early development (Posts 1-2) → missless failure & pivot (Post 3) → VibeCat philosophy (Post 4) → VibeCat technical deep-dives (Posts 5-8)
-
-All posts include `#GeminiLiveAgentChallenge` tag + hackathon disclosure statement for +0.6 bonus points.
-Blog publishing is user-managed — user will set posts to public.
-
----
-
-## 7. Client Configuration
-
-| Setting | Default Value |
-|---------|--------------|
-| Gateway URL | `wss://realtime-gateway-163070481841.asia-northeast3.run.app` |
-| Language | `ko` |
-| Voice | `Zephyr` |
-| Character | `cat` |
-| Chattiness | `normal` |
-| Capture Interval | 5.0s |
-| Live Model | `gemini-2.5-flash-native-audio-latest` |
-
----
-
-## 8. Live API Features
-
-| Feature | Status |
-|---------|--------|
-| VAD (Voice Activity Detection) | ✅ Active |
-| Barge-in (StartOfActivityInterrupts) | ✅ Active |
-| ProactiveAudio | ✅ Active |
-| OutputAudioTranscription | ✅ Active |
-| InputAudioTranscription | ✅ Active |
-| ContextWindowCompression | ✅ Active (trigger 4096, target 2048) |
-| SessionResumption | ✅ Active (handle-based) |
-| AffectiveDialog | ✅ Active |
-
----
-
-## Verification Commands
-
-```bash
-# Health check
-curl https://realtime-gateway-163070481841.asia-northeast3.run.app/health
-curl https://realtime-gateway-163070481841.asia-northeast3.run.app/readyz
-
-# Cloud Run status
-gcloud run services list --project=vibecat-489105 --region=asia-northeast3
-
-# Run all tests
-make test                    # Swift (31 tests)
-make backend-test            # Go (Gateway + Orchestrator)
-
-# Build & run client
-make run
-
-# Local backend development
-source .env && cd backend/adk-orchestrator && PORT=9091 GEMINI_API_KEY=$GEMINI_API_KEY go run .
-source .env && cd backend/realtime-gateway && PORT=9090 GEMINI_API_KEY=$GEMINI_API_KEY ADK_ORCHESTRATOR_URL=http://localhost:9091 go run .
+```text
+Step: Select Xcode 16+ and accept license
+Cause: No licensed Xcode installation is available on this runner.
 ```
+
+### Deployment Workflow
+
+| Item | State |
+|------|-------|
+| GitHub CD workflow | present (`.github/workflows/cd.yml`) |
+| Deploy trigger | manual `workflow_dispatch` |
+| Cloud Build YAML | present for both backend services |
+| Cloud Build triggers in GCP | none configured |
+
+## 5. Project Progress Summary
+
+The deployed system is no longer scaffolding. The repository contains a working Swift client, a deployed Realtime Gateway, a deployed ADK Orchestrator, tests, and deployment automation.
+
+What still remains is not foundational implementation but release hardening:
+
+- ops evidence pack completion
+- privacy controls UI
+- Cloud Monitoring dashboard and trace verification
+- full companion-intelligence E2E proof
+- degraded-mode fallback behavior for Gemini and ADK failures
+
+## 6. Meaningful Remaining Issues
+
+The issues that still map cleanly to real unfinished work are:
+
+- `#57` deployment and operations evidence pack
+- `#64` privacy controls UI
+- `#90` Cloud Logging and Monitoring completion
+- `#91` Cloud Trace completion
+- `#117` full companion intelligence integration test
+- `#120` Gemini unavailable fallback
+- `#121` ADK timeout fallback
+
+The other still-open issues are either consolidatable into `#57`, optional UX, or already superseded by the current deployment/tooling reality.

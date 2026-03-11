@@ -1,5 +1,7 @@
 # VibeCat Full Execution Plan
 
+> HISTORICAL PLAN NOTE (2026-03-11): this is the original execution plan, not the current implementation ledger. Several completion gates and health endpoint examples are obsolete. Refer to `docs/CURRENT_STATUS_20260311.md` for the live baseline.
+
 ## TL;DR
 
 > **Quick Summary**: Build VibeCat — a macOS desktop AI companion for the Gemini Live Agent Challenge 2026. 122 tasks organized into 4 macro-phases for a solo developer: Spike validation → Backend (Go) → Client (Swift) → Demo & Submission. Demo-driven development: features shown in the 4-minute demo get P0 priority.

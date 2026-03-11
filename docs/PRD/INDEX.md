@@ -1,5 +1,7 @@
 # PRD Index
 
+> Status note (2026-03-11): this index catalogs the product requirements and target-state planning documents. For current implementation, deployment, and issue truth, start with `docs/CURRENT_STATUS_20260311.md`, `docs/evidence/DEPLOYMENT_EVIDENCE.md`, and `AGENTS.md`.
+
 ## Core
 
 - `LIVE_AGENTS_PRD.md`: development purpose, business model, core diagram, mandatory requirements

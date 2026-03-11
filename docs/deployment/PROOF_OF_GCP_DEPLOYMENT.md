@@ -2,77 +2,107 @@
 
 **Project ID**: `vibecat-489105`
 **Region**: `asia-northeast3`
-**Date**: 2026-03-06
+**Verification Date**: 2026-03-11
+
+This file is the concise deployment-proof view for final handoff and submission packaging.
 
 ## Cloud Run Services
 
 ### Realtime Gateway
-- Service URL: `https://realtime-gateway-163070481841.asia-northeast3.run.app`
-- Health: `GET /health` → 200 `{"connections":0,"service":"realtime-gateway","status":"ok"}`
-- Ready: `GET /readyz` → 200 `{"service":"realtime-gateway","status":"ok"}`
-- Revision: `realtime-gateway-00006-mq9`
-- Auth: Public (`allUsers` → `roles/run.invoker`)
-- Screenshot: [ATTACH]
+
+- service: `realtime-gateway`
+- ready revision: `realtime-gateway-00040-gcd`
+- URL: `https://realtime-gateway-a4akw2crra-du.a.run.app`
+- legacy alias: `https://realtime-gateway-163070481841.asia-northeast3.run.app`
+- traffic: `100%`
+- access: public
+- health:
+  - `GET /health` -> `200 {"connections":0,"service":"realtime-gateway","status":"ok"}`
+  - `GET /readyz` -> `200 {"service":"realtime-gateway","status":"ok"}`
 
 ### ADK Orchestrator
-- Service URL: `https://adk-orchestrator-163070481841.asia-northeast3.run.app`
-- Health: `GET /health` → 200
-- Revision: `adk-orchestrator-00008-5t2`
-- Auth: Internal only (service account → `roles/run.invoker`)
-- Screenshot: [ATTACH]
 
-## Cloud Build
-- Gateway build: `eb802b72` → SUCCESS (1m46s)
-- Orchestrator build: `6e335282` → SUCCESS (2m22s)
-- Artifact Registry: `asia-northeast3-docker.pkg.dev/vibecat-489105/vibecat-images/`
+- service: `adk-orchestrator`
+- ready revision: `adk-orchestrator-00038-t4c`
+- URL: `https://adk-orchestrator-a4akw2crra-du.a.run.app`
+- legacy alias: `https://adk-orchestrator-163070481841.asia-northeast3.run.app`
+- traffic: `100%`
+- access: authenticated invocation required
+- health:
+  - anonymous `GET /health` -> `403 Forbidden`
+  - authenticated `GET /health` with identity token -> `{"service":"adk-orchestrator","status":"ok"}`
 
-## Firestore
-- Location: `asia-northeast3`
-- Collections: `sessions`, `users`
-- Screenshot: [ATTACH]
+## Supporting GCP Resources
 
-## Secret Manager
-- `vibecat-gemini-api-key`: Active (1 version)
-- `vibecat-gateway-auth-secret`: Active (1 version)
-- Region: `asia-northeast3` (user-managed)
-- Screenshot: [ATTACH]
+### Firestore
 
-## Observability
-- Cloud Trace: OpenTelemetry spans via `opentelemetry-operations-go/exporter/trace`
-  - Gateway: `gateway.ws.handle`, `adk.analyze` spans
-  - Orchestrator: `orchestrator.analyze` span
-- Cloud Logging: Structured JSON via `cloud.google.com/go/logging`
-- ADK Telemetry: `google.golang.org/adk/telemetry` with GCP resource project
-- Screenshot: [ATTACH Cloud Trace Explorer showing spans]
+- database: `(default)`
+- type: `FIRESTORE_NATIVE`
+- location: `asia-northeast3`
 
-## IAM Roles (Compute Service Account)
-- `roles/editor` (broad)
-- `roles/cloudtrace.agent` (trace write)
-- `roles/datastore.user` (Firestore access)
+### Secret Manager
 
-## Agent Architecture (Current)
+- `vibecat-gemini-api-key`
+- `vibecat-gateway-auth-secret`
 
-### ADK Features Used (11)
-`agent.New()`, `sequentialagent.New()`, `parallelagent.New()`, `llmagent.New()`, `session.InMemoryService()`, `memory.InMemoryService()`, `runner.New()`, `telemetry.New()`, `session.State/Event`, `functiontool.New()`, `geminitool.GoogleSearch{}`
+Both are user-managed and replicated in `asia-northeast3`.
 
-### Agent Graph (3-Wave)
+### Artifact Registry
+
+- repository: `vibecat-images`
+- path: `asia-northeast3-docker.pkg.dev/vibecat-489105/vibecat-images`
+- format: `DOCKER`
+
+## Observability Proof
+
+### Cloud Logging
+
+Recent Cloud Run logs were observed from both services on 2026-03-11.
+
+### Cloud Trace
+
+Recent trace IDs observed on 2026-03-11:
+
+```text
+007dec0efd190738d0b27d8df33ca788
+00c2bb5cb274501fbd3a0b8edb7de5e4
+028b73af0956f4bd59081485878a5a33
 ```
-wave1 (parallel): [VisionAgent, MemoryAgent]
-wave2 (parallel): [MoodDetector, CelebrationTrigger]
-wave3 (sequential): [Mediator, Scheduler, Engagement, SearchBuddy, LLMSearchBuddy]
-```
 
-### Dynamic Message Generation
-All speech agents (Mediator, Celebration, Engagement) use `gemini-3.1-flash-lite-preview` for contextual LLM-generated messages. Hardcoded message pools serve as fallback only.
+### Cloud Monitoring
 
-### Live API Stability
-Gateway implements reconnection race condition protection:
-- `reconnecting` state flag prevents duplicate reconnect attempts
-- Conditional session nil with pointer comparison prevents killing newer sessions
-- Audio frames dropped during reconnect to prevent stale data
+- OpenTelemetry metric exporter is wired in code
+- no Monitoring dashboard is configured yet
 
-## Known Issues (Resolved)
-- `/healthz` path is intercepted by Cloud Run infrastructure → renamed to `/health`
-- Cold start with min-instances=0 adds ~2-3s on first request → acceptable for demo
-- Live API reconnection race condition → fixed with `reconnecting` state flag + pointer comparison
-- Repetitive speech messages → fixed with LLM dynamic generation (no more hardcoded pools)
+This means observability is partially proven, but dashboard-level completion still belongs to the remaining ops work.
+
+## CI/CD Proof
+
+### CI
+
+- latest fully green CI run: `22932978716` on commit `ac5e4bf`
+- latest `master` CI run: `22933714954` on commit `7356f8c`
+
+Current `master` CI results:
+
+- Gateway Go job: pass
+- Orchestrator Go job: pass
+- Docker build job: pass
+- Swift macOS job: fail due self-hosted runner Xcode license state
+
+### CD
+
+- GitHub manual deployment workflow exists at `.github/workflows/cd.yml`
+- Cloud Build YAML exists for both backend services
+- Cloud Build triggers are not configured in GCP
+
+## Submission Notes
+
+For final submission packaging, the code and live deployment are already in place. What still needs to be attached manually, if required by the submission surface, is screenshot-grade evidence from:
+
+- Cloud Run service detail pages
+- Firestore database page
+- Cloud Logging viewer
+- Cloud Trace explorer
+
+Do not rely on older screenshot placeholders; verify them against the current `00040` and `00038` revisions.

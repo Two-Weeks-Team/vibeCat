@@ -1,166 +1,209 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-03-03
-**Branch:** master (no commits)
+**Generated:** 2026-03-11
+**Branch:** `master`
+**HEAD:** `7356f8c` (`Merge pull request #124 from Two-Weeks-Team/codex/issue-triage-20260311`)
+**Repo State:** `master`, no open PRs
 
 ## OVERVIEW
 
-VibeCat is a macOS desktop companion for solo developers — an animated cat that watches your screen, hears your voice, remembers context across sessions, and proactively helps. Built for the Gemini Live Agent Challenge using GenAI SDK, Google ADK, Gemini Live API, and VAD. Project scaffolding (Package.swift, Makefile, CI, infra scripts) is in place; source implementation has not yet started.
+VibeCat is now an implemented and deployed macOS desktop companion for solo developers. The repository contains:
+
+- a Swift 6 macOS client under `VibeCat/`
+- a Go Realtime Gateway under `backend/realtime-gateway/`
+- a Go ADK Orchestrator under `backend/adk-orchestrator/`
+- deployed Cloud Run services in `asia-northeast3`
+- deployment scripts, CI/CD workflows, and E2E smoke tests
+
+The original project-planning documents remain useful for architecture intent, but they no longer describe the actual implementation state by themselves. For the current ground truth, start with `docs/CURRENT_STATUS_20260311.md` and the deployment evidence docs.
+
+## CURRENT SNAPSHOT
+
+### Implemented
+
+- Swift client foundations: settings, keychain, image/audio primitives, localization
+- macOS app shell: status bar, onboarding, tray animation, chat panel, overlay HUD
+- live transport: Gateway WebSocket client, reconnect handling, audio playback
+- capture/audio: ScreenCaptureKit flow, speech recognition, audio-device hot-plug recovery
+- backend gateway: auth, Live API session handling, ADK routing, TTS client, structured logs
+- backend orchestrator: 9-agent graph, Firestore store, search grounding, mood/memory/vision logic
+- deployment: Cloud Run, Artifact Registry, Secret Manager, Firestore, GitHub Actions CI/CD
+
+### Live Deployment Baseline
+
+- GCP project: `vibecat-489105`
+- region: `asia-northeast3`
+- gateway: `realtime-gateway-00040-gcd`, URL `https://realtime-gateway-a4akw2crra-du.a.run.app`
+- orchestrator: `adk-orchestrator-00038-t4c`, URL `https://adk-orchestrator-a4akw2crra-du.a.run.app`
+- Firestore: `(default)` native database in `asia-northeast3`
+- secrets: `vibecat-gemini-api-key`, `vibecat-gateway-auth-secret`
+- Artifact Registry: `asia-northeast3-docker.pkg.dev/vibecat-489105/vibecat-images`
+
+### CI Reality
+
+- latest fully green CI run: GitHub Actions run `22932978716` on commit `ac5e4bf`
+- latest `master` CI run: `22933714954` on merge commit `7356f8c`
+- current `master` CI failure is environmental, not code-level: the self-hosted macOS runner failed at `Select Xcode 16+ and accept license`
+- current Go and Docker jobs on `master` still pass
+
+### Meaningful Remaining Work
+
+After the 2026-03-11 issue audit, the truly meaningful open work is:
+
+- `#57` deployment and operations evidence pack
+- `#64` privacy controls UI
+- `#90` Cloud Logging and Monitoring completion
+- `#91` Cloud Trace completion
+- `#117` companion intelligence end-to-end integration test
+- `#120` graceful Gemini-unavailable fallback
+- `#121` graceful ADK-timeout fallback
+
+The rest of the open issue list is mostly consolidation, optional UX, or duplicate ops tracking.
 
 ## STRUCTURE
 
-```
+```text
 vibeCat/
+├── VibeCat/
+│   ├── Package.swift
+│   ├── Sources/Core/
+│   ├── Sources/VibeCat/
+│   └── Tests/VibeCatTests/
+├── backend/
+│   ├── realtime-gateway/
+│   │   ├── internal/
+│   │   ├── cmd/videotest/
+│   │   └── cloudbuild.yaml
+│   └── adk-orchestrator/
+│       ├── internal/agents/
+│       ├── internal/store/
+│       └── cloudbuild.yaml
+├── tests/e2e/
+├── infra/
 ├── Assets/
-│   ├── Sprites/          # 6 characters (cat, derpy, jinwoo, kimjongun, saja, trump), ~97 PNGs
-│   ├── TrayIcons/        # Raw tray icons (48 PNGs)
-│   ├── TrayIcons_Clean/  # Production tray icons (24 PNGs, 8 frames x 3 scales)
-│   ├── Music/            # Background music (2 audio files)
-│   └── SPRITE_LICENSE.md
 ├── docs/
-│   ├── PRD/
-│   │   ├── LIVE_AGENTS_PRD.md   # Master PRD — start here
-│   │   ├── INDEX.md             # Document map
-│   │   └── DETAILS/             # 13 detailed spec documents
-│   ├── reference/               # External SDK/GCP/ADK reference docs (~40 files)
-│   └── ideas/                   # Gitignored local design notes
-├── voice_samples/               # 13 voice sample files (AIFF/WAV)
-└── .gitignore
+└── voice_samples/
 ```
 
 ## WHERE TO LOOK
 
 | Task | Location | Notes |
 |------|----------|-------|
-| Understand the product | `docs/PRD/LIVE_AGENTS_PRD.md` | Business model, agent philosophy, architecture diagram |
-| Find all spec documents | `docs/PRD/INDEX.md` | Complete document map |
-| Implementation order | `docs/PRD/DETAILS/IMPLEMENTATION_EXECUTION_PLAN.md` | Build sequence, module inventory, dependency rules |
-| Backend architecture | `docs/PRD/DETAILS/BACKEND_ARCHITECTURE.md` | 9-agent graph, Firestore schema, service contracts (413 lines) |
-| Client-backend protocol | `docs/PRD/DETAILS/CLIENT_BACKEND_PROTOCOL.md` | WebSocket/REST spec, message types, error codes (281 lines) |
-| Implementation tasks | `docs/PRD/DETAILS/END_TO_END_IMPLEMENTATION_TASKS.md` | Task-by-task guide |
-| Backend tasks | `docs/PRD/DETAILS/BACKEND_IMPLEMENTATION_TASKS.md` | Backend-specific tasks T-100 to T-146 |
-| TDD plan | `docs/PRD/DETAILS/TDD_VERIFICATION_PLAN.md` | Red-Green-Refactor order |
-| Asset inventory | `docs/PRD/DETAILS/ASSET_MIGRATION_PLAN.md` | Required assets, counts, verification |
-| Deployment | `docs/PRD/DETAILS/DEPLOYMENT_AND_OPERATIONS.md` | GCP Cloud Run, Firestore, observability (215 lines) |
-| Architecture migration | `docs/ideas/GEMINICAT_TO_VIBECAT_MAPPING.md` | Monolithic→split mapping (gitignored) |
-| SDK reference | `docs/reference/` | Gemini, ADK, GCP official docs |
-| Character presets | `Assets/Sprites/{name}/preset.json` | Voice + prompt profile per character |
+| Current repo/deploy status | `docs/CURRENT_STATUS_20260311.md` | Most accurate high-level snapshot |
+| Current deployment evidence | `docs/evidence/DEPLOYMENT_EVIDENCE.md` | Cloud Run, CI, observability, remaining gaps |
+| Submission proof template | `docs/deployment/PROOF_OF_GCP_DEPLOYMENT.md` | Final proof-oriented deployment checklist |
+| Historical issue audit | `docs/ISSUE_TRIAGE_20260311.md` | PR #124 issue cleanup result |
+| Final architecture | `docs/FINAL_ARCHITECTURE.md` | Current layered architecture and flows |
+| PRD and task map | `docs/PRD/` | Original implementation plan and specs |
+| Client core primitives | `VibeCat/Sources/Core/` | Models, localization, image/audio helpers |
+| Client app runtime | `VibeCat/Sources/VibeCat/` | UI, capture, transport, playback, app wiring |
+| Gateway implementation | `backend/realtime-gateway/` | Live API proxy, auth, ADK routing |
+| Orchestrator implementation | `backend/adk-orchestrator/` | 9-agent graph and Firestore-backed state |
+| Deployment scripts | `infra/` | Setup, deploy, teardown |
 
-## TARGET STRUCTURE (Post-Implementation)
+## IMPLEMENTATION STATUS
 
-```
-vibeCat/
-├── VibeCat/
-│   ├── Package.swift          # SPM manifest (swift-tools-version 6.2)
-│   ├── Sources/Core/          # Pure Swift modules (no UI deps)
-│   ├── Sources/VibeCat/       # macOS app (UI, capture, transport)
-│   └── Tests/VibeCatTests/
-├── backend/
-│   ├── realtime-gateway/      # Cloud Run: Go + GenAI SDK (Live API WebSocket proxy)
-│   └── adk-orchestrator/      # Cloud Run: Go + ADK Go SDK (9-agent graph)
-├── infra/                     # IaC deployment scripts
-├── Assets/
-│   └── Sprites/{name}/
-│       ├── preset.json        # Voice, size, persona config
-│       └── soul.md            # Character personality prompt
-├── docs/
-└── voice_samples/
-```
+### Swift Client
 
-## ARCHITECTURE
+- `Sources/Core/`: implemented
+- `Sources/VibeCat/`: implemented app runtime with 22 top-level source files
+- tests: 9 test files under `VibeCat/Tests/VibeCatTests/`
+- notable recent additions: localization, assistant transcription assembly, live status fallback labels, audio-device monitoring
 
-### Three-Layer Split (Non-Negotiable)
+### Realtime Gateway
 
-1. **macOS Swift Client** — UI, screen capture, audio playback, gestures, local settings
-2. **Realtime Gateway** (Cloud Run) — Go + `google.golang.org/genai` — WebSocket proxy to Gemini Live API
-3. **ADK Orchestrator** (Cloud Run) — Go + `google.golang.org/adk` — 9-agent graph
+- Go module implemented under `backend/realtime-gateway/`
+- includes auth, Live session management, ADK client, TTS client, language helpers, WebSocket registry/handler
+- smoke and package tests exist
 
-### 9 Agents
+### ADK Orchestrator
 
-| Agent | Role | Where |
-|-------|------|-------|
-| VAD | Natural conversation, barge-in | Gemini Live API config |
-| VisionAgent | Screen capture analysis | ADK Orchestrator |
-| Mediator | Speech gating, cooldown | ADK Orchestrator |
-| AdaptiveScheduler | Timing adjustments | ADK Orchestrator |
-| EngagementAgent | Proactive triggers | ADK Orchestrator |
-| MemoryAgent | Cross-session context | ADK Orchestrator + Firestore |
-| MoodDetector | Frustration sensing | ADK Orchestrator |
-| CelebrationTrigger | Success detection | ADK Orchestrator |
-| SearchBuddy | Google Search grounding | ADK Orchestrator |
+- Go module implemented under `backend/adk-orchestrator/`
+- includes vision, mediator, scheduler, engagement, memory, mood, celebration, search, tool-use, topic, prompts, Firestore store
+- agent graph and package tests exist
 
-### Key Protocols
+### End-to-End
 
-- Client↔Gateway: WebSocket (`wss://{host}/ws/live`) + REST (`/api/v1/`)
-- Gateway↔Orchestrator: HTTP `POST /analyze`
-- Audio format: PCM 16kHz 16-bit mono (client→server), PCM 24kHz (server→client)
-- Auth: Ephemeral tokens, API key stored in GCP Secret Manager (never on client)
+- `tests/e2e/` covers deployed health/auth/session/search-memory/barge-in paths
+- full companion-intelligence session coverage is still incomplete and tracked by `#117`
+
+## DEPLOYMENT CRITERIA
+
+The practical deployment baseline for this repository is:
+
+1. `realtime-gateway` and `adk-orchestrator` both deployed to Cloud Run in `asia-northeast3`
+2. Gateway health endpoints reachable and returning `200`
+3. Orchestrator authenticated health endpoint reachable with identity token
+4. Firestore and both required secrets present in `vibecat-489105`
+5. Artifact Registry repository present for backend images
+6. GitHub CI green for Go and Docker; Swift CI depends on a licensed self-hosted Xcode runner
+7. Logs and traces visible in GCP
+8. Remaining production-readiness gaps tracked by `#57`, `#64`, `#90`, `#91`, `#117`, `#120`, `#121`
 
 ## CONVENTIONS
 
-- **Mandatory stack**: GenAI SDK + ADK + Gemini Live API + VAD — all four required
-- **Client/backend separation**: ALL model calls from backend. Client does UI/capture/playback only
-- **Core module**: Must not depend on app-layer UI modules
-- **Transport**: Must be testable with mock server interfaces
-- **Orchestration**: Depends on typed contracts, not concrete UI views
-- **Asset copy**: Exact local files, no runtime downloads. Preserve directory names and frame naming
-- **GCP region**: `asia-northeast3`
-- **Backend port**: 8080 for both Cloud Run services
+- Mandatory stack remains unchanged: GenAI SDK + ADK + Gemini Live API + VAD
+- All model access stays server-side
+- Client responsibilities are UI, capture, transport, and playback
+- Core Swift module must remain UI-free
+- Preserve exact asset directories and file names
+- Production backend port remains `8080`
+- GCP region remains `asia-northeast3`
 
-## ANTI-PATTERNS (THIS PROJECT)
+## ANTI-PATTERNS
 
-- Client making direct Gemini API calls — ALL API calls go through backend
-- Storing Gemini API key on client — use session tokens, key lives in Secret Manager
-- Monolithic architecture — must be client/backend split per challenge rules
-- Skipping any of the 9 agents — all are required
-- Ignoring VAD config — `automaticActivityDetection` must be enabled
-- Moving `PromptBuilder` to client — prompt logic is server-side only
+- direct client-to-Gemini calls
+- client-side storage of Gemini API credentials
+- moving prompt logic back into the client
+- reintroducing client-side agent logic that now belongs in the orchestrator
+- treating historical planning docs as proof of current implementation
 
 ## CHARACTERS
 
-6 sprite characters, each with `preset.json` (voice + persona config) and `soul.md` (personality prompt):
+6 sprite characters are present under `Assets/Sprites/`:
 
-| Character | Voice | Persona | Tone |
-|-----------|-------|---------|------|
-| `cat` | Zephyr | Curious beginner companion | bright, casual |
-| `derpy` | Puck | Goofy accidental debugger | goofy, clumsy |
-| `jinwoo` | Kore | Silent senior engineer | low-calm, concise |
-| `kimjongun` | Schedar | Supreme debugger (comedy) | authoritative-warm |
-| `saja` | Zubenelgenubi | Zen mentor from folklore | calm-deep, archaic |
-| `trump` | Fenrir | Bombastic hype-man (comedy) | energetic-superlative |
+- `cat`
+- `derpy`
+- `jinwoo`
+- `kimjongun`
+- `saja`
+- `trump`
 
-Each has ~16 sprite frames as PNGs. Character persona is injected server-side via `soul.md` content.
+Each character includes `preset.json` and `soul.md`. Current verified counts:
+
+- `preset.json`: 6
+- `soul.md`: 6
+- `TrayIcons_Clean` assets: 24
+- `Music` assets: 2
+- `voice_samples`: 13
 
 ## COMMANDS
 
 ```bash
-# Swift Client (via Makefile)
-make build        # Build Swift package
-make sign         # Codesign for dev
-make run          # Build + sign + run
-make test         # Run Swift tests
+# Repo state
+git status --short --branch
+git log -1 --oneline
 
-# Backend (Go — local)
-cd backend/realtime-gateway && go run .
-cd backend/adk-orchestrator && go run .
+# Swift client
+cd VibeCat && swift build
+cd VibeCat && swift test
 
-# Backend (Go — tests)
+# Go backends
 cd backend/realtime-gateway && go test ./...
 cd backend/adk-orchestrator && go test ./...
 
-# Docker
-make docker-build  # Build both backend images
+# E2E
+cd tests/e2e && go test ./...
 
-# Deploy (Cloud Run)
-./infra/deploy.sh     # Deploy both services to asia-northeast3
-./infra/teardown.sh   # Remove deployment
+# Deploy / verify
+./infra/deploy.sh
+gcloud run services describe realtime-gateway --region asia-northeast3 --project vibecat-489105
+gcloud run services describe adk-orchestrator --region asia-northeast3 --project vibecat-489105
 ```
 
 ## NOTES
 
-- `docs/ideas/` is gitignored — contains local-only design notes (never commit)
-- `.cursor/rules/` contains Taskmaster workflow rules (from cursor config, not committed)
-- 6 characters share the same animation system, differ only in sprites and voice preset
-- Backend stack: **Go** — both Gateway (`google.golang.org/genai`) and Orchestrator (`google.golang.org/adk`)
-- GCP Project: `vibecat-489105`, Account: `centisgood@gmail.com`
-- Challenge submission requires deployment evidence, demo video, and operational proof artifacts
+- `docs/analysis/` contains point-in-time design and hardening notes; not all files there are current truth
+- `.sisyphus/` contains historical plans and handoff notes; verify dates before trusting them
+- Cloud Monitoring exporter is enabled in code, but no Monitoring dashboard is currently configured
+- Cloud Build YAML exists for both backends, but no GCP Cloud Build trigger is currently configured

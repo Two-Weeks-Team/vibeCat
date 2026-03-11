@@ -1,8 +1,10 @@
 # VibeCat — Final Architecture Document
 
-**Last Updated:** 2026-03-10
-**Commit:** `1aad51e`
-**Status:** Pre-submission (Gemini Live Agent Challenge)
+**Last Reviewed:** 2026-03-11
+**Repo HEAD:** `7356f8c`
+**Status:** Architecture reference. For live deployment, CI, and open-issue truth, use `docs/CURRENT_STATUS_20260311.md` and the deployment evidence docs.
+
+> Snapshot note: this file is a detailed architecture reference, not the authoritative source for fast-changing operational values. Deployment revisions, CI outcomes, and issue triage should be read from the current-status and evidence documents first.
 
 ---
 
@@ -335,7 +337,7 @@ runner.New(runner.Config{
 |----------|--------|---------|
 | `/analyze` | POST | Run 9-agent graph on screen capture |
 | `/search` | POST | Direct voice search query |
-| `/healthz` | GET | Liveness probe |
+| `/health` | GET | Liveness probe |
 | `/readyz` | GET | Readiness probe |
 
 ### `/analyze` Request/Response
@@ -397,7 +399,7 @@ SEQUENTIAL: vibecat_graph
 
 | | VisionAgent | MemoryAgent |
 |---|---|---|
-| **Model** | `gemini-3.1-flash-lite-preview` | `gemini-3.1-pro-preview` |
+| **Model** | `gemini-3.1-flash-lite-preview` | `gemini-2.5-flash-lite` |
 | **Input** | Base64 screenshot, context, character, soul | UserID, session history |
 | **Output** | `VisionAnalysis`: significance (0-10), content, emotion, shouldSpeak, errorDetected, successDetected | Cross-session context string |
 | **Tools** | None (direct GenAI) | Firestore read/write |
@@ -417,7 +419,7 @@ SEQUENTIAL: vibecat_graph
 
 | | Mediator | AdaptiveScheduler | EngagementAgent | SearchBuddy |
 |---|---|---|---|---|
-| **Model** | `gemini-3.1-flash-lite-preview` | Rule-based | `gemini-3.1-flash-lite-preview` | `gemini-3.1-pro-preview` + `gemini-3.1-flash-lite-preview` |
+| **Model** | `gemini-3.1-flash-lite-preview` | Rule-based | `gemini-3.1-flash-lite-preview` | `gemini-2.5-flash` |
 | **Input** | Vision + Mood + Celebration | Utterance rate | Activity minutes | Errors, vision content, mood |
 | **Output** | `MediatorDecision` + speechText | Adjusted cooldown/silence | Check-in messages, rest reminders | `SearchResult`: query, summary, sources |
 | **Logic** | Cooldown (10s default, 180s mood), significance threshold, duplicate detection | Rate > 2/min → ↑cooldown; < 0.5/min → ↓cooldown | After 180s silence, 50min rest | Mood-based triggers |
@@ -549,7 +551,7 @@ Client reads preset.json + soul.md
 | Firestore | Sessions, metrics, memory (6 collections) | asia-northeast3 |
 | Secret Manager | `vibecat-gemini-api-key`, `vibecat-gateway-auth-secret` | asia-northeast3 |
 | Artifact Registry | Docker images (`vibecat-images`) | asia-northeast3 |
-| Cloud Build | Automated build pipeline | global |
+| Cloud Build | Service YAML present, no active triggers | global |
 | Cloud Logging | Structured JSON logs | — |
 | Cloud Monitoring | Custom metrics, dashboards | — |
 | Cloud Trace | OpenTelemetry distributed tracing | — |
@@ -560,9 +562,9 @@ Client reads preset.json + soul.md
 |---------|---------|-------------|
 | Memory | 512Mi | 1Gi |
 | Min instances | 0 | 0 |
-| Max instances | 10 | 10 |
+| Max instances | 20 | 20 |
 | Concurrency | 80 | 100 |
-| Auth | Public (`--allow-unauthenticated`) | Internal only |
+| Auth | Public (`--allow-unauthenticated`) | Authenticated invocation required |
 | Session affinity | Yes | No |
 
 ### Docker Build
@@ -614,10 +616,11 @@ make build && make sign && make run
 
 | Model | Purpose | Used By |
 |-------|---------|---------|
-| `gemini-2.5-flash-native-audio-latest` | Live API (voice + vision) | Gateway |
+| `gemini-2.5-flash-native-audio-preview-12-2025` | Live API (voice + vision) | Gateway |
 | `gemini-2.5-flash-preview-tts` | Text-to-Speech streaming | Gateway |
-| `gemini-3.1-flash-lite-preview` | Vision analysis, classification, engagement | ADK Orchestrator |
-| `gemini-3.1-pro-preview` | Memory summarization, search | ADK Orchestrator |
+| `gemini-3.1-flash-lite-preview` | Vision analysis and multimodal perception | ADK Orchestrator |
+| `gemini-2.5-flash-lite` | Memory summarization and lightweight text generation | ADK Orchestrator |
+| `gemini-2.5-flash` | Search grounding and tool-driven generation | ADK Orchestrator |
 
 ### VAD Configuration
 
@@ -708,9 +711,9 @@ make build && make sign && make run
 
 | Service | Revision | URL |
 |---------|----------|-----|
-| Gateway | `realtime-gateway-00019-gkd` | `https://realtime-gateway-163070481841.asia-northeast3.run.app` |
-| Orchestrator | `adk-orchestrator-00020-r4f` | `https://adk-orchestrator-163070481841.asia-northeast3.run.app` |
+| Gateway | `realtime-gateway-00040-gcd` | `https://realtime-gateway-a4akw2crra-du.a.run.app` |
+| Orchestrator | `adk-orchestrator-00038-t4c` | `https://adk-orchestrator-a4akw2crra-du.a.run.app` |
 
 ---
 
-*Generated from codebase at commit `1aad51e` on 2026-03-10.*
+*Reviewed against codebase and deployment state at commit `7356f8c` on 2026-03-11.*

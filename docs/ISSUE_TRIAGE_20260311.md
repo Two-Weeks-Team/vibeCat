@@ -2,6 +2,12 @@
 
 This audit reduces the repository to issues that still represent meaningful unfinished work.
 
+## Final state after 2026-03-11 cleanup
+
+- closed as implemented or no longer meaningful: `#55`, `#60`, `#61`, `#68`
+- closed as consolidated into `#57`: `#56`, `#58`
+- remaining open: `#57`, `#64`, `#90`, `#91`, `#117`, `#120`, `#121`
+
 ## Closed as implemented
 
 - Client foundation and UX: #1-#6, #8-#20, #22-#31, #33, #38-#43, #45-#53, #59, #62-#63
@@ -48,14 +54,8 @@ Reason:
 
 ## Kept open
 
-- #55 Validate copied assets and runtime path resolution
-- #56 Run full operation scenarios from menu to speech output
 - #57 Complete deployment and operations evidence pack
-- #58 Final handoff gate
-- #60 Implement sprite screen pointing
-- #61 Implement session farewell and sleep sprite
 - #64 Add privacy controls UI
-- #68 Set up Cloud Build pipeline
 - #90 Configure Cloud Logging and Monitoring
 - #91 Configure Cloud Trace
 - #117 End-to-end companion intelligence integration test
@@ -64,9 +64,17 @@ Reason:
 
 Rationale for the remaining open set:
 
-- Asset validation, manual operations proof, and handoff evidence still need explicit artifact generation rather than code presence alone.
-- Grand-prize UX items (`#60`, `#61`, `#64`) do not have matching implementation in the client.
-- Cloud Build triggers are not configured yet even though deployment scripts exist.
-- Logging/Monitoring/Trace exporters are wired, but dashboard-level and trace-verification acceptance still needs explicit completion.
-- The full companion-intelligence integration test is broader than the current deployed search/memory/barge-in coverage.
-- Graceful degraded-mode behavior for Gemini or ADK outages is not complete enough to satisfy the issue acceptance criteria.
+- `#57`: evidence docs still need submission-grade artifact completion and final cross-linking.
+- `#64`: pause/mute/reconnect exist, but always-visible capture indicator, manual-only analyze mode, and explicit “no screenshots stored” UI are still missing.
+- `#90`: logging and metric exporters exist, but no Monitoring dashboard is configured.
+- `#91`: traces exist, but end-to-end Gateway-to-Orchestrator trace propagation is not yet acceptance-proven.
+- `#117`: current E2E coverage includes health/auth/search-memory/barge-in, but not the full companion session story.
+- `#120`: Gemini reconnect behavior exists, but the TTS fallback path is not wired into Gemini-unavailable handling.
+- `#121`: proactive analyze still uses a longer timeout path and does not yet return a fast silent fallback within the issue acceptance criteria.
+
+## Closed in this cleanup
+
+- `#55`: asset counts and runtime loaders are already verifiable from the current repo and code.
+- `#56`, `#58`: these are better tracked as part of `#57` rather than as separate operational checklist issues.
+- `#60`, `#61`: these are optional UX/stretch items, not meaningful blockers for the current shipped/deployed baseline.
+- `#68`: Cloud Build YAML exists, but the active deployment path is GitHub Actions manual deploy plus Cloud Run; separate GCP triggers are not currently necessary.

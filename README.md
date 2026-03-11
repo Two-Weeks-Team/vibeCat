@@ -29,6 +29,8 @@
 
 ---
 
+> Current status note (2026-03-11): the current implementation, deployment, CI, and open-issue baseline live in [`docs/CURRENT_STATUS_20260311.md`](docs/CURRENT_STATUS_20260311.md), [`docs/evidence/DEPLOYMENT_EVIDENCE.md`](docs/evidence/DEPLOYMENT_EVIDENCE.md), and [`AGENTS.md`](AGENTS.md). PRD, analysis, and `.sisyphus/` documents include dated planning and audit snapshots and should not be treated as the live ops source of truth by themselves.
+
 ## What is VibeCat?
 
 VibeCat is a **macOS desktop companion for solo developers** — filling the empty chair next to you.
@@ -49,7 +51,7 @@ It is not a chatbot that waits for your question. It is a colleague that watches
 flowchart LR
     U["User (Voice + Screen)"] --> C[macOS Client<br/>Swift 6 / SwiftUI]
     C -->|WebSocket<br/>PCM 16kHz + JPEG| RG[Realtime Gateway<br/>Go + GenAI SDK v1.48<br/>Cloud Run 512Mi]
-    RG -->|Live API| GL["Gemini Live API<br/>gemini-2.5-flash-native-audio"]
+    RG -->|Live API| GL["Gemini Live API<br/>gemini-2.5-flash-native-audio-preview-12-2025"]
     RG -->|HTTP POST /analyze| AO["ADK Orchestrator<br/>Go + ADK Go SDK<br/>Cloud Run 1Gi"]
     AO --> W1["Wave 1 (Parallel)<br/>Vision + Memory"]
     AO --> W2["Wave 2 (Parallel)<br/>Mood + Celebration"]
@@ -141,7 +143,7 @@ SEQUENTIAL: vibecat_graph
 |
 |-- PARALLEL: Wave 1 - Perception
 |   |-- VisionAgent         gemini-3.1-flash-lite    Screen -> significance (0-10)
-|   '-- MemoryAgent         gemini-3.1-pro           Cross-session context retrieval
+|   '-- MemoryAgent         gemini-2.5-flash-lite    Cross-session context retrieval
 |
 |-- PARALLEL: Wave 2 - Emotion
 |   |-- MoodDetector        Rule-based               Frustration / stuck / idle
@@ -151,8 +153,8 @@ SEQUENTIAL: vibecat_graph
     |-- Mediator            gemini-3.1-flash-lite    Speech gating (cooldown, dedup)
     |-- AdaptiveScheduler   Rule-based               Dynamic timing adjustment
     |-- EngagementAgent     gemini-3.1-flash-lite    Proactive check-in (180s silence)
-    '-- LOOP: SearchBuddy   gemini-3.1-pro           Google Search grounding (max 2 iter)
-              + LLM Search  gemini-3.1-flash-lite    llmagent + GoogleSearch + FunctionTool
+    '-- LOOP: SearchBuddy   gemini-2.5-flash         Google Search grounding (max 2 iter)
+              + LLM Search  gemini-2.5-flash         llmagent + GoogleSearch + FunctionTool
 ```
 
 ### Agent Details
@@ -160,14 +162,14 @@ SEQUENTIAL: vibecat_graph
 | Agent | Model | Role | Key Behavior |
 |-------|-------|------|-------------|
 | **VisionAgent** | `gemini-3.1-flash-lite-preview` | Screen analysis | Scores significance 0-10, detects errors/success, respects character persona |
-| **MemoryAgent** | `gemini-3.1-pro-preview` | Long-term memory | Reads/writes Firestore `memory` collection, generates session summaries |
+| **MemoryAgent** | `gemini-2.5-flash-lite` | Long-term memory | Reads/writes Firestore `memory` collection, generates session summaries |
 | **MoodDetector** | Rule-based | Emotional awareness | Error count tracking, silence detection, voice tone fusion |
 | **CelebrationTrigger** | `gemini-3.1-flash-lite-preview` | Success detection | Triggers on significance >= 9, 10-minute cooldown, message deduplication |
 | **Mediator** | `gemini-3.1-flash-lite-preview` | Speech gating | Default 10s cooldown, mood-aware 180s, significance thresholds (error=7+, focused=9+) |
 | **AdaptiveScheduler** | Rule-based | Timing adjustment | Rate > 2/min: increase cooldown; Rate < 0.5/min: decrease cooldown |
 | **EngagementAgent** | `gemini-3.1-flash-lite-preview` | Proactive outreach | 180s silence trigger, 50-minute rest reminder |
-| **SearchBuddy** | `gemini-3.1-pro-preview` | Research assistant | Google Search grounding, mood-based triggers (stuck/frustrated) |
-| **LLM SearchBuddy** | `gemini-3.1-flash-lite-preview` | Search refinement | ADK `llmagent` + `geminitool.GoogleSearch` + `functiontool` |
+| **SearchBuddy** | `gemini-2.5-flash` | Research assistant | Google Search grounding, mood-based triggers (stuck/frustrated) |
+| **LLM SearchBuddy** | `gemini-2.5-flash` | Search refinement | ADK `llmagent` + `geminitool.GoogleSearch` + `functiontool` |
 
 ### ADK SDK Usage
 
@@ -228,7 +230,7 @@ Each character has 16 sprite frames (4 states x 4 frames: idle, happy, surprised
 make build   # Build Swift package (SPM, swift-tools-version 6.2)
 make sign    # Codesign for dev
 make run     # Build + sign + run
-make test    # Run Swift tests (31 tests)
+make test    # Run Swift tests
 ```
 
 ### Build & Run (Backend)
@@ -239,8 +241,8 @@ cd backend/realtime-gateway && go run .
 cd backend/adk-orchestrator && go run .
 
 # Run tests
-cd backend/realtime-gateway && go test ./...   # 6 packages
-cd backend/adk-orchestrator && go test ./...   # 13 packages
+cd backend/realtime-gateway && go test ./...
+cd backend/adk-orchestrator && go test ./...
 ```
 
 ---
@@ -264,12 +266,12 @@ cd backend/adk-orchestrator && go test ./...   # 13 packages
 
 | Resource | Service | Config |
 |----------|---------|--------|
-| **Cloud Run** | `realtime-gateway` | 512Mi, 0-10 instances, public, session affinity |
-| **Cloud Run** | `adk-orchestrator` | 1Gi, 0-10 instances, internal only |
+| **Cloud Run** | `realtime-gateway` | 512Mi, 0-20 instances, public, session affinity |
+| **Cloud Run** | `adk-orchestrator` | 1Gi, 0-20 instances, authenticated invocation required |
 | **Firestore** | 6 collections | sessions, metrics, history, searches, users, memory |
 | **Secret Manager** | 2 secrets | `vibecat-gemini-api-key`, `vibecat-gateway-auth-secret` |
 | **Artifact Registry** | `vibecat-images` | Docker container repo |
-| **Cloud Build** | 2 pipelines | Test -> build -> push -> deploy per service |
+| **Cloud Build** | YAML only | Service-level `cloudbuild.yaml` exists, but no active GCP triggers |
 | **Observability** | Cloud Logging, Monitoring, Trace | Structured logs, OpenTelemetry spans, ADK Telemetry |
 
 ### CI/CD
@@ -285,7 +287,7 @@ cd backend/adk-orchestrator && go test ./...   # 13 packages
 
 | Feature | Configuration |
 |---------|--------------|
-| **Live API** | `gemini-2.5-flash-native-audio-latest` — bidirectional audio + video streaming |
+| **Live API** | `gemini-2.5-flash-native-audio-preview-12-2025` — bidirectional audio + video streaming |
 | **VAD** | `AutomaticActivityDetection` — PrefixPadding 500ms, Silence 500ms, Sensitivity Low |
 | **Barge-in** | `StartOfActivityInterrupts` + `TurnIncludesOnlyActivity` |
 | **Affective Dialog** | `EnableAffectiveDialog: true` — emotional tone awareness |
@@ -312,7 +314,7 @@ vibeCat/
 │   │   │   ├── PCMConverter.swift       #   Int16/Float32 audio conversion
 │   │   │   ├── Settings.swift           #   AppSettings (UserDefaults)
 │   │   │   └── KeychainHelper.swift     #   Secure API key storage
-│   │   └── VibeCat/                     # macOS app (20 files)
+│   │   └── VibeCat/                     # macOS app runtime
 │   │       ├── AppDelegate.swift        #   Main orchestrator (597 lines)
 │   │       ├── GatewayClient.swift      #   WebSocket + reconnection (686 lines)
 │   │       ├── ScreenAnalyzer.swift     #   Dual-path capture (Fast + Smart)
@@ -325,9 +327,9 @@ vibeCat/
 │   │       ├── AudioPlayer.swift        #   PCM playback (~20ms buffer)
 │   │       ├── StatusBarController.swift #  Menu bar UI (608 lines)
 │   │       └── ...                      #   CircleGesture, Onboarding, HUD, etc.
-│   └── Tests/VibeCatTests/              # 31 tests
+│   └── Tests/VibeCatTests/              # Swift test suite
 ├── backend/
-│   ├── realtime-gateway/                # Go + GenAI SDK (12 source files)
+│   ├── realtime-gateway/                # Go + GenAI SDK
 │   │   ├── main.go                      #   Entry: Trace, Logging, JWT, GenAI, routes
 │   │   ├── internal/live/               #   Gemini Live API session management
 │   │   ├── internal/ws/                 #   WebSocket handler (773 lines)
@@ -335,8 +337,8 @@ vibeCat/
 │   │   ├── internal/auth/              #   JWT auth (register, refresh, middleware)
 │   │   ├── internal/tts/               #   TTS streaming via GenAI SDK
 │   │   ├── internal/secrets/           #   GCP Secret Manager
-│   │   └── cmd/videotest/              #   Live API testing tool (21+ tests)
-│   └── adk-orchestrator/               # Go + ADK Go SDK (17 source files)
+│   │   └── cmd/videotest/              #   Live API testing tool
+│   └── adk-orchestrator/               # Go + ADK Go SDK
 │       ├── main.go                      #   Entry: Runner, HTTP handlers, observability
 │       ├── internal/agents/graph/       #   9-agent graph (3-wave structure)
 │       ├── internal/agents/vision/      #   VisionAgent (screen analysis)
@@ -378,14 +380,14 @@ vibeCat/
 |----------|-----------|
 | **Client** | Swift 6, SwiftUI, SPM, AppKit, AVFoundation, ScreenCaptureKit, CoreGraphics |
 | **Backend** | Go 1.24+, `google.golang.org/genai` v1.48, `google.golang.org/adk` |
-| **AI Models** | `gemini-2.5-flash-native-audio-latest` (Live), `gemini-2.5-flash-preview-tts` (TTS), `gemini-3.1-flash-lite-preview` (Vision/Classification), `gemini-3.1-pro-preview` (Memory/Search) |
+| **AI Models** | `gemini-2.5-flash-native-audio-preview-12-2025` (Live), `gemini-2.5-flash-preview-tts` (TTS), `gemini-3.1-flash-lite-preview` (Vision), `gemini-2.5-flash-lite` (Memory), `gemini-2.5-flash` (Search/Tooling) |
 | **GenAI SDK** | Live API, VAD, Barge-in, AffectiveDialog, ProactiveAudio, SessionResumption, ContextWindowCompression, SendRealtimeInput(Video), TTS Streaming |
 | **ADK** | Runner, ParallelAgent, SequentialAgent, LoopAgent, LLMAgent, InMemoryService (session + memory), RetryAndReflect Plugin, FunctionTool, GeminiTool (GoogleSearch), Telemetry |
 | **Agent Graph** | 9 agents in 3 waves: Perception (Vision \|\| Memory) -> Emotion (Mood \|\| Celebration) -> Decision (Mediator -> Scheduler -> Engagement -> Search Loop) |
-| **Infrastructure** | GCP Cloud Run (2 services), Firestore (6 collections), Secret Manager, Artifact Registry, Cloud Build |
+| **Infrastructure** | GCP Cloud Run (2 services), Firestore, Secret Manager, Artifact Registry, Cloud Build YAML |
 | **Observability** | Cloud Trace (OpenTelemetry), Cloud Logging (structured JSON), Cloud Monitoring, ADK Telemetry |
 | **Auth** | Device UUID -> JWT (HS256, 24h), Workload Identity Federation (CI/CD), Cloud Run ID tokens (service-to-service) |
-| **CI/CD** | GitHub Actions (CI) + Cloud Build (CD), self-hosted macOS runner for Swift |
+| **CI/CD** | GitHub Actions (CI) + GitHub Actions manual deploy (CD), self-hosted macOS runner for Swift, Cloud Build YAML retained |
 
 ---
 
@@ -393,6 +395,8 @@ vibeCat/
 
 | Document | Description |
 |----------|-------------|
+| [Current Status](docs/CURRENT_STATUS_20260311.md) | Current implementation, deployment, CI, and issue baseline |
+| [Deployment Evidence](docs/evidence/DEPLOYMENT_EVIDENCE.md) | Live Cloud Run, observability, and CI verification |
 | [Final Architecture](docs/FINAL_ARCHITECTURE.md) | Complete system architecture with all layers, agents, data flows, and config |
 | [Master PRD](docs/PRD/LIVE_AGENTS_PRD.md) | Business model, agent philosophy, architecture |
 | [Document Index](docs/PRD/INDEX.md) | Complete document map |

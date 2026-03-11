@@ -1,5 +1,7 @@
 # Live-First Hardening 2026-03-11
 
+> Historical snapshot note: this file records a dated hardening pass tied to specific revisions on 2026-03-11. For the current live deployment, CI, and issue baseline, use `docs/CURRENT_STATUS_20260311.md` and `docs/evidence/DEPLOYMENT_EVIDENCE.md`.
+
 ## Goal
 
 Align `voice + text + search + tool use + bubble UX` around a single Live-first runtime so the demo feels trustworthy, responsive, and visibly grounded.
