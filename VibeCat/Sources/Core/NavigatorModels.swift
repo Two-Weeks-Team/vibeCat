@@ -205,6 +205,52 @@ public struct NavigatorStep: Sendable, Codable, Equatable, Identifiable {
     }
 }
 
+public enum GroundingSource: String, Sendable {
+    case ax
+    case vision
+    case hotkey
+    case system
+
+    public var badge: String {
+        switch self {
+        case .ax: return "AX"
+        case .vision: return "Vision"
+        case .hotkey: return "Hotkey"
+        case .system: return "System"
+        }
+    }
+}
+
+extension NavigatorActionType {
+    public func groundingSource(step: NavigatorStep) -> GroundingSource {
+        switch self {
+        case .pressAX, .pasteText, .copySelection:
+            return .ax
+        case .hotkey:
+            return .hotkey
+        case .focusApp, .openURL:
+            return .system
+        case .systemAction:
+            return .system
+        case .waitFor:
+            return step.targetDescriptor.label != nil ? .ax : .system
+        }
+    }
+
+    public var icon: String {
+        switch self {
+        case .focusApp: return "\u{1F3AF}"
+        case .hotkey: return "\u{2328}\u{FE0F}"
+        case .pasteText: return "\u{2328}\u{FE0F}"
+        case .openURL: return "\u{1F310}"
+        case .pressAX: return "\u{1F446}"
+        case .copySelection: return "\u{1F4CB}"
+        case .systemAction: return "\u{2699}\u{FE0F}"
+        case .waitFor: return "\u{23F3}"
+        }
+    }
+}
+
 public struct NavigatorContextPayload: Sendable, Codable, Equatable {
     public let appName: String
     public let bundleId: String

@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var catPanel: CatPanel?
     private var companionChatPanel: CompanionChatPanel?
     private var targetHighlightOverlay: TargetHighlightOverlay?
+    private var navigatorOverlayPanel: NavigatorOverlayPanel?
 
     private var audioPlayer: AudioPlayer?
     private var catVoice: CatVoice?
@@ -97,6 +98,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var activeProcessingTraceID: String?
     private var pendingBubbleMeta: String?
     private var activeNavigatorCommand: String?
+    private var navigatorStepCount = 0
     private var queuedVoiceNavigatorCommand: String?
     private var queuedVoiceNavigatorCommandTime: Date?
     private let voiceNavigatorQueueTimeout: TimeInterval = 8.0
@@ -600,6 +602,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.companionChatPanel = companionChatPanel
         self.accessibilityNavigator = accessibilityNavigator
         self.targetHighlightOverlay = targetHighlightOverlay
+        self.navigatorOverlayPanel = NavigatorOverlayPanel()
         self.navigatorActionWorker = NavigatorActionWorker(
             gatewayClient: gateway,
             navigator: accessibilityNavigator,
@@ -989,6 +992,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .navigatorCommandAccepted(let taskId, let command, let intentClass, let intentConfidence):
                 NSLog("[GW-IN] navigator.commandAccepted task=%@ command=%@ intent=%@ confidence=%.2f", taskId ?? "-", command, intentClass.rawValue, intentConfidence)
                 self.activeNavigatorCommand = command
+                self.navigatorStepCount = 0
                 self.navigatorPromptState = nil
                 if let taskId {
                     self.navigatorActionWorker?.beginTask(taskId: taskId, command: command)
@@ -1017,12 +1021,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
             case .navigatorStepPlanned(let taskId, let step, let message):
                 NSLog("[GW-IN] navigator.stepPlanned task=%@ id=%@ action=%@", taskId, step.id, step.actionType.rawValue)
+                self.navigatorStepCount += 1
                 chatPanel?.updateLastAssistantMessage(message.isEmpty ? step.expectedOutcome : message)
                 self.showStatusBubbleIfAllowed(
                     panel: panel,
                     text: VibeCatL10n.navigatorActingTitle(),
                     detail: step.expectedOutcome,
                     context: "navigator_step_planned"
+                )
+                self.navigatorOverlayPanel?.showStep(
+                    taskId: taskId,
+                    step: step,
+                    stepNumber: self.navigatorStepCount,
+                    totalSteps: nil
                 )
                 self.executeNavigatorStep(taskId: taskId, step: step, panel: panel, chatPanel: chatPanel)
             case .navigatorStepRunning(let taskId, let stepId, let status):
@@ -1056,6 +1067,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .navigatorCompleted(let taskId, let summary):
                 self.navigatorPromptState = nil
                 self.activeNavigatorCommand = nil
+                self.navigatorStepCount = 0
                 self.navigatorActionWorker?.clearTask(taskId: taskId)
                 chatPanel?.updateLastAssistantMessage(summary)
                 self.showStatusBubbleIfAllowed(
@@ -1064,9 +1076,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     detail: summary,
                     context: "navigator_completed"
                 )
+                self.navigatorOverlayPanel?.showCompletion(success: true)
             case .navigatorFailed(let taskId, let reason):
                 self.navigatorPromptState = nil
                 self.activeNavigatorCommand = nil
+                self.navigatorStepCount = 0
                 if let taskId {
                     self.navigatorActionWorker?.clearTask(taskId: taskId)
                 }
@@ -1077,6 +1091,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     detail: reason,
                     context: "navigator_failed"
                 )
+                self.navigatorOverlayPanel?.showCompletion(success: false)
             case .inputTranscription(let text, let finished):
                 NSLog("[GW-IN] onMessage: inputTranscription, text=%@, finished=%d", String(text.prefix(60)), finished)
                 let displayText = self.appendUserInputTranscription(text)
@@ -1552,9 +1567,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 detail: result.observedOutcome,
                 context: "navigator_step_result"
             )
-            if result.status == "guided_mode" {
+            let overlayResult: NavigatorOverlayPanel.StepResult
+            switch result.status {
+            case "success":
+                overlayResult = .success
+            case "guided_mode":
+                overlayResult = .retry
                 chatPanel?.updateLastAssistantMessage(result.observedOutcome)
+            default:
+                overlayResult = .failed
             }
+            self.navigatorOverlayPanel?.showResult(overlayResult)
         }
     }
 }
