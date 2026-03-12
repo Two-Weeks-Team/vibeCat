@@ -914,6 +914,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if source == "live" && self.shouldSuppressForVoiceNavigator(trigger: "turn_state_\(state)") {
                     if state != "speaking" {
                         self.clearVoiceNavigatorInterception(reason: "suppressed_turn_state_\(state)")
+                        self.flushQueuedVoiceNavigatorCommandIfPossible(reason: "suppressed_turn_state_\(state)")
                     }
                     return
                 }
