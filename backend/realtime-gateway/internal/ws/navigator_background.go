@@ -49,14 +49,14 @@ func enqueueNavigatorBackground(ctx context.Context, adkClient adkService, runti
 			return
 		}
 		if runtime != nil && strings.TrimSpace(result.Summary) != "" {
-			runtime.append(fmt.Sprintf("navigator[%s]: %s", snapshot.TaskID, truncateText(result.Summary, 240)))
+			runtime.appendExecution(fmt.Sprintf("navigator[%s]: %s", snapshot.TaskID, truncateText(result.Summary, 240)))
 		}
 		if runtime != nil && strings.TrimSpace(result.ResearchSummary) != "" {
-			runtime.append(fmt.Sprintf("navigator_research[%s]: %s", snapshot.TaskID, truncateText(result.ResearchSummary, 240)))
+			runtime.appendExecution(fmt.Sprintf("navigator_research[%s]: %s", snapshot.TaskID, truncateText(result.ResearchSummary, 240)))
 		}
 		if runtime != nil && len(snapshot.Attempts) > 0 {
 			last := snapshot.Attempts[len(snapshot.Attempts)-1]
-			runtime.append(fmt.Sprintf(
+			runtime.appendExecution(fmt.Sprintf(
 				"navigator_attempt[%s]: route=%s outcome=%s detail=%s",
 				last.ID,
 				truncateText(last.Route, 40),

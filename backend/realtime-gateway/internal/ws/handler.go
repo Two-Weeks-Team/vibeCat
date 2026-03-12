@@ -209,10 +209,12 @@ type visionCapturePayload struct {
 }
 
 type sessionRuntime struct {
-	mu        sync.Mutex
-	userID    string
-	sessionID string
-	history   []string
+	mu                   sync.Mutex
+	userID               string
+	sessionID            string
+	conversationHistory  []string
+	executionHistory     []string
+	observabilityHistory []string
 }
 
 func newSessionRuntime(defaultUserID, defaultSessionID string) *sessionRuntime {
@@ -233,7 +235,19 @@ func (sr *sessionRuntime) setIdentity(userID, sessionID string) {
 	}
 }
 
-func (sr *sessionRuntime) append(event string) {
+func (sr *sessionRuntime) appendConversation(event string) {
+	sr.appendToDomain(&sr.conversationHistory, event)
+}
+
+func (sr *sessionRuntime) appendExecution(event string) {
+	sr.appendToDomain(&sr.executionHistory, event)
+}
+
+func (sr *sessionRuntime) appendObservability(event string) {
+	sr.appendToDomain(&sr.observabilityHistory, event)
+}
+
+func (sr *sessionRuntime) appendToDomain(target *[]string, event string) {
 	event = strings.TrimSpace(event)
 	if event == "" {
 		return
@@ -241,17 +255,26 @@ func (sr *sessionRuntime) append(event string) {
 
 	sr.mu.Lock()
 	defer sr.mu.Unlock()
-	sr.history = append(sr.history, event)
-	if len(sr.history) > 200 {
-		sr.history = sr.history[len(sr.history)-200:]
+	*target = append(*target, event)
+	if len(*target) > 200 {
+		*target = (*target)[len(*target)-200:]
 	}
 }
 
 func (sr *sessionRuntime) snapshot() (string, string, []string) {
 	sr.mu.Lock()
 	defer sr.mu.Unlock()
-	history := append([]string(nil), sr.history...)
+	history := append([]string(nil), sr.conversationHistory...)
 	return sr.userID, sr.sessionID, history
+}
+
+func (sr *sessionRuntime) snapshotDomains() ([]string, []string, []string) {
+	sr.mu.Lock()
+	defer sr.mu.Unlock()
+	conversation := append([]string(nil), sr.conversationHistory...)
+	execution := append([]string(nil), sr.executionHistory...)
+	observability := append([]string(nil), sr.observabilityHistory...)
+	return conversation, execution, observability
 }
 
 func (ls *liveSessionState) isReconnecting() bool {
@@ -1054,9 +1077,12 @@ func maybeResolveSearchFallback(
 	})
 	sendProcessingState(c, "text", traceID, "grounding", groundingLabel(cfg.Language), groundingDetail(cfg.Language, len(result.Sources)), "google_search", len(result.Sources), false)
 
-	runtime.append(fmt.Sprintf("search[%s]: %s", traceID, truncateText(result.Summary, 240)))
+	runtime.appendExecution(fmt.Sprintf("search[%s]: %s", traceID, truncateText(result.Summary, 240)))
 	sendProcessingState(c, "text", traceID, "response_preparing", responsePreparingLabel(cfg.Language), toolPreparingDetail(adk.ToolKindSearch, cfg.Language), string(adk.ToolKindSearch), len(result.Sources), true)
 	success := speakWithTTSFallback(ctx, c, ls, ttsClient, metrics, "text", traceID, rootAt, result.Summary, reason)
+	if success {
+		runtime.appendConversation("assistant: " + truncateText(result.Summary, 240))
+	}
 	sendProcessingState(c, "text", traceID, "response_preparing", responsePreparingLabel(cfg.Language), toolPreparingDetail(adk.ToolKindSearch, cfg.Language), string(adk.ToolKindSearch), len(result.Sources), false)
 	return success
 }
@@ -1084,7 +1110,7 @@ func handleUserTextQuery(
 		rootAt = time.Now()
 	}
 
-	runtime.append("user: " + truncateText(query, 240))
+	runtime.appendConversation("user: " + truncateText(query, 240))
 	sendTraceEvent(c, "text", traceID, "text_received", rootAt, fmt.Sprintf("text_len=%d", len(query)))
 	route := resolveQueryRoute(ls.getConfig(), query)
 	switch route.Kind {
@@ -1219,6 +1245,30 @@ func fetchMemoryContext(ctx context.Context, adkClient adkService, cfg live.Conf
 		putCachedMemoryContext(userID, cfg.Language, contextText)
 	}
 	return contextText
+}
+
+func cachedMemoryContext(cfg live.Config) string {
+	userID := strings.TrimSpace(cfg.DeviceID)
+	if userID == "" {
+		return ""
+	}
+	if cached, ok := getCachedMemoryContext(userID, cfg.Language); ok {
+		slog.Info("[HANDLER] memory context cache hit", "user_id", userID, "language", cfg.Language, "context_len", len(cached))
+		return cached
+	}
+	return ""
+}
+
+func primeMemoryContextAsync(ctx context.Context, adkClient adkService, cfg live.Config) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		contextText := fetchMemoryContext(ctx, adkClient, cfg)
+		if strings.TrimSpace(contextText) != "" {
+			slog.Info("[HANDLER] memory context primed asynchronously for future live session", "device_id", cfg.DeviceID, "context_len", len(contextText))
+		}
+	}()
+	return done
 }
 
 func extractGroundingSources(meta *genai.GroundingMetadata) []string {
@@ -1395,7 +1445,7 @@ func maybeResolveTool(ctx context.Context, c *Conn, ls *liveSessionState, adkCli
 	}
 	sendTraceEvent(c, "tool", traceID, "tool_lookup_done", rootAt, fmt.Sprintf("tool=%s summary_len=%d", result.Tool, len(result.Summary)))
 
-	runtime.append(fmt.Sprintf("tool[%s]: %s => %s", result.Tool, query, truncateText(result.Summary, 240)))
+	runtime.appendExecution(fmt.Sprintf("tool[%s]: %s => %s", result.Tool, query, truncateText(result.Summary, 240)))
 	lockedSendJSON(c, map[string]any{
 		"type":    "toolResult",
 		"tool":    result.Tool,
@@ -1412,6 +1462,7 @@ func maybeResolveTool(ctx context.Context, c *Conn, ls *liveSessionState, adkCli
 	if liveSess == nil {
 		sendProcessingState(c, "tool", traceID, "response_preparing", responsePreparingLabel(cfg.Language), toolPreparingDetail(result.Tool, cfg.Language), string(result.Tool), len(result.Sources), true)
 		if speakWithTTSFallback(ctx, c, ls, ttsClient, metrics, "tool", traceID, rootAt, result.Summary, "tool_no_live_session") {
+			runtime.appendConversation("assistant: " + truncateText(result.Summary, 240))
 			slog.Info("[HANDLER] grounded tool result spoken via TTS fallback", "conn_id", c.ID, "tool", result.Tool)
 		} else {
 			slog.Warn("[HANDLER] grounded tool prompt dropped: no live session", "conn_id", c.ID)
@@ -1428,6 +1479,7 @@ func maybeResolveTool(ctx context.Context, c *Conn, ls *liveSessionState, adkCli
 		sendTraceEvent(c, "tool", traceID, "tool_prompt_injection_failed", rootAt, err.Error())
 		ttsRecovered := speakWithTTSFallback(ctx, c, ls, ttsClient, metrics, "tool", traceID, rootAt, result.Summary, "tool_live_prompt_failed")
 		if ttsRecovered {
+			runtime.appendConversation("assistant: " + truncateText(result.Summary, 240))
 			slog.Info("[HANDLER] grounded tool result recovered via TTS fallback", "conn_id", c.ID, "tool", result.Tool)
 			return true
 		}
@@ -1471,6 +1523,15 @@ func saveSessionMemory(ctx context.Context, adkClient adkService, cfg live.Confi
 
 	invalidateCachedMemoryContext(userID, cfg.Language)
 	slog.Info("[HANDLER] session summary saved", "user_id", userID, "session_id", sessionID, "history_len", len(history))
+}
+
+func enqueueSessionMemorySave(ctx context.Context, adkClient adkService, cfg live.Config, runtime *sessionRuntime) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		saveSessionMemory(ctx, adkClient, cfg, runtime)
+	}()
+	return done
 }
 
 // Handler returns an http.HandlerFunc that upgrades connections to WebSocket.
@@ -1618,7 +1679,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 				"outcome", strings.TrimSpace(outcome),
 				"detail", truncateText(strings.TrimSpace(detail), 200),
 			)
-			runtime.append(fmt.Sprintf(
+			runtime.appendExecution(fmt.Sprintf(
 				"navigator_attempt[%s]: event=%s outcome=%s detail=%s command_len=%d",
 				strings.TrimSpace(attemptID),
 				strings.TrimSpace(event),
@@ -1637,7 +1698,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 		}
 
 		defer func() {
-			saveSessionMemory(context.Background(), adkClient, ls.getConfig(), runtime)
+			enqueueSessionMemorySave(context.Background(), adkClient, ls.getConfig(), runtime)
 			if sess := ls.getSession(); sess != nil {
 				sess.Close()
 			}
@@ -1735,9 +1796,11 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 					}
 					cfg := setupMsg.Config
 					if strings.TrimSpace(setupMsg.ResumptionHandle) == "" {
-						cfg.MemoryContext = fetchMemoryContext(ctx, adkClient, cfg)
+						cfg.MemoryContext = cachedMemoryContext(cfg)
 						if cfg.MemoryContext != "" {
 							slog.Info("[HANDLER] memory context loaded for live session", "conn_id", c.ID, "device_id", cfg.DeviceID, "context_len", len(cfg.MemoryContext))
+						} else if adkClient != nil && strings.TrimSpace(cfg.DeviceID) != "" {
+							primeMemoryContextAsync(context.Background(), adkClient, cfg)
 						}
 					}
 					ls.setConfig(cfg)
@@ -1890,7 +1953,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 
 				case "bargeIn":
 					slog.Info("barge-in received", "conn_id", c.ID)
-					runtime.append("interrupt: user barge-in")
+					runtime.appendObservability("interrupt: user barge-in")
 					handleBargeIn(c, ls)
 
 				case "navigator.command":
@@ -2633,10 +2696,10 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 						)
 						sendTraceEvent(c, "proactive", traceID, "adk_analyze_done", rootAt, fmt.Sprintf("shouldSpeak=%t urgency=%s significance=%d", shouldSpeak, urgency, significance))
 						if result != nil && result.Vision != nil && result.Vision.Content != "" {
-							runtime.append("screen: " + truncateText(result.Vision.Content, 240))
+							runtime.appendExecution("screen: " + truncateText(result.Vision.Content, 240))
 						}
 						if result != nil && result.SpeechText != "" {
-							runtime.append("assistant: " + truncateText(result.SpeechText, 240))
+							runtime.appendConversation("assistant: " + truncateText(result.SpeechText, 240))
 						}
 
 						allowProactiveSpeech := captureMsg.Type == "forceCapture" || cfg.ProactiveAudio
@@ -2747,7 +2810,7 @@ func receiveFromGemini(ctx context.Context, c *Conn, sess *live.Session, ls *liv
 		flow := "voice"
 		traceID := newTraceID(flow)
 		rootAt := time.Now()
-		runtime.append("user: " + truncateText(query, 240))
+		runtime.appendConversation("user: " + truncateText(query, 240))
 		lockedSendJSON(c, map[string]any{
 			"type":     "inputTranscription",
 			"text":     query,
@@ -2783,7 +2846,7 @@ func receiveFromGemini(ctx context.Context, c *Conn, sess *live.Session, ls *liv
 			outputTranscript = ""
 			return
 		}
-		runtime.append("assistant: " + truncateText(text, 240))
+		runtime.appendConversation("assistant: " + truncateText(text, 240))
 		outputTranscript = ""
 	}
 
@@ -2920,7 +2983,7 @@ func receiveFromGemini(ctx context.Context, c *Conn, sess *live.Session, ls *liv
 				sendTraceEvent(c, flow, traceID, "grounding_metadata", rootAt, detail)
 				sendProcessingState(c, flow, traceID, "grounding", groundingLabel(ls.getConfig().Language), groundingDetail(ls.getConfig().Language, sourceCount), "google_search", sourceCount, true)
 				if detail != "" {
-					runtime.append("grounding: " + truncateText(detail, 240))
+					runtime.appendObservability("grounding: " + truncateText(detail, 240))
 				}
 				slog.Info("[GEMINI-RX] grounding metadata",
 					"conn_id", c.ID,
@@ -2948,7 +3011,7 @@ func receiveFromGemini(ctx context.Context, c *Conn, sess *live.Session, ls *liv
 
 			if sc.Interrupted {
 				outputTranscript = ""
-				runtime.append("interrupt: model turn interrupted")
+				runtime.appendObservability("interrupt: model turn interrupted")
 				if turnHasAudio {
 					turnHasAudio = false
 					ls.setModelSpeaking(false)
@@ -3084,7 +3147,7 @@ func handleNavigateTextEntryToolCall(c *Conn, sess *live.Session, ls *liveSessio
 
 	traceID := newTraceID("fc_nav")
 	rootAt := time.Now()
-	runtime.append(fmt.Sprintf("tool_call[navigate_text_entry]: text=%q target=%q submit=%v", truncateText(text, 80), target, submit))
+	runtime.appendExecution(fmt.Sprintf("tool_call[navigate_text_entry]: text=%q target=%q submit=%v", truncateText(text, 80), target, submit))
 
 	taskID := "fc_" + newConnID()
 	sendTraceEvent(c, "navigator", traceID, "function_call_text_entry", rootAt, fmt.Sprintf("text_len=%d target=%q submit=%v", len(text), target, submit))
@@ -3356,7 +3419,7 @@ func sendFCToolResponse(sess *live.Session, fc *genai.FunctionCall, connID strin
 func dispatchFCSteps(c *Conn, sess *live.Session, ls *liveSessionState, metrics *Metrics, runtime *sessionRuntime, fc *genai.FunctionCall, taskID, command, logKey string, steps []navigatorStep, extraResp map[string]any) {
 	traceID := newTraceID("fc_" + strings.ReplaceAll(fc.Name, "navigate_", ""))
 	rootAt := time.Now()
-	runtime.append(fmt.Sprintf("tool_call[%s]: %s", fc.Name, truncateText(command, 80)))
+	runtime.appendExecution(fmt.Sprintf("tool_call[%s]: %s", fc.Name, truncateText(command, 80)))
 	sendTraceEvent(c, "navigator", traceID, logKey, rootAt, command)
 
 	lockedSendJSON(c, map[string]any{
@@ -3434,7 +3497,7 @@ func handleNavigateOpenURLToolCall(c *Conn, sess *live.Session, ls *liveSessionS
 	if ctrl := ls.getCDPController(); ctrl != nil {
 		if err := ctrl.Navigate(rawURL); err == nil {
 			slog.Info("[CDP] navigate_open_url executed via CDP", "conn_id", c.ID, "url", truncateText(rawURL, 80))
-			runtime.append(fmt.Sprintf("tool_call[navigate_open_url via CDP]: %s", truncateText(rawURL, 80)))
+			runtime.appendExecution(fmt.Sprintf("tool_call[navigate_open_url via CDP]: %s", truncateText(rawURL, 80)))
 			taskID := "fc_" + newConnID()
 			lockedSendJSON(c, map[string]any{
 				"type":             "navigator.commandAccepted",
@@ -3479,7 +3542,7 @@ func handleNavigateTypeAndSubmitToolCall(c *Conn, sess *live.Session, ls *liveSe
 
 	traceID := newTraceID("fc_type_submit")
 	rootAt := time.Now()
-	runtime.append(fmt.Sprintf("tool_call[navigate_type_and_submit]: text=%q submit=%v", truncateText(text, 80), submit))
+	runtime.appendExecution(fmt.Sprintf("tool_call[navigate_type_and_submit]: text=%q submit=%v", truncateText(text, 80), submit))
 	taskID := "fc_" + newConnID()
 	sendTraceEvent(c, "navigator", traceID, "function_call_type_and_submit", rootAt, fmt.Sprintf("text_len=%d submit=%v", len(text), submit))
 

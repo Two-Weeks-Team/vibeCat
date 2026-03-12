@@ -659,6 +659,71 @@ func TestFetchMemoryContextStartsTraceSpan(t *testing.T) {
 	}
 }
 
+func TestSetupDoesNotBlockOnSlowMemoryContextFetch(t *testing.T) {
+	reg := NewRegistry()
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	fakeADK := &stubADK{
+		memoryContextFn: func(ctx context.Context, req adk.MemoryContextRequest) (string, error) {
+			select {
+			case started <- struct{}{}:
+			default:
+			}
+			select {
+			case <-release:
+				return "Primed memory context", nil
+			case <-ctx.Done():
+				return "", ctx.Err()
+			}
+		},
+	}
+
+	server := httptest.NewServer(Handler(reg, nil, fakeADK, nil, nil, NewInMemoryActionStateStore()))
+	defer server.Close()
+
+	conn := dialTestWebSocket(t, server.URL)
+	defer conn.Close()
+
+	if err := conn.WriteJSON(map[string]any{
+		"type": "setup",
+		"config": map[string]any{
+			"deviceId": "slow-memory-device",
+			"voice":    "Zephyr",
+			"language": "ko",
+		},
+	}); err != nil {
+		t.Fatalf("send setup: %v", err)
+	}
+
+	if err := conn.SetReadDeadline(time.Now().Add(250 * time.Millisecond)); err != nil {
+		t.Fatalf("set read deadline: %v", err)
+	}
+	_, payload, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatalf("read setupComplete while memory fetch pending: %v", err)
+	}
+	var msg map[string]any
+	if err := json.Unmarshal(payload, &msg); err != nil || msg["type"] != "setupComplete" {
+		t.Fatalf("expected setupComplete, got %s", payload)
+	}
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("expected async memory lookup to start")
+	}
+
+	close(release)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if got := cachedMemoryContext(live.Config{DeviceID: "slow-memory-device", Language: "ko"}); got == "Primed memory context" {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("memory context was not primed into cache")
+}
+
 func TestHandlerToolRoutingStartsTraceSpan(t *testing.T) {
 	installTestTracerProvider(t)
 
@@ -748,13 +813,122 @@ func TestSaveSessionMemoryStartsTraceSpan(t *testing.T) {
 		},
 	}
 	runtime := newSessionRuntime("trace-save-user", "trace-save-session")
-	runtime.append("user: 인증 테스트가 계속 실패해")
-	runtime.append("assistant: 401 응답 경로를 먼저 확인해보자")
+	runtime.appendConversation("user: 인증 테스트가 계속 실패해")
+	runtime.appendConversation("assistant: 401 응답 경로를 먼저 확인해보자")
 
 	saveSessionMemory(context.Background(), fakeADK, live.Config{Language: "Korean"}, runtime)
 
 	if !sawSpan {
 		t.Fatal("expected session summary save to run under an active trace span")
+	}
+}
+
+func TestEnqueueSessionMemorySaveReturnsImmediatelyAndInvalidatesCache(t *testing.T) {
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	fakeADK := &stubADK{
+		saveSessionSummaryFn: func(ctx context.Context, req adk.SessionSummaryRequest) error {
+			select {
+			case entered <- struct{}{}:
+			default:
+			}
+			select {
+			case <-release:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		},
+	}
+	runtime := newSessionRuntime("async-save-user", "async-save-session")
+	runtime.appendConversation("user: save this")
+	putCachedMemoryContext("async-save-user", "Korean", "stale context")
+
+	start := time.Now()
+	done := enqueueSessionMemorySave(context.Background(), fakeADK, live.Config{Language: "Korean"}, runtime)
+	if elapsed := time.Since(start); elapsed > 50*time.Millisecond {
+		t.Fatalf("enqueueSessionMemorySave blocked for %v", elapsed)
+	}
+
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("expected async save to start")
+	}
+
+	select {
+	case <-done:
+		t.Fatal("save completed before release")
+	default:
+	}
+
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("async save did not complete")
+	}
+
+	if got := cachedMemoryContext(live.Config{DeviceID: "async-save-user", Language: "Korean"}); got != "" {
+		t.Fatalf("expected memory cache invalidated, got %q", got)
+	}
+}
+
+func TestSessionRuntimeSeparatesConversationExecutionAndObservability(t *testing.T) {
+	runtime := newSessionRuntime("user-1", "session-1")
+	runtime.appendConversation("user: open docs")
+	runtime.appendConversation("assistant: opening docs")
+	runtime.appendExecution("tool_call[navigate_open_url]: https://example.com")
+	runtime.appendObservability("grounding: sources=2")
+
+	conversation, execution, observability := runtime.snapshotDomains()
+
+	if len(conversation) != 2 {
+		t.Fatalf("conversation len = %d, want 2", len(conversation))
+	}
+	if len(execution) != 1 {
+		t.Fatalf("execution len = %d, want 1", len(execution))
+	}
+	if len(observability) != 1 {
+		t.Fatalf("observability len = %d, want 1", len(observability))
+	}
+	if conversation[0] != "user: open docs" || conversation[1] != "assistant: opening docs" {
+		t.Fatalf("conversation = %#v", conversation)
+	}
+	if execution[0] != "tool_call[navigate_open_url]: https://example.com" {
+		t.Fatalf("execution = %#v", execution)
+	}
+	if observability[0] != "grounding: sources=2" {
+		t.Fatalf("observability = %#v", observability)
+	}
+
+	_, _, semanticHistory := runtime.snapshot()
+	if len(semanticHistory) != 2 {
+		t.Fatalf("semantic history len = %d, want 2", len(semanticHistory))
+	}
+}
+
+func TestSaveSessionMemoryUsesConversationHistoryOnly(t *testing.T) {
+	var savedHistory []string
+	fakeADK := &stubADK{
+		saveSessionSummaryFn: func(_ context.Context, req adk.SessionSummaryRequest) error {
+			savedHistory = append([]string(nil), req.History...)
+			return nil
+		},
+	}
+	runtime := newSessionRuntime("user-1", "session-1")
+	runtime.appendConversation("user: 검색창 열어줘")
+	runtime.appendConversation("assistant: 검색창을 열어볼게")
+	runtime.appendExecution("tool_call[navigate_text_entry]: text=search")
+	runtime.appendObservability("interrupt: user barge-in")
+
+	saveSessionMemory(context.Background(), fakeADK, live.Config{Language: "Korean"}, runtime)
+
+	if len(savedHistory) != 2 {
+		t.Fatalf("saved history len = %d, want 2", len(savedHistory))
+	}
+	if savedHistory[0] != "user: 검색창 열어줘" || savedHistory[1] != "assistant: 검색창을 열어볼게" {
+		t.Fatalf("saved history = %#v", savedHistory)
 	}
 }
 
