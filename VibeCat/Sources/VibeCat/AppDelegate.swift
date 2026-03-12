@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var onboardingController: OnboardingWindowController?
     private var catPanel: CatPanel?
     private var companionChatPanel: CompanionChatPanel?
+    private var targetHighlightOverlay: TargetHighlightOverlay?
 
     private var audioPlayer: AudioPlayer?
     private var catVoice: CatVoice?
@@ -41,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var isPaused = false
     private var isMuted = false
     private var assistantTranscription = AssistantTranscriptionAssembler()
+    private var userInputTranscription = AssistantTranscriptionAssembler(mergeWindow: 0.9)
     private var pendingTranscription: String { assistantTranscription.currentText }
     private var lastSpeechEndTime: Date = .distantPast
     private let minimumSpeechGap: TimeInterval = 3.0
@@ -95,6 +97,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var activeProcessingTraceID: String?
     private var pendingBubbleMeta: String?
     private var activeNavigatorCommand: String?
+    private var queuedVoiceNavigatorCommand: String?
+    private var queuedVoiceNavigatorCommandTime: Date?
+    private let voiceNavigatorQueueTimeout: TimeInterval = 8.0
     private var latestAudioDeviceSnapshot: AudioDeviceMonitor.Snapshot?
     private var audioDeviceChangeTask: Task<Void, Never>?
     private var speechCaptureState: SpeechRecognizer.CaptureState = .stopped
@@ -143,6 +148,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             deadline: Date().addingTimeInterval(voiceNavigatorSuppressionWindow)
         )
         NSLog("[NAV-VOICE] intercept pending command=%@", trimmed)
+    }
+
+    private func queueVoiceNavigatorCommand(_ command: String) {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        queuedVoiceNavigatorCommand = trimmed
+        queuedVoiceNavigatorCommandTime = Date()
+        NSLog("[NAV-VOICE] queued command=%@", trimmed)
+    }
+
+    private func flushQueuedVoiceNavigatorCommandIfPossible(reason: String) {
+        guard let command = queuedVoiceNavigatorCommand else { return }
+        if let queueTime = queuedVoiceNavigatorCommandTime,
+           Date().timeIntervalSince(queueTime) > voiceNavigatorQueueTimeout {
+            NSLog("[NAV-VOICE] queue expired command=%@ age=%.1fs", command,
+                  Date().timeIntervalSince(queueTime))
+            queuedVoiceNavigatorCommand = nil
+            queuedVoiceNavigatorCommandTime = nil
+            return
+        }
+        guard !speechState.isSpeaking, !speechState.isCooldown else {
+            NSLog("[NAV-VOICE] queue held reason=%@ speech=%@", reason, speechState.description)
+            return
+        }
+        if case .idle = voiceNavigatorInterceptionState {
+        } else {
+            NSLog("[NAV-VOICE] queue held reason=%@ intercept_state=pending", reason)
+            return
+        }
+        queuedVoiceNavigatorCommand = nil
+        queuedVoiceNavigatorCommandTime = nil
+        NSLog("[NAV-VOICE] queue flush reason=%@ command=%@", reason, command)
+        handleNavigatorTextSubmission(command, captureScreenshot: true)
     }
 
     @discardableResult
@@ -207,6 +245,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         armVoiceNavigatorInterception(command: trimmed)
+        queueVoiceNavigatorCommand(trimmed)
         gatewayClient?.sendBargeIn()
         catVoice?.stop()
         if speechState.isSpeaking || speechState.isCooldown {
@@ -216,7 +255,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clearPendingBubbleMeta()
         discardPendingTranscription(reason: "voice_navigator_reroute")
         panel?.hideBubble()
-        handleNavigatorTextSubmission(trimmed, captureScreenshot: true)
     }
 
     private func normalizeToolName(_ raw: String) -> String {
@@ -320,6 +358,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         transcriptionFinalizeTask = nil
         assistantTranscription.discard()
         NSLog("[GW-IN] transcription DISCARDED (%@)", reason)
+    }
+
+    private func appendUserInputTranscription(_ text: String) -> String {
+        AssistantTranscriptionAssembler.displayText(userInputTranscription.ingest(text))
+    }
+
+    private func finalizeUserInputTranscription(fallback text: String) -> String {
+        let finalized = userInputTranscription.finalizeNow()
+        let resolved = finalized ?? text
+        return AssistantTranscriptionAssembler.displayText(resolved)
+    }
+
+    private func discardUserInputTranscription() {
+        userInputTranscription.discard()
     }
 
     private func schedulePendingTranscriptionFinalization() {
@@ -432,7 +484,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshAudioInputStatusUI()
         audioDeviceChangeTask?.cancel()
         audioDeviceChangeTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 300_000_000)
             guard let self, !Task.isCancelled else { return }
             self.audioDeviceChangeTask = nil
             self.applyAudioDeviceChange(snapshot)
@@ -450,6 +501,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             spriteIdleTask?.cancel()
             speechRecognizer?.setModelSpeaking(false)
             catPanel?.setTurnActive(false)
+            flushQueuedVoiceNavigatorCommandIfPossible(reason: "speech_idle")
             // Barge-in / interrupt paths can jump straight from speaking to idle.
             // Clear transient celebration/emotion UI immediately in that case.
             if old.isSpeaking {
@@ -533,6 +585,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let circleGestureDetector = CircleGestureDetector()
         let companionChatPanel = CompanionChatPanel()
         let accessibilityNavigator = AccessibilityNavigator()
+        let targetHighlightOverlay = TargetHighlightOverlay()
 
         self.audioPlayer = audio
         self.catVoice = voice
@@ -546,6 +599,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.circleGestureDetector = circleGestureDetector
         self.companionChatPanel = companionChatPanel
         self.accessibilityNavigator = accessibilityNavigator
+        self.targetHighlightOverlay = targetHighlightOverlay
         self.navigatorActionWorker = NavigatorActionWorker(
             gatewayClient: gateway,
             navigator: accessibilityNavigator,
@@ -583,6 +637,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let panel = CatPanel(catViewModel: viewModel, spriteAnimator: sprite)
         self.catPanel = panel
+        capture.probePointProvider = { [weak panel] in
+            panel?.currentGlobalProbePoint() ?? NSEvent.mouseLocation
+        }
         panel.applySpriteSize(presetSize: initialPreset.size)
         panel.setSmartHideReferences(audioPlayer: audio, screenAnalyzer: analyzer)
         panel.traceLogContextProvider = { [weak self] in
@@ -636,6 +693,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             panel?.showSpeechBubble(text: event.text, meta: self?.pendingBubbleMeta)
             self?.recentSpeechStore.add(event.text, speaker: .assistant)
             self?.statusBarController?.recordInteraction()
+        }
+        analyzer.onScreenBasisUpdate = { [weak panel] appName, windowTitle in
+            Task { @MainActor in
+                panel?.updateCurrentWindowTitle(appName: appName, windowTitle: windowTitle)
+            }
         }
         analyzer.onBackgroundSpeech = { [weak self] text in
             self?.sendCompanionNotification(text: text)
@@ -780,6 +842,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.transitionSpeech(to: .idle)
                 self.disarmListeningStatus()
                 self.discardPendingTranscription(reason: "gateway_disconnected")
+                self.discardUserInputTranscription()
             }
             panel?.hideBubble()
             panel?.setEmotionIndicator(nil)
@@ -1015,6 +1078,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
             case .inputTranscription(let text, let finished):
                 NSLog("[GW-IN] onMessage: inputTranscription, text=%@, finished=%d", String(text.prefix(60)), finished)
+                let displayText = self.appendUserInputTranscription(text)
                 if !finished,
                    !self.listeningStatusArmed,
                    !self.chatModeActive,
@@ -1024,10 +1088,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     NSLog("[BUBBLE] listening auto-armed from input transcription")
                 }
                 if !finished && self.listeningStatusArmed {
+                    if !self.bubbleLockedByTTS && !self.chatModeActive && !displayText.isEmpty {
+                        panel?.showBubble(text: displayText)
+                    }
                     self.showStatusBubbleIfAllowed(
                         panel: panel,
                         text: VibeCatL10n.listeningTitle(),
-                        detail: self.listeningStatusDetail(for: text),
+                        detail: self.listeningStatusDetail(for: displayText),
                         context: "input_transcription"
                     )
                 }
@@ -1035,9 +1102,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.disarmListeningStatus()
                     self.activeProcessingTraceID = nil
                     self.clearPendingBubbleMeta()
-                    self.recentSpeechStore.add(text, speaker: .user)
-                    if self.shouldRouteVoiceTranscriptToNavigator(text) {
-                        self.rerouteVoiceTranscriptToNavigator(text, panel: panel)
+                    let finalUserText = self.finalizeUserInputTranscription(fallback: text)
+                    if !finalUserText.isEmpty {
+                        self.recentSpeechStore.add(finalUserText, speaker: .user)
+                    }
+                    if self.shouldRouteVoiceTranscriptToNavigator(finalUserText) {
+                        self.rerouteVoiceTranscriptToNavigator(finalUserText, panel: panel)
                     }
                 }
             case .audio(let data):
@@ -1045,6 +1115,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .turnComplete:
                 if self.shouldSuppressForVoiceNavigator(trigger: "turn_complete") {
                     self.clearVoiceNavigatorInterception(reason: "suppressed_turn_complete")
+                    self.flushQueuedVoiceNavigatorCommandIfPossible(reason: "suppressed_turn_complete")
                     return
                 }
                 NSLog("[GW-IN] onMessage: turnComplete")
@@ -1062,8 +1133,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.activeProcessingTraceID = nil
                 self.clearPendingBubbleMeta()
                 self.discardPendingTranscription(reason: "interrupted")
+                self.discardUserInputTranscription()
                 panel?.hideBubble()
                 self.armListeningStatus(panel: panel)
+                self.flushQueuedVoiceNavigatorCommandIfPossible(reason: "interrupted")
             case .sessionResumptionUpdate(let handle):
                 NSLog("[GW-IN] onMessage: sessionResumptionUpdate, handleLength=%lu", handle.count)
             case .liveSessionReconnecting(let attempt, let max):
@@ -1403,7 +1476,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func currentNavigatorContext() -> NavigatorContextPayload {
-        accessibilityNavigator?.currentContext()
+        let baseContext = accessibilityNavigator?.currentContext()
             ?? NavigatorContextPayload(
                 appName: "",
                 bundleId: "",
@@ -1422,20 +1495,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 accessibilityPermission: "unknown",
                 accessibilityTrusted: false
             )
+        guard let screenAnalyzer else {
+            return baseContext
+        }
+        return screenAnalyzer.latestSharedScreenBasisContext(baseContext: baseContext, includeScreenshot: false)
     }
 
     private func currentNavigatorCommandContext() async -> NavigatorContextPayload {
         let baseContext = currentNavigatorContext()
-        guard let captureService else {
+        guard let screenAnalyzer else {
             return baseContext
         }
-
-        let captureResult = await captureService.forceCapture()
-        guard case .captured(let snapshot) = captureResult,
-              let screenshot = ImageProcessor.toBase64JPEG(snapshot.image) else {
-            return baseContext
-        }
-        return baseContext.withScreenshot(screenshot)
+        return await screenAnalyzer.freshNavigatorCommandContext(baseContext: baseContext)
     }
 
     private func handleNavigatorTextSubmission(_ text: String, captureScreenshot: Bool = true) {
@@ -1466,8 +1537,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func executeNavigatorStep(taskId: String, step: NavigatorStep, panel: CatPanel?, chatPanel: CompanionChatPanel?) {
+        if let rect = accessibilityNavigator?.highlightRect(for: step) {
+            targetHighlightOverlay?.show(targetRect: rect)
+        } else {
+            targetHighlightOverlay?.hide()
+        }
         navigatorActionWorker?.execute(taskId: taskId, step: step) { [weak self] result in
             guard let self else { return }
+            self.targetHighlightOverlay?.hide()
             self.showStatusBubbleIfAllowed(
                 panel: panel,
                 text: VibeCatL10n.navigatorVerifyingTitle(),
