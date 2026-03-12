@@ -909,6 +909,9 @@ func parseSystemAction(command string) (string, string, int, string, bool) {
 	if lowered == "" {
 		return "", "", 0, "", false
 	}
+	if requestsTextInsertion(command) {
+		return "", "", 0, "", false
+	}
 
 	switch {
 	case containsKeywordAny(lowered, "unmute", "음소거 해제", "mute off", "소리 켜", "소리 다시 켜", "음량 다시 켜"):

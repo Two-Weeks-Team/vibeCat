@@ -171,8 +171,8 @@ type NavigatorBackgroundAttempt struct {
 	TargetDisplayID  string    `json:"targetDisplayId,omitempty"`
 	Outcome          string    `json:"outcome,omitempty"`
 	OutcomeDetail    string    `json:"outcomeDetail,omitempty"`
-	StartedAt        time.Time `json:"startedAt,omitempty"`
-	CompletedAt      time.Time `json:"completedAt,omitempty"`
+	StartedAt        time.Time `json:"startedAt,omitzero"`
+	CompletedAt      time.Time `json:"completedAt,omitzero"`
 }
 
 type NavigatorBackgroundRequest struct {
@@ -188,8 +188,8 @@ type NavigatorBackgroundRequest struct {
 	InitialWindowTitle      string                       `json:"initialWindowTitle,omitempty"`
 	InitialContextHash      string                       `json:"initialContextHash,omitempty"`
 	LastVerifiedContextHash string                       `json:"lastVerifiedContextHash,omitempty"`
-	StartedAt               time.Time                    `json:"startedAt,omitempty"`
-	CompletedAt             time.Time                    `json:"completedAt,omitempty"`
+	StartedAt               time.Time                    `json:"startedAt,omitzero"`
+	CompletedAt             time.Time                    `json:"completedAt,omitzero"`
 	Steps                   []NavigatorBackgroundStep    `json:"steps,omitempty"`
 	Attempts                []NavigatorBackgroundAttempt `json:"attempts,omitempty"`
 	TraceID                 string                       `json:"traceId,omitempty"`

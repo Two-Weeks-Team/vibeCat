@@ -1614,17 +1614,17 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 				"conn_id", c.ID,
 				"event", event,
 				"attempt_id", strings.TrimSpace(attemptID),
-				"command", truncateText(strings.TrimSpace(command), 160),
+				"command_len", len(strings.TrimSpace(command)),
 				"outcome", strings.TrimSpace(outcome),
 				"detail", truncateText(strings.TrimSpace(detail), 200),
 			)
 			runtime.append(fmt.Sprintf(
-				"navigator_attempt[%s]: event=%s outcome=%s detail=%s command=%s",
+				"navigator_attempt[%s]: event=%s outcome=%s detail=%s command_len=%d",
 				strings.TrimSpace(attemptID),
 				strings.TrimSpace(event),
 				strings.TrimSpace(outcome),
 				truncateText(strings.TrimSpace(detail), 180),
-				truncateText(strings.TrimSpace(command), 120),
+				len(strings.TrimSpace(command)),
 			))
 		}
 

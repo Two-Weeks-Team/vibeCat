@@ -177,12 +177,7 @@ final class CatPanel: NSPanel {
     func showSpeechBubble(text: String, meta: String?) {
         let displayText = text
         let wasVisible = !bubbleView.isHidden && bubbleView.alphaValue > 0
-        NSLog(
-            "[BUBBLE] speech %@: text=%@ meta=%@",
-            wasVisible && !bubbleView.isShowingStatus ? "update" : "show",
-            displayText,
-            meta ?? ""
-        )
+        NSLog("[CAT-PANEL] showSpeechBubble len=%d metaLen=%d wasVisible=%d", text.count, (meta ?? "").count, wasVisible ? 1 : 0)
         if let traceContext = traceLogContextProvider?() {
             NSLog("[TRACE] %@ phase=%@ text_len=%d", traceContext, wasVisible ? "bubble_update" : "bubble_show", displayText.count)
         }

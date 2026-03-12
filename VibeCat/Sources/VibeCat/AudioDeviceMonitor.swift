@@ -89,7 +89,7 @@ final class AudioDeviceMonitor {
 
     private func emitChange(_ trigger: Trigger) {
         let snapshot = makeSnapshot(trigger: trigger)
-        if let lastSnapshot, snapshot.sameDevices(as: lastSnapshot) {
+        if let lastSnapshot, trigger != .deviceListChanged, snapshot.sameDevices(as: lastSnapshot) {
             NSLog("[AUDIO-DEVICE] duplicate change ignored trigger=%@", trigger.rawValue)
             return
         }

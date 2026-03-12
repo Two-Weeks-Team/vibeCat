@@ -101,7 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var navigatorStepCount = 0
     private var queuedVoiceNavigatorCommand: String?
     private var queuedVoiceNavigatorCommandTime: Date?
-    private let voiceNavigatorQueueTimeout: TimeInterval = 8.0
+    private let voiceNavigatorQueueTimeout: TimeInterval = 25.0
     private var latestAudioDeviceSnapshot: AudioDeviceMonitor.Snapshot?
     private var audioDeviceChangeTask: Task<Void, Never>?
     private var speechCaptureState: SpeechRecognizer.CaptureState = .stopped
@@ -247,16 +247,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         armVoiceNavigatorInterception(command: trimmed)
-        queueVoiceNavigatorCommand(trimmed)
-        gatewayClient?.sendBargeIn()
-        catVoice?.stop()
-        if speechState.isSpeaking || speechState.isCooldown {
-            transitionSpeech(to: .idle)
-        }
         activeProcessingTraceID = nil
         clearPendingBubbleMeta()
         discardPendingTranscription(reason: "voice_navigator_reroute")
         panel?.hideBubble()
+        if !speechState.isSpeaking && !speechState.isCooldown {
+            handleNavigatorTextSubmission(trimmed, captureScreenshot: true)
+            return
+        }
+        queueVoiceNavigatorCommand(trimmed)
+        gatewayClient?.sendBargeIn()
+        catVoice?.stop()
+        transitionSpeech(to: .idle)
     }
 
     private func normalizeToolName(_ raw: String) -> String {

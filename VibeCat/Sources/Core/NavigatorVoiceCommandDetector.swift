@@ -156,6 +156,10 @@ public enum NavigatorVoiceCommandDetector {
         }
 
         for quote in ["\"", "'"] {
+            let hasPairedQuotes = quote == "'" ? command.components(separatedBy: "'").count >= 3 : true
+            if !hasPairedQuotes {
+                continue
+            }
             let parts = command.split(separator: Character(quote), omittingEmptySubsequences: true)
             if parts.count >= 2 {
                 let candidate = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)

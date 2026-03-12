@@ -780,16 +780,17 @@ final class AccessibilityNavigator {
     }
 
     private func clickTextInput(at point: CGPoint) -> Bool {
+        let cgPoint = ScreenCaptureService.MouseWindowTargetingGeometry.appKitToCGPoint(point)
         guard let down = CGEvent(
             mouseEventSource: nil,
             mouseType: .leftMouseDown,
-            mouseCursorPosition: point,
+            mouseCursorPosition: cgPoint,
             mouseButton: .left
         ),
         let up = CGEvent(
             mouseEventSource: nil,
             mouseType: .leftMouseUp,
-            mouseCursorPosition: point,
+            mouseCursorPosition: cgPoint,
             mouseButton: .left
         ) else {
             return false

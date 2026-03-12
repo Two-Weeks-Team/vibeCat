@@ -80,7 +80,7 @@ public struct NavigatorSurfaceProfile: Sendable, Equatable {
         let value = Self.normalized(appName ?? "")
         guard !value.isEmpty else { return false }
         return appAliases.contains(where: { alias in
-            value.contains(alias) || alias.contains(value)
+            value.contains(alias)
         })
     }
 
