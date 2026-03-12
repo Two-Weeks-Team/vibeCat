@@ -77,4 +77,29 @@ final class AssistantTranscriptionAssemblerTests: XCTestCase {
             "방금 바꾼 함수 하나나 깨진 파일 하나부터 좁혀보자."
         )
     }
+
+    func testNoiseOnlyChunkDoesNotChangeTranscript() {
+        var assembler = AssistantTranscriptionAssembler(mergeWindow: 0.75)
+
+        XCTAssertEqual(assembler.ingest("지금 보고 있는"), "지금 보고 있는")
+        XCTAssertEqual(assembler.ingest(" <noise> "), "지금 보고 있는")
+    }
+
+    func testNoiseMarkerIsRemovedBeforeMerge() {
+        var assembler = AssistantTranscriptionAssembler(mergeWindow: 0.75)
+
+        XCTAssertEqual(assembler.ingest("지금"), "지금")
+        XCTAssertEqual(assembler.ingest(" <noise> 보고 있어"), "지금 보고 있어")
+    }
+
+    func testDisplayTextTrimsNoiseAndWhitespace() {
+        XCTAssertEqual(AssistantTranscriptionAssembler.displayText(" <noise> 지금 보고 있어요 \n"), "지금 보고 있어요")
+    }
+
+    func testCanonicalMergePrefersSingleUtteranceWhenSpacingDiffers() {
+        var assembler = AssistantTranscriptionAssembler(mergeWindow: 0.75)
+
+        XCTAssertEqual(assembler.ingest("지금입력 창에 A부터 Z까지 입력해 봐."), "지금입력 창에 A부터 Z까지 입력해 봐.")
+        XCTAssertEqual(assembler.ingest("지금 입력 창에 A부터 Z까지 입력해 봐."), "지금 입력 창에 A부터 Z까지 입력해 봐.")
+    }
 }

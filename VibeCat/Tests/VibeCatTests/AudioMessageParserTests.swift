@@ -208,6 +208,20 @@ final class AudioMessageParserTests: XCTestCase {
                 "riskLevel": "low",
                 "executionPolicy": "safe_immediate",
                 "fallbackPolicy": "guided_mode",
+                "surface": "chrome",
+                "macroID": "open_docs_search",
+                "narration": "Opening the official docs in Chrome.",
+                "verifyContract": [
+                    "expectedBundleId": "com.google.Chrome",
+                    "expectedWindowContains": "Google",
+                    "requireFrontmostApp": true,
+                    "proofStrategy": "window_change"
+                ],
+                "fallbackActionType": "hotkey",
+                "fallbackHotkey": ["command", "l"],
+                "maxLocalRetries": 1,
+                "timeoutMs": 1500,
+                "proofLevel": "strong",
                 "url": "https://www.google.com/search?q=auth",
                 "verifyHint": "google"
             ]
@@ -225,6 +239,18 @@ final class AudioMessageParserTests: XCTestCase {
         XCTAssertEqual(step.targetApp, "Chrome")
         XCTAssertEqual(step.targetDescriptor.appName, "Chrome")
         XCTAssertEqual(step.targetDescriptor.windowTitle, "AuthServiceTests")
+        XCTAssertEqual(step.surface, .chrome)
+        XCTAssertEqual(step.macroID, "open_docs_search")
+        XCTAssertEqual(step.narration, "Opening the official docs in Chrome.")
+        XCTAssertEqual(step.verifyContract?.expectedBundleId, "com.google.Chrome")
+        XCTAssertEqual(step.verifyContract?.expectedWindowContains, "Google")
+        XCTAssertEqual(step.verifyContract?.requireFrontmostApp, true)
+        XCTAssertEqual(step.verifyContract?.proofStrategy, "window_change")
+        XCTAssertEqual(step.fallbackActionType, .hotkey)
+        XCTAssertEqual(step.fallbackHotkey ?? [], ["command", "l"])
+        XCTAssertEqual(step.maxLocalRetries, 1)
+        XCTAssertEqual(step.timeoutMs, 1500)
+        XCTAssertEqual(step.proofLevel, .strong)
         XCTAssertEqual(step.url, "https://www.google.com/search?q=auth")
         XCTAssertEqual(step.verifyHint, "google")
     }

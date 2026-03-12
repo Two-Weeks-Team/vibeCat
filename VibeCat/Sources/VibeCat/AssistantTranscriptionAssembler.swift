@@ -18,7 +18,8 @@ struct AssistantTranscriptionAssembler {
     }
 
     mutating func ingest(_ text: String, now: Date = Date()) -> String {
-        guard !text.isEmpty else { return currentText }
+        let incoming = Self.sanitizedChunk(text)
+        guard !incoming.isEmpty else { return currentText }
 
         if let deadline = finalizationDeadline {
             if now >= deadline {
@@ -29,7 +30,7 @@ struct AssistantTranscriptionAssembler {
             }
         }
 
-        currentText = mergedTranscript(current: currentText, incoming: text)
+        currentText = mergedTranscript(current: currentText, incoming: incoming)
         return currentText
     }
 
@@ -68,9 +69,40 @@ struct AssistantTranscriptionAssembler {
         finalizationDeadline = nil
     }
 
+    static func displayText(_ text: String) -> String {
+        sanitizedChunk(text).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func sanitizedChunk(_ text: String) -> String {
+        guard !text.isEmpty else { return "" }
+        var sanitized = text
+        for marker in ["<noise>", "[noise]", "<unk>"] {
+            sanitized = sanitized.replacingOccurrences(of: marker, with: " ", options: [.caseInsensitive])
+        }
+        sanitized = sanitized.replacingOccurrences(of: "\n", with: " ")
+        sanitized = sanitized.replacingOccurrences(of: "\t", with: " ")
+        sanitized = sanitized.replacingOccurrences(of: " {2,}", with: " ", options: .regularExpression)
+        if sanitized.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return ""
+        }
+        return sanitized
+    }
+
     private func mergedTranscript(current: String, incoming: String) -> String {
         guard !current.isEmpty else { return incoming }
         guard !incoming.isEmpty else { return current }
+
+        let canonicalCurrent = canonicalText(current)
+        let canonicalIncoming = canonicalText(incoming)
+        if !canonicalCurrent.isEmpty && canonicalCurrent == canonicalIncoming {
+            return incoming.count >= current.count ? incoming : current
+        }
+        if !canonicalCurrent.isEmpty && canonicalIncoming.hasPrefix(canonicalCurrent) {
+            return incoming
+        }
+        if !canonicalIncoming.isEmpty && canonicalCurrent.hasPrefix(canonicalIncoming) {
+            return current
+        }
 
         if current == incoming {
             return current
@@ -107,5 +139,15 @@ struct AssistantTranscriptionAssembler {
             }
         }
         return 0
+    }
+
+    private func canonicalText(_ text: String) -> String {
+        text.unicodeScalars
+            .filter { scalar in
+                CharacterSet.alphanumerics.contains(scalar) || CharacterSet.letters.contains(scalar)
+            }
+            .map(String.init)
+            .joined()
+            .lowercased()
     }
 }

@@ -215,19 +215,35 @@ final class GatewayClient {
         ])
     }
 
-    func sendNavigatorRefresh(taskId: String, command: String, step: NavigatorStep, status: String, observedOutcome: String, context: NavigatorContextPayload) {
+    func sendNavigatorRefresh(taskId: String, command: String, step: NavigatorStep, result: NavigatorExecutionResult, context: NavigatorContextPayload) {
         guard case .connected = state else { return }
         guard let contextObject = encodableJSONObject(context) as? [String: Any],
               let stepObject = encodableJSONObject(step) as? [String: Any] else { return }
-        sendJSON([
+        NSLog(
+            "[GW-OUT] navigator.refresh task=%@ step=%@ status=%@ phase=%@ failure=%@ display=%@ cached=%d age_ms=%d",
+            taskId,
+            step.id,
+            result.status,
+            result.phase.rawValue,
+            result.failureReason?.rawValue ?? "-",
+            context.activeDisplayID,
+            context.screenshotCached ? 1 : 0,
+            context.screenshotAgeMs
+        )
+        var payload: [String: Any] = [
             "type": "navigator.refreshContext",
             "taskId": taskId,
             "command": command,
             "step": stepObject,
-            "status": status,
-            "observedOutcome": observedOutcome,
+            "status": result.status,
+            "observedOutcome": result.observedOutcome,
             "context": contextObject
-        ])
+        ]
+        if let failureReason = result.failureReason {
+            payload["failureReason"] = failureReason.rawValue
+        }
+        payload["phase"] = result.phase.rawValue
+        sendJSON(payload)
     }
 
     func sendBargeIn() {

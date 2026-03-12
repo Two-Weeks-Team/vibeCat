@@ -211,6 +211,22 @@ public enum AudioMessageParser {
             regionHint: descriptorJSON["regionHint"] as? String
         )
 
+        let verifyContractJSON = json["verifyContract"] as? [String: Any]
+        let verifyContract = verifyContractJSON.map {
+            VerifyContract(
+                expectedBundleId: $0["expectedBundleId"] as? String,
+                expectedWindowContains: $0["expectedWindowContains"] as? String,
+                expectedFocusedRole: $0["expectedFocusedRole"] as? String,
+                expectedFocusedLabel: $0["expectedFocusedLabel"] as? String,
+                expectedAXContains: $0["expectedAXContains"] as? String,
+                expectedSelectedTextPrefix: $0["expectedSelectedTextPrefix"] as? String,
+                requireWritableTarget: $0["requireWritableTarget"] as? Bool,
+                requireFrontmostApp: $0["requireFrontmostApp"] as? Bool,
+                minCaptureConfidenceAfter: $0["minCaptureConfidenceAfter"] as? Double,
+                proofStrategy: $0["proofStrategy"] as? String
+            )
+        }
+
         let hotkey = json["hotkey"] as? [String] ?? []
         return NavigatorStep(
             id: id,
@@ -229,7 +245,16 @@ public enum AudioMessageParser {
             verifyHint: json["verifyHint"] as? String,
             systemCommand: json["systemCommand"] as? String,
             systemValue: json["systemValue"] as? String,
-            systemAmount: json["systemAmount"] as? Int ?? 0
+            systemAmount: json["systemAmount"] as? Int ?? 0,
+            surface: (json["surface"] as? String).flatMap(SurfaceKind.init(rawValue:)),
+            macroID: json["macroID"] as? String,
+            narration: json["narration"] as? String,
+            verifyContract: verifyContract,
+            fallbackActionType: (json["fallbackActionType"] as? String).flatMap(NavigatorActionType.init(rawValue:)),
+            fallbackHotkey: json["fallbackHotkey"] as? [String],
+            maxLocalRetries: json["maxLocalRetries"] as? Int,
+            timeoutMs: json["timeoutMs"] as? Int,
+            proofLevel: (json["proofLevel"] as? String).flatMap(ProofLevel.init(rawValue:))
         )
     }
 }
