@@ -68,12 +68,20 @@ final class NavigatorActionWorker {
                       self.currentStepID == step.id else {
                     return
                 }
+                NSLog(
+                    "[NAV-EXEC] task=%@ step=%@ action=%@ phase=%@ status=%@ failure=%@",
+                    taskId,
+                    step.id,
+                    step.actionType.rawValue,
+                    result.phase.rawValue,
+                    result.status,
+                    result.failureReason?.rawValue ?? "-"
+                )
                 self.gatewayClient.sendNavigatorRefresh(
                     taskId: taskId,
                     command: command,
                     step: step,
-                    status: result.status,
-                    observedOutcome: result.observedOutcome,
+                    result: result,
                     context: self.contextProvider()
                 )
                 if result.status != "success" {

@@ -35,7 +35,7 @@ final class VibeCatTests: XCTestCase {
         XCTAssertEqual(settings.voice, "Zephyr")
         XCTAssertEqual(settings.character, "cat")
         XCTAssertEqual(settings.chattiness, "normal")
-        XCTAssertEqual(settings.captureInterval, 1.0)
+        XCTAssertEqual(settings.captureInterval, 0.3)
         XCTAssertEqual(settings.captureTargetMode, .windowUnderCursor)
         XCTAssertEqual(settings.liveModel, GeminiModels.liveNativeAudio)
         XCTAssertFalse(settings.musicEnabled)
@@ -81,13 +81,13 @@ final class VibeCatTests: XCTestCase {
     func testCaptureIntervalFallsBackToDefaultWhenNonPositive() {
         let settings = AppSettings.shared
         settings.captureInterval = 0
-        XCTAssertEqual(settings.captureInterval, 1.0)
+        XCTAssertEqual(settings.captureInterval, 0.3)
 
         settings.captureInterval = -4
-        XCTAssertEqual(settings.captureInterval, 1.0)
+        XCTAssertEqual(settings.captureInterval, 0.3)
 
         settings.captureInterval = 0.5
-        XCTAssertEqual(settings.captureInterval, 1.0)
+        XCTAssertEqual(settings.captureInterval, 0.5)
     }
 
     func testLanguageSettingNormalizesSupportedCodes() {
