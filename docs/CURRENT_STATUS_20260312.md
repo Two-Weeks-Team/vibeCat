@@ -20,7 +20,7 @@ Historical companion framing should be treated as archival unless a document was
 
 ## What Is Implemented
 
-### Client (Swift)
+### Client (Swift 6.2 / locally verified on 6.2.4)
 
 The macOS client now provides:
 
@@ -40,7 +40,7 @@ The macOS client now provides:
 - iTerm2 surface profile detection (alongside Apple Terminal)
 - Localized navigator status strings (English + Korean)
 
-### Gateway (Go)
+### Gateway (Go 1.26.1)
 
 The Realtime Gateway now provides:
 
@@ -60,7 +60,7 @@ The Realtime Gateway now provides:
 - Navigator metrics and replay fixtures
 - Async background lane dispatch after task completion
 
-### Orchestrator (Go)
+### Orchestrator (Go 1.26.1 + ADK v0.6.0)
 
 The ADK Orchestrator now provides:
 
@@ -83,11 +83,13 @@ The ADK Orchestrator now provides:
 
 - project: `vibecat-489105`
 - region: `asia-northeast3`
-- gateway URL: `https://realtime-gateway-a4akw2crra-du.a.run.app`
-- orchestrator URL: `https://adk-orchestrator-a4akw2crra-du.a.run.app`
+- gateway URL: `https://realtime-gateway-163070481841.asia-northeast3.run.app`
+- orchestrator URL: `https://adk-orchestrator-163070481841.asia-northeast3.run.app`
 - Firestore: `(default)` native database
 - required secrets: present
-- **Gateway needs redeployment** — current revision does not include FC tools, CDP, or self-healing
+- backend modules and e2e module aligned on Go 1.26.1
+- current GenAI SDK version: `google.golang.org/genai v1.49.0`
+- current chromedp version: `github.com/chromedp/chromedp v0.14.2`
 
 ## Key Technical Differentiators
 
@@ -104,10 +106,7 @@ The ADK Orchestrator now provides:
 
 ## Remaining Submission Work
 
-1. Gateway Cloud Run redeployment with latest code
-2. Demo video (4 min, English) — 3 proactive scenarios
-3. dev.to blog post (#GeminiLiveAgentChallenge)
-4. Devpost submission text
-5. Deployment automation documentation
-6. GCP deployment proof recording
-7. End-to-end demo testing on real devices
+1. Demo video (4 min, English) — 3 proactive scenarios
+2. Deployment proof recording / screenshots
+3. End-to-end demo testing on real devices
+4. Devpost form submission and final asset upload
