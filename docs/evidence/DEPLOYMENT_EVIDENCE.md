@@ -36,6 +36,31 @@ Evidence must now support the following claims:
 - final monitoring screenshots aligned with navigator metrics
 - final public demo/proof asset links
 
+## Final Proof Asset Checklist
+
+The award-maximizing submission should capture these final artifacts:
+
+### Hero Run Assets
+
+- one recording of the primary Antigravity -> Chrome -> Terminal hero workflow
+- one still image showing target highlight + step HUD during execution
+- one still image or clip showing explicit ambiguity clarification
+- one still image or clip showing safe downgrade instead of blind click
+
+### Cloud-Native Assets
+
+- Cloud Run service view for gateway and orchestrator
+- Cloud Logging or Cloud Trace evidence from the same hero run
+- monitoring screenshot for navigator metrics
+- replay or persisted summary evidence if used in final architecture/proof story
+
+### Submission Assets
+
+- final public demo link
+- final proof-of-deployment link or recording
+- final public repository link
+- final public blog/devlog link if used for bonus points
+
 ## Historical Note
 
 Older evidence that refers to companion-intelligence or proactive-speech acceptance should be treated as implementation history, not current submission truth.

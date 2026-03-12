@@ -16,7 +16,7 @@ The runtime is intentionally narrow:
 - one local `AX-first executor` on macOS
 - one local `system action executor` for deterministic macOS interactions like volume control
 - one narrow `confidence escalator` for low-confidence target resolution
-- one async `background intelligence lane` for summaries, memory writes, research enrichment, and replay labeling
+- one async `background intelligence lane` for summaries, memory writes, research enrichment, replay labeling, and non-blocking screenshot context preparation
 
 ## Architecture
 
