@@ -15,6 +15,13 @@ final class AudioDeviceMonitor {
         let inputDeviceName: String
         let outputDeviceID: AudioObjectID
         let outputDeviceName: String
+
+        func sameDevices(as other: Snapshot) -> Bool {
+            inputDeviceID == other.inputDeviceID &&
+                inputDeviceName == other.inputDeviceName &&
+                outputDeviceID == other.outputDeviceID &&
+                outputDeviceName == other.outputDeviceName
+        }
     }
 
     var onChange: ((Snapshot) -> Void)?
@@ -82,7 +89,7 @@ final class AudioDeviceMonitor {
 
     private func emitChange(_ trigger: Trigger) {
         let snapshot = makeSnapshot(trigger: trigger)
-        guard snapshot != lastSnapshot else {
+        if let lastSnapshot, snapshot.sameDevices(as: lastSnapshot) {
             NSLog("[AUDIO-DEVICE] duplicate change ignored trigger=%@", trigger.rawValue)
             return
         }

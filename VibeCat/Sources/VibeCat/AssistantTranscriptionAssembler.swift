@@ -29,7 +29,7 @@ struct AssistantTranscriptionAssembler {
             }
         }
 
-        currentText += text
+        currentText = mergedTranscript(current: currentText, incoming: text)
         return currentText
     }
 
@@ -66,5 +66,46 @@ struct AssistantTranscriptionAssembler {
     mutating func discard() {
         currentText = ""
         finalizationDeadline = nil
+    }
+
+    private func mergedTranscript(current: String, incoming: String) -> String {
+        guard !current.isEmpty else { return incoming }
+        guard !incoming.isEmpty else { return current }
+
+        if current == incoming {
+            return current
+        }
+        if incoming.hasPrefix(current) {
+            return incoming
+        }
+        if current.hasPrefix(incoming) {
+            return current
+        }
+        if current.contains(incoming) {
+            return current
+        }
+        if incoming.contains(current) {
+            return incoming
+        }
+
+        let overlap = longestSuffixPrefixOverlap(current, incoming)
+        if overlap > 0 {
+            return current + incoming.dropFirst(overlap)
+        }
+        return current + incoming
+    }
+
+    private func longestSuffixPrefixOverlap(_ current: String, _ incoming: String) -> Int {
+        let currentChars = Array(current)
+        let incomingChars = Array(incoming)
+        let maxOverlap = min(currentChars.count, incomingChars.count)
+        guard maxOverlap > 0 else { return 0 }
+
+        for overlap in stride(from: maxOverlap, through: 1, by: -1) {
+            if Array(currentChars.suffix(overlap)) == Array(incomingChars.prefix(overlap)) {
+                return overlap
+            }
+        }
+        return 0
     }
 }

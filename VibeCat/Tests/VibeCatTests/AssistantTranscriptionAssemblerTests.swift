@@ -49,4 +49,32 @@ final class AssistantTranscriptionAssemblerTests: XCTestCase {
         XCTAssertEqual(assembler.currentText, "")
         XCTAssertFalse(assembler.hasPendingFinalization)
     }
+
+    func testCumulativePartialReplacesExistingTranscriptInsteadOfDuplicating() {
+        var assembler = AssistantTranscriptionAssembler(mergeWindow: 0.75)
+        let start = Date(timeIntervalSince1970: 1_700_001_000)
+
+        XCTAssertEqual(
+            assembler.ingest("지금 Codex가 에디터", now: start),
+            "지금 Codex가 에디터"
+        )
+        XCTAssertEqual(
+            assembler.ingest("지금 Codex가 에디터에 열려 있어.", now: start.addingTimeInterval(0.1)),
+            "지금 Codex가 에디터에 열려 있어."
+        )
+    }
+
+    func testOverlappingPartialAppendsOnlyNewSuffix() {
+        var assembler = AssistantTranscriptionAssembler(mergeWindow: 0.75)
+        let start = Date(timeIntervalSince1970: 1_700_001_100)
+
+        XCTAssertEqual(
+            assembler.ingest("방금 바꾼 함수 하나", now: start),
+            "방금 바꾼 함수 하나"
+        )
+        XCTAssertEqual(
+            assembler.ingest("하나나 깨진 파일 하나부터 좁혀보자.", now: start.addingTimeInterval(0.1)),
+            "방금 바꾼 함수 하나나 깨진 파일 하나부터 좁혀보자."
+        )
+    }
 }
