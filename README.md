@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/category-UI_Navigator-0F9D58?style=flat-square&logo=googlechrome&logoColor=white" alt="Category">
   <img src="https://img.shields.io/badge/platform-macOS_15%2B-000000?style=flat-square&logo=apple&logoColor=white" alt="Platform">
   <img src="https://img.shields.io/badge/Swift-6.2-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift">
-  <img src="https://img.shields.io/badge/Go-1.24%2B-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go">
+  <img src="https://img.shields.io/badge/Go-1.26.1-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go">
   <img src="https://img.shields.io/badge/GCP-Cloud_Run-4285F4?style=flat-square&logo=googlecloud&logoColor=white" alt="GCP">
 </p>
 
@@ -67,54 +67,200 @@ VibeCat is optimized for three gold-tier surfaces:
 
 ## Architecture
 
+### Version Matrix
+
+| Component | In Repo | Latest Stable | Official Source | Notes |
+|-----------|---------|---------------|-----------------|-------|
+| **Go** | 1.26.1 | 1.26.1 | `https://go.dev/dl/` | backend modules + e2e aligned |
+| **Swift tools-version** | 6.2 | 6.2.4 | `https://swift.org/install/` | package format stays `6.2`; locally verified on Swift 6.2.4 |
+| **Google GenAI SDK** | v1.49.0 | v1.49.0 | `https://pkg.go.dev/google.golang.org/genai` | Gemini Live / vision / FC client |
+| **Google ADK for Go** | v0.6.0 | v0.6.0 | `https://pkg.go.dev/google.golang.org/adk` | orchestrator framework |
+| **chromedp** | v0.14.2 | v0.14.2 | `https://pkg.go.dev/github.com/chromedp/chromedp` | browser control via CDP |
+| **Docker Go builder** | `golang:1.26.1-alpine` | Go 1.26.1 line | `https://go.dev/dl/` | both backend images |
+| **Distroless runtime** | `gcr.io/distroless/static-debian12` | rolling Debian 12 | `https://github.com/GoogleContainerTools/distroless` | runtime-only image |
+
+### System Overview
+
 ```mermaid
-flowchart TB
-    subgraph Client["macOS Client (Swift 6)"]
-        UI["Overlay UI + Cat Character"]
-        AX["Accessibility Navigator<br/>80+ key codes"]
-        SC["Screen Capture"]
-        OV["Navigator Overlay Panel<br/>action · grounding badge · progress"]
+flowchart LR
+    subgraph Client["macOS Client (Swift 6.2)"]
+        UI["Cat UI + Chat"]
+        CAP["ScreenCaptureService"]
+        AX["AccessibilityNavigator\n80+ key codes"]
+        WORKER["NavigatorActionWorker"]
+        OVR["NavigatorOverlayPanel"]
+        GWCLIENT["GatewayClient\n/ws/live"]
     end
 
-    subgraph Gateway["Realtime Gateway (Go · Cloud Run)"]
-        WS["WebSocket Handler"]
-        FC["Function Calling<br/>5 navigator tools"]
-        PFC["pendingFC Mechanism<br/>sequential step execution"]
-        SH["Self-Healing Engine<br/>max 2 retries"]
-        VV["Vision Verification"]
-        CDP["Chrome DevTools Protocol<br/>chromedp"]
-        TF["Transparent Feedback<br/>processingState pipeline"]
+    subgraph Gateway["Realtime Gateway (Go 1.26.1 · Cloud Run)"]
+        HTTP["/health /readyz /api/v1/auth/* /ws/live"]
+        LIVE["Gemini Live session manager"]
+        PROMPT["Proactive Companion prompt"]
+        FC["5 Function Calling tools"]
+        PFC["pendingFC queue\none-step-at-a-time"]
+        VERIFY["Vision verification"]
+        HEAL["Self-healing\nmax 2 retries"]
+        CDP["chromedp Chrome controller"]
+        STATE["ActionStateStore\nin-memory + Firestore"]
+        METRICS["OTEL + replay metrics"]
+    end
+
+    subgraph ADK["ADK Orchestrator (Go 1.26.1 · Cloud Run)"]
+        ROUTER["/navigator/escalate\n/navigator/background\n/memory/* /search /tool /analyze"]
+        PROC["Navigator Processor"]
+        SEARCH["Search Agent"]
+        MEMORY["Memory Agent"]
+        REPLAY["Replay + Firestore store"]
+        GENAI["GenAI / ADK runtime"]
     end
 
     subgraph GCP["Google Cloud Platform"]
-        GM["Gemini Live API<br/>voice + vision + FC"]
-        ADK["ADK Orchestrator<br/>escalation + analysis"]
-        FS["Firestore"]
-        CL["Cloud Logging / Trace"]
+        LIVEAPI["Gemini Live API"]
+        FIRE["Firestore"]
+        OTEL["Cloud Logging / Trace / Monitoring"]
     end
 
-    UI -->|voice + screen capture| WS
-    WS -->|Gemini Live session| GM
-    GM -->|function calls| FC
+    UI --> GWCLIENT
+    CAP --> GWCLIENT
+    GWCLIENT --> HTTP
+    HTTP --> LIVE
+    LIVE --> PROMPT
+    LIVE --> LIVEAPI
+    LIVEAPI --> FC
     FC --> PFC
-    PFC -->|one step at a time| AX
-    PFC -->|browser actions| CDP
-    SH -->|retry on failure| PFC
-    VV -->|screenshot analysis| ADK
-    TF -->|status messages| OV
-    WS --> FS
-    WS --> CL
+    PFC --> WORKER
+    WORKER --> AX
+    PFC --> CDP
+    HEAL --> PFC
+    VERIFY --> ROUTER
+    ROUTER --> PROC
+    PROC --> SEARCH
+    PROC --> MEMORY
+    PROC --> REPLAY
+    PROC --> GENAI
+    STATE --> FIRE
+    REPLAY --> FIRE
+    METRICS --> OTEL
+    GENAI --> OTEL
+    OVR --> UI
 ```
+
+### What Each Service Owns
+
+| Service | Owns | Does Not Own |
+|---------|------|--------------|
+| **macOS Client** | UI, microphone, screen capture, AX execution, local keyboard events, overlay feedback | Gemini credentials, tool planning, server-side memory |
+| **Realtime Gateway** | live multimodal session, prompt, FC tool handling, task queueing, retries, verification orchestration, state leases | long-term memory strategy, desktop rendering, raw local OS control |
+| **ADK Orchestrator** | screenshot reasoning, target escalation, visible-text extraction, async summary/research/memory/replay | direct desktop execution, step-by-step UI clicking |
 
 ### Component Overview
 
 | Layer | Technology | Role |
 |-------|-----------|------|
-| **macOS Client** | Swift 6 / AppKit | Screen capture, AX executor (80+ key codes), navigator overlay with grounding badges, voice transport |
-| **Realtime Gateway** | Go 1.24 / Cloud Run | WebSocket handler, Proactive Companion prompt, 5 FC tool handlers, pendingFC sequential execution, self-healing (max 2 retries), vision verification, transparent feedback pipeline |
-| **Gemini Live API** | Google GenAI SDK v1.48 | Real-time multimodal conversation (voice + vision), function calling, session resumption, VAD |
-| **ADK Orchestrator** | Go / Cloud Run | Confidence escalation (`/navigator/escalate`), vision verification, visible-text extraction, async summary/memory/replay (`/navigator/background`) |
-| **Chrome Controller** | chromedp v0.11.3 (CDP) | Click, Type, Navigate, Scroll, Screenshot, Close — lazy connect with graceful fallback |
+| **macOS Client** | Swift 6.2 / AppKit | Screen capture, AX executor (80+ key codes), overlay with grounding badges, voice transport, local action worker |
+| **Realtime Gateway** | Go 1.26.1 / Cloud Run | WebSocket handler, Proactive Companion prompt, 5 FC tool handlers, pendingFC sequential execution, self-healing, vision verification, transparent feedback pipeline |
+| **Gemini Live API** | Google GenAI SDK v1.49.0 | Real-time multimodal conversation (voice + vision), function calling, session resumption, VAD |
+| **ADK Orchestrator** | Go 1.26.1 / ADK v0.6.0 / Cloud Run | Confidence escalation, screenshot interpretation, visible-text extraction, async summary/memory/replay/research enrichment |
+| **Chrome Controller** | chromedp v0.14.2 | Click, Type, Navigate, Scroll, Screenshot, Close — lazy connect with graceful fallback |
+
+### Realtime Gateway Architecture
+
+```mermaid
+flowchart TB
+    IN["/ws/live client session"] --> AUTH["JWT auth + registry"]
+    AUTH --> LIVE["Gemini Live manager"]
+    LIVE --> PROMPT["Proactive Companion system prompt"]
+    LIVE --> TOOLS["navigatorToolDeclarations()\n5 tools"]
+    TOOLS --> PLAN["intent/risk/planning"]
+    PLAN --> PFC["pendingFC state\ncurrent step + remaining steps"]
+    PFC --> EXEC["client action dispatch"]
+    EXEC --> TF["processingState messages\n7 stages"]
+    EXEC --> VERIFY["requestScreenCapture + ADK verify"]
+    VERIFY --> HEAL["retry / alternative grounding"]
+    HEAL --> PFC
+    PFC --> COMPLETE["async background dispatch"]
+    PLAN --> STORE["ActionStateStore lease"]
+    COMPLETE --> MET["metrics + replay"]
+```
+
+### ADK Orchestrator Architecture
+
+The README previously compressed ADK into one box. This is the actual shape of the service.
+
+```mermaid
+flowchart TB
+    HTTP["HTTP handlers"] --> ESC["POST /navigator/escalate"]
+    HTTP --> BG["POST /navigator/background"]
+    HTTP --> MEM1["POST /memory/session-summary"]
+    HTTP --> MEM2["POST /memory/context"]
+    HTTP --> SEARCHR["POST /search"]
+    HTTP --> TOOLR["POST /tool"]
+    HTTP --> ANALYZE["POST /analyze"]
+
+    ESC --> NPROC["Navigator Processor.ResolveTarget"]
+    BG --> BPROC["Navigator Processor.ProcessBackground"]
+    NPROC --> SHOT["base64 screenshot decode"]
+    NPROC --> AXCTX["AX + focus + window context prompt"]
+    NPROC --> VISION["GenAI vision model"]
+    NPROC --> FALLBACK["heuristicEscalation fallback"]
+
+    BPROC --> SUMMARY["summary generation"]
+    BPROC --> ENRICH["search enrichment when needed"]
+    BPROC --> MEMWRITE["memory write"]
+    BPROC --> REPLAY["NavigatorReplay persistence"]
+
+    SEARCHR --> SEARCHAGENT["Search Agent"]
+    TOOLR --> TOOLAGENT["Tool Agent"]
+    MEM1 --> MEMAGENT["Memory Agent"]
+    MEM2 --> MEMAGENT
+
+    SUMMARY --> FIRE["Firestore"]
+    ENRICH --> FIRE
+    MEMWRITE --> FIRE
+    REPLAY --> FIRE
+```
+
+### Orchestrator Endpoint Contracts
+
+| Endpoint | Sync/Async | Input | Output | Purpose |
+|----------|------------|-------|--------|---------|
+| `POST /navigator/escalate` | sync | command + screenshot + AX/focus context | target descriptor / resolved text / confidence | low-confidence target resolution and visible text extraction |
+| `POST /navigator/background` | async-style post-task | task outcome + attempts + context hashes | summary / replay label / research summary / tags | off-hot-path summarization and replay labeling |
+| `POST /memory/session-summary` | sync | history | stored summary | session memory write |
+| `POST /memory/context` | sync | user id | memory context | memory recall |
+| `POST /search` | sync | query | summary + sources | research enrichment |
+| `POST /tool` | sync | tool query | tool-specific result | non-live tool path |
+| `POST /analyze` | sync | image + context | multimodal analysis | retained general analysis path |
+
+### Gateway Endpoint Contracts
+
+| Endpoint | Auth | Purpose |
+|----------|------|---------|
+| `/health` | no | liveness + connection count |
+| `/readyz` | no | readiness |
+| `/api/v1/auth/register` | no | issue JWT |
+| `/api/v1/auth/refresh` | no | refresh JWT |
+| `/ws/live` | yes | main client transport for Live PM + navigator runtime |
+
+### State and Persistence
+
+| State | Where | Why |
+|-------|------|-----|
+| `ActionStateStore` | gateway memory + Firestore | reconnect-safe ownership, stale socket rejection, active task continuity |
+| `pendingFC*` | in-memory live session state | sequential multi-step execution |
+| `pendingVisionVerification` | in-memory live session state | hold screenshot verification intent between step and ADK response |
+| `NavigatorReplay` | orchestrator Firestore store | post-task regression and evidence trail |
+| ADK session/memory services | orchestrator in-memory + Firestore-backed app store | summaries and memory context |
+
+### Observable Contracts
+
+These are the runtime signals that make VibeCat debuggable instead of opaque:
+
+- `processingState` messages for every navigator phase
+- `requestScreenCapture` when post-action verification needs fresh evidence
+- `time_to_first_action_ms` metric for hot-path responsiveness
+- replay labels and research tags from `/navigator/background`
+- action-state lease persistence for reconnect behavior
 
 ### Proactive Companion System Prompt
 
@@ -222,7 +368,7 @@ The full execution pipeline:
 
 - macOS 15+ (Sequoia)
 - Xcode 16+ (for local client builds)
-- Go 1.24+
+- Go 1.26.1+
 - A Google Cloud project with:
   - Gemini API key
   - Cloud Run enabled
@@ -252,11 +398,8 @@ go test ./...
 ### Deploy to Cloud Run
 
 ```bash
-# Deploy gateway
-./infra/deploy.sh gateway
-
-# Deploy orchestrator
-./infra/deploy.sh orchestrator
+# Build images, deploy orchestrator first, then deploy gateway
+./infra/deploy.sh
 ```
 
 ### Runtime Permissions
@@ -330,10 +473,10 @@ VibeCat uses **safe-immediate execution** with mandatory confirmation for proact
 | **Gemini Function Calling** | 5 tools registered | Structured tool invocation for desktop actions |
 | **ADK (Agent Development Kit)** | Go / Cloud Run | Confidence escalation, vision verification, memory/replay |
 | **Google Cloud Run** | asia-northeast3 | Serverless backend hosting (gateway + orchestrator) |
-| **chromedp** | v0.11.3 | Go-native Chrome DevTools Protocol client |
+| **chromedp** | v0.14.2 | Go-native Chrome DevTools Protocol client |
 | **macOS Accessibility API** | AppKit / AX | Native UI element discovery and action execution |
-| **Swift** | 6.2 | macOS client with 91 package tests |
-| **Go** | 1.24+ | Backend services with full test/vet coverage |
+| **Swift** | 6.2.4 verified (`swift-tools-version: 6.2`) | macOS client with 91 package tests |
+| **Go** | 1.26.1 | Backend services with full test/vet coverage |
 | **Firestore** | Native mode | Action state persistence, session memory, replay fixtures |
 | **Cloud Logging / Trace** | GCP | Navigator telemetry, self-healing metrics, processingState transitions |
 
