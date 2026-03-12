@@ -36,7 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var globalHotkeyMonitor: Any?
     private var localHotkeyMonitor: Any?
     private let audioConversionQueue = DispatchQueue(label: "vibecat.audio.conversion")
-    nonisolated(unsafe) private var audioConverter: AVAudioConverter?
+    private let audioConversionState = AudioConversionState()
     private var chatModeActive = false
     private let wakeWords = ["vibecat", "vibe cat", "바이브캣"]
 
@@ -432,14 +432,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func updateAudioConverter(for inputFormat: AVAudioFormat?) {
-        guard let inputFormat,
-              let output = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true) else {
-            audioConverter = nil
+        guard let inputFormat else {
+            audioConversionState.clearConverter()
             NSLog("[AUDIO-PIPE] audio converter cleared")
             return
         }
-        audioConverter = AVAudioConverter(from: inputFormat, to: output)
-        NSLog("[AUDIO-PIPE] audio converter configured: in=%@ out=%@", String(describing: inputFormat), String(describing: output))
+
+        guard let converter = audioConversionState.configureConverter(for: inputFormat) else {
+            audioConversionState.clearConverter()
+            NSLog("[AUDIO-PIPE] audio converter configuration failed: in=%@", String(describing: inputFormat))
+            return
+        }
+
+        NSLog("[AUDIO-PIPE] audio converter configured: in=%@ out=%@", String(describing: inputFormat), String(describing: converter.outputFormat))
     }
 
     private func audioInputStateLabel() -> String {
@@ -469,6 +474,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func applyAudioDeviceChange(_ snapshot: AudioDeviceMonitor.Snapshot) {
+        let previousSnapshot = latestAudioDeviceSnapshot
         latestAudioDeviceSnapshot = snapshot
         refreshAudioInputStatusUI()
         NSLog(
@@ -479,16 +485,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             snapshot.outputDeviceName,
             snapshot.outputDeviceID
         )
-        audioPlayer?.handleAudioDeviceChange(reason: snapshot.trigger.rawValue)
-        speechRecognizer?.handleAudioDeviceChange(reason: snapshot.trigger.rawValue)
+        if let previousSnapshot,
+           snapshot.trigger == .deviceListChanged,
+           snapshot.sameRoute(as: previousSnapshot) {
+            NSLog("[AUDIO-DEVICE] inventory-only change ignored for audio rebind")
+            return
+        }
+
+        let decision = AudioRouteChangeDecision(previous: previousSnapshot, current: snapshot)
+
+        if decision.outputRouteChanged {
+            audioPlayer?.handleAudioDeviceChange(reason: snapshot.trigger.rawValue)
+        }
+
+        if decision.inputRouteChanged {
+            audioConversionState.beginDeviceTransition()
+            let didRequestRestart = speechRecognizer?.handleAudioDeviceChange(reason: snapshot.trigger.rawValue) == true
+            if !didRequestRestart {
+                audioConversionState.finishDeviceTransition()
+            }
+        }
     }
 
     private func handleAudioDeviceChange(_ snapshot: AudioDeviceMonitor.Snapshot) {
-        latestAudioDeviceSnapshot = snapshot
-        refreshAudioInputStatusUI()
         audioDeviceChangeTask?.cancel()
         audioDeviceChangeTask = Task { @MainActor [weak self] in
-            guard let self, !Task.isCancelled else { return }
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard !Task.isCancelled, let self else { return }
             self.audioDeviceChangeTask = nil
             self.applyAudioDeviceChange(snapshot)
         }
@@ -1345,6 +1368,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         speechRecognizer.onCaptureStateChanged = { [weak self] state in
             self?.speechCaptureState = state
+            switch state {
+            case .failed, .stopped:
+                self?.audioConversionState.finishDeviceTransition()
+            default:
+                break
+            }
             self?.refreshAudioInputStatusUI()
         }
 
@@ -1355,14 +1384,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         speechRecognizer.onAudioBufferCaptured = { [weak self] buffer, forwardMode in
-            guard let converter = self?.audioConverter else {
-                NSLog("[AUDIO-PIPE] buffer dropped: audioConverter is nil")
+            guard let self else { return }
+            let snapshot = self.audioConversionState.snapshot()
+            guard let converter = snapshot.converter else {
+                if !snapshot.isTransitioning {
+                    NSLog("[AUDIO-PIPE] buffer dropped: audioConverter is nil")
+                }
                 return
             }
-            self?.audioConversionQueue.async { [weak self] in
+            self.audioConversionQueue.async { [weak self] in
                 guard let data = Self.convertAudioBufferToPCM16k(buffer: buffer, converter: converter) else { return }
                 Task { @MainActor [weak self] in
                     guard let self else { return }
+                    guard self.audioConversionState.isCurrentGeneration(snapshot.generation) else {
+                        NSLog("[AUDIO-PIPE] dropped stale converted audio after route change (%lu bytes)", data.count)
+                        return
+                    }
                     let serverModelTurnActive = self.gatewayClient?.isModelTurnActive == true
                     if serverModelTurnActive && self.speechState.isSpeaking && forwardMode != .bargeIn {
                         NSLog("[AUDIO-PIPE] dropped stale non-barge-in audio during model turn (%lu bytes)", data.count)

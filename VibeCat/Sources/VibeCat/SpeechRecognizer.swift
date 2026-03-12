@@ -77,14 +77,16 @@ final class SpeechRecognizer {
         audioCapture.modelSpeaking = speaking
     }
 
-    func handleAudioDeviceChange(reason: String) {
+    @discardableResult
+    func handleAudioDeviceChange(reason: String) -> Bool {
         guard desiredListening else {
             NSLog("[SPEECH] audio device change ignored: recognizer intentionally stopped")
-            return
+            return false
         }
         Task { @MainActor [weak self] in
             await self?.ensureListening(reason: reason, forceRestart: true)
         }
+        return true
     }
 
     private func ensureListening(reason: String, forceRestart: Bool) async {
@@ -129,11 +131,9 @@ final class SpeechRecognizer {
         NSLog("[SPEECH] startListening: hasCallback=%d", callback != nil ? 1 : 0)
 
         do {
-            try await Task.detached {
-                try capture.start(streamingCallback: callback, bargeInCallback: bargeInCallback)
-            }.value
+            let format = try await capture.start(streamingCallback: callback, bargeInCallback: bargeInCallback)
 
-            currentAudioFormat = capture.recordingFormat
+            currentAudioFormat = format
             isListening = true
             onRecordingFormatChanged?(currentAudioFormat)
             NSLog("[SPEECH] startListening: success, format=%@, isListening=%d", String(describing: currentAudioFormat), isListening ? 1 : 0)
@@ -158,6 +158,7 @@ enum SpeechRecognizerError: Error {
 }
 
 final class SpeechAudioCapture: @unchecked Sendable {
+    private let lifecycleQueue = DispatchQueue(label: "vibecat.speech-audio-capture.lifecycle")
     private var engine: AVAudioEngine?
     private(set) var recordingFormat: AVAudioFormat?
     private(set) var isVoiceProcessingActive = false
@@ -178,9 +179,39 @@ final class SpeechAudioCapture: @unchecked Sendable {
     func start(
         streamingCallback: (@Sendable (AVAudioPCMBuffer, AudioForwardMode) -> Void)? = nil,
         bargeInCallback: (@Sendable () -> Void)? = nil
-    ) throws {
-        self.streamingCallback = streamingCallback
-        self.bargeInCallback = bargeInCallback
+    ) async throws -> AVAudioFormat {
+        try await withCheckedThrowingContinuation { continuation in
+            lifecycleQueue.async { [weak self] in
+                guard let self else {
+                    continuation.resume(throwing: SpeechRecognizerError.audioFormatCreationFailed)
+                    return
+                }
+
+                do {
+                    let format = try self.startCapture(streamingCallback: streamingCallback, bargeInCallback: bargeInCallback)
+                    continuation.resume(returning: format)
+                } catch {
+                    self.resetCaptureState()
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    func stop() {
+        lifecycleQueue.sync {
+            resetCaptureState()
+        }
+    }
+
+    private func startCapture(
+        streamingCallback: (@Sendable (AVAudioPCMBuffer, AudioForwardMode) -> Void)?,
+        bargeInCallback: (@Sendable () -> Void)?
+    ) throws -> AVAudioFormat {
+        _speakingLock.withLock {
+            self.streamingCallback = streamingCallback
+            self.bargeInCallback = bargeInCallback
+        }
 
         let engine = AVAudioEngine()
         self.engine = engine
@@ -225,8 +256,12 @@ final class SpeechAudioCapture: @unchecked Sendable {
             let rms = sqrtf(sumSquares / Float(max(frames, 1)))
 
             let gate = self.evaluateAudioGate(rms: rms)
+            let (bargeIn, streaming) = self._speakingLock.withLock {
+                (self.bargeInCallback, self.streamingCallback)
+            }
+
             if gate.shouldNotifyBargeIn {
-                self.bargeInCallback?()
+                bargeIn?()
             }
             guard gate.shouldForward else {
                 return
@@ -239,23 +274,26 @@ final class SpeechAudioCapture: @unchecked Sendable {
                     dst[channel].update(from: src[channel], count: Int(buffer.frameLength))
                 }
             }
-            self.streamingCallback?(copy, gate.forwardMode)
+            streaming?(copy, gate.forwardMode)
         }
 
         engine.prepare()
         try engine.start()
+        return recordingFormat
     }
 
-    func stop() {
+    private func resetCaptureState() {
         engine?.inputNode.removeTap(onBus: 0)
         engine?.stop()
         engine = nil
         recordingFormat = nil
-        streamingCallback = nil
-        bargeInCallback = nil
         isVoiceProcessingActive = false
-        bargeInNotified = false
-        consecutiveAboveCount = 0
+        _speakingLock.withLock {
+            streamingCallback = nil
+            bargeInCallback = nil
+            bargeInNotified = false
+            consecutiveAboveCount = 0
+        }
     }
 
     private func evaluateAudioGate(rms: Float) -> (shouldForward: Bool, shouldNotifyBargeIn: Bool, forwardMode: AudioForwardMode) {
