@@ -11,14 +11,14 @@ concurrency:
 
 jobs:
   go-gateway:
-    name: Gateway (Go) — Build + Test + Vet
+    name: Gateway (Go 1.26.1) — Build + Test + Vet
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
-          go-version: '1.24'
+          go-version: '1.26.1'
 
       - name: Build
         run: go build ./...
@@ -44,14 +44,14 @@ jobs:
           path: backend/realtime-gateway/coverage.out
 
   go-orchestrator:
-    name: Orchestrator (Go) — Build + Test + Vet
+    name: Orchestrator (Go 1.26.1) — Build + Test + Vet
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
-          go-version: '1.24'
+          go-version: '1.26.1'
 
       - name: Build
         run: go build ./...
@@ -77,7 +77,7 @@ jobs:
           path: backend/adk-orchestrator/coverage.out
 
   swift:
-    name: Client (Swift 6 / macOS) — Build + Test
+    name: Client (Swift 6.2 / macOS) — Build + Test
     runs-on: macos-15
     timeout-minutes: 10
     steps:
