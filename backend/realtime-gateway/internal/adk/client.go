@@ -156,23 +156,43 @@ type NavigatorBackgroundStep struct {
 	CompletedAt      time.Time                 `json:"completedAt,omitempty"`
 }
 
+type NavigatorBackgroundAttempt struct {
+	ID               string    `json:"id"`
+	TaskID           string    `json:"taskId,omitempty"`
+	Command          string    `json:"command"`
+	Surface          string    `json:"surface,omitempty"`
+	Route            string    `json:"route"`
+	RouteReason      string    `json:"routeReason,omitempty"`
+	ContextHash      string    `json:"contextHash,omitempty"`
+	ScreenshotSource string    `json:"screenshotSource,omitempty"`
+	ScreenshotCached bool      `json:"screenshotCached,omitempty"`
+	ScreenBasisID    string    `json:"screenBasisId,omitempty"`
+	ActiveDisplayID  string    `json:"activeDisplayId,omitempty"`
+	TargetDisplayID  string    `json:"targetDisplayId,omitempty"`
+	Outcome          string    `json:"outcome,omitempty"`
+	OutcomeDetail    string    `json:"outcomeDetail,omitempty"`
+	StartedAt        time.Time `json:"startedAt,omitempty"`
+	CompletedAt      time.Time `json:"completedAt,omitempty"`
+}
+
 type NavigatorBackgroundRequest struct {
-	UserID                  string                    `json:"userId,omitempty"`
-	SessionID               string                    `json:"sessionId,omitempty"`
-	TaskID                  string                    `json:"taskId"`
-	Command                 string                    `json:"command"`
-	Language                string                    `json:"language,omitempty"`
-	Outcome                 string                    `json:"outcome"`
-	OutcomeDetail           string                    `json:"outcomeDetail,omitempty"`
-	Surface                 string                    `json:"surface,omitempty"`
-	InitialAppName          string                    `json:"initialAppName,omitempty"`
-	InitialWindowTitle      string                    `json:"initialWindowTitle,omitempty"`
-	InitialContextHash      string                    `json:"initialContextHash,omitempty"`
-	LastVerifiedContextHash string                    `json:"lastVerifiedContextHash,omitempty"`
-	StartedAt               time.Time                 `json:"startedAt,omitempty"`
-	CompletedAt             time.Time                 `json:"completedAt,omitempty"`
-	Steps                   []NavigatorBackgroundStep `json:"steps,omitempty"`
-	TraceID                 string                    `json:"traceId,omitempty"`
+	UserID                  string                       `json:"userId,omitempty"`
+	SessionID               string                       `json:"sessionId,omitempty"`
+	TaskID                  string                       `json:"taskId"`
+	Command                 string                       `json:"command"`
+	Language                string                       `json:"language,omitempty"`
+	Outcome                 string                       `json:"outcome"`
+	OutcomeDetail           string                       `json:"outcomeDetail,omitempty"`
+	Surface                 string                       `json:"surface,omitempty"`
+	InitialAppName          string                       `json:"initialAppName,omitempty"`
+	InitialWindowTitle      string                       `json:"initialWindowTitle,omitempty"`
+	InitialContextHash      string                       `json:"initialContextHash,omitempty"`
+	LastVerifiedContextHash string                       `json:"lastVerifiedContextHash,omitempty"`
+	StartedAt               time.Time                    `json:"startedAt,omitempty"`
+	CompletedAt             time.Time                    `json:"completedAt,omitempty"`
+	Steps                   []NavigatorBackgroundStep    `json:"steps,omitempty"`
+	Attempts                []NavigatorBackgroundAttempt `json:"attempts,omitempty"`
+	TraceID                 string                       `json:"traceId,omitempty"`
 }
 
 type NavigatorBackgroundResult struct {
