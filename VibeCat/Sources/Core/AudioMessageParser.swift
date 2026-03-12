@@ -20,7 +20,7 @@ public enum ServerMessage: Sendable {
     case ttsEnd
     case pong
     case navigatorCommandAccepted(taskId: String?, command: String, intentClass: NavigatorIntentClass, intentConfidence: Double)
-    case navigatorIntentClarificationNeeded(command: String, question: String)
+    case navigatorIntentClarificationNeeded(command: String, question: String, responseMode: NavigatorClarificationResponseMode)
     case navigatorStepPlanned(taskId: String, step: NavigatorStep, message: String)
     case navigatorStepRunning(taskId: String, stepId: String, status: String)
     case navigatorStepVerified(taskId: String, stepId: String, status: String, observedOutcome: String)
@@ -143,7 +143,9 @@ public enum AudioMessageParser {
         case "navigator.intentClarificationNeeded":
             let command = json["command"] as? String ?? ""
             let question = json["question"] as? String ?? ""
-            return .navigatorIntentClarificationNeeded(command: command, question: question)
+            let rawResponseMode = json["responseMode"] as? String ?? NavigatorClarificationResponseMode.confirmation.rawValue
+            let responseMode = NavigatorClarificationResponseMode(rawValue: rawResponseMode) ?? .confirmation
+            return .navigatorIntentClarificationNeeded(command: command, question: question, responseMode: responseMode)
         case "navigator.stepPlanned":
             let taskId = json["taskId"] as? String ?? ""
             let message = json["message"] as? String ?? ""
@@ -224,7 +226,10 @@ public enum AudioMessageParser {
             fallbackPolicy: json["fallbackPolicy"] as? String ?? "guided_mode",
             url: json["url"] as? String,
             hotkey: hotkey,
-            verifyHint: json["verifyHint"] as? String
+            verifyHint: json["verifyHint"] as? String,
+            systemCommand: json["systemCommand"] as? String,
+            systemValue: json["systemValue"] as? String,
+            systemAmount: json["systemAmount"] as? Int ?? 0
         )
     }
 }

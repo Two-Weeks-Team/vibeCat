@@ -15,7 +15,13 @@ public enum NavigatorActionType: String, Sendable, Codable {
     case pasteText = "paste_text"
     case copySelection = "copy_selection"
     case pressAX = "press_ax"
+    case systemAction = "system_action"
     case waitFor = "wait_for"
+}
+
+public enum NavigatorClarificationResponseMode: String, Sendable, Codable {
+    case confirmation
+    case provideDetails = "provide_details"
 }
 
 public struct NavigatorTargetDescriptor: Sendable, Codable, Equatable {
@@ -58,6 +64,9 @@ public struct NavigatorStep: Sendable, Codable, Equatable, Identifiable {
     public let url: String?
     public let hotkey: [String]
     public let verifyHint: String?
+    public let systemCommand: String?
+    public let systemValue: String?
+    public let systemAmount: Int
 
     public init(
         id: String,
@@ -73,7 +82,10 @@ public struct NavigatorStep: Sendable, Codable, Equatable, Identifiable {
         fallbackPolicy: String,
         url: String? = nil,
         hotkey: [String] = [],
-        verifyHint: String? = nil
+        verifyHint: String? = nil,
+        systemCommand: String? = nil,
+        systemValue: String? = nil,
+        systemAmount: Int = 0
     ) {
         self.id = id
         self.actionType = actionType
@@ -89,6 +101,9 @@ public struct NavigatorStep: Sendable, Codable, Equatable, Identifiable {
         self.url = url
         self.hotkey = hotkey
         self.verifyHint = verifyHint
+        self.systemCommand = systemCommand
+        self.systemValue = systemValue
+        self.systemAmount = systemAmount
     }
 }
 

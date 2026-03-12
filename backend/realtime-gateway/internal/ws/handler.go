@@ -42,6 +42,7 @@ const (
 )
 
 var proactiveContextHintDelay = 1200 * time.Millisecond
+var proactiveContextHintCooldown = 90 * time.Second
 
 type adkService interface {
 	Analyze(context.Context, adk.AnalysisRequest) (*adk.AnalysisResult, error)
@@ -160,14 +161,16 @@ type liveSessionState struct {
 
 	// modelSpeaking is true while any assistant audio is actively streaming to the client.
 	// While true, screen captures are deferred and incoming user speech is treated as barge-in.
-	modelSpeaking     bool
-	discardModelAudio bool
-	pendingTurnTrace  string
-	pendingTurnFlow   string
-	pendingTurnRootAt time.Time
-	currentTurnTrace  string
-	currentTurnFlow   string
-	currentTurnRootAt time.Time
+	modelSpeaking         bool
+	discardModelAudio     bool
+	pendingTurnTrace      string
+	pendingTurnFlow       string
+	pendingTurnRootAt     time.Time
+	currentTurnTrace      string
+	currentTurnFlow       string
+	currentTurnRootAt     time.Time
+	lastProactiveHintText string
+	lastProactiveHintAt   time.Time
 }
 
 type sessionRuntime struct {
@@ -282,12 +285,9 @@ func (ls *liveSessionState) setModelSpeaking(v bool) {
 func (ls *liveSessionState) markBargeInPending() bool {
 	ls.mu.Lock()
 	defer ls.mu.Unlock()
-	if !ls.modelSpeaking {
-		return false
-	}
 	alreadyDiscarding := ls.discardModelAudio
 	ls.discardModelAudio = true
-	return !alreadyDiscarding
+	return ls.modelSpeaking && !alreadyDiscarding
 }
 
 func (ls *liveSessionState) shouldDiscardModelAudio() bool {
@@ -296,12 +296,38 @@ func (ls *liveSessionState) shouldDiscardModelAudio() bool {
 	return ls.discardModelAudio
 }
 
+func (ls *liveSessionState) clearDiscardModelAudio() {
+	ls.mu.Lock()
+	ls.discardModelAudio = false
+	ls.mu.Unlock()
+}
+
 func (ls *liveSessionState) queueTurnTrace(traceID, flow string, rootAt time.Time) {
 	ls.mu.Lock()
 	defer ls.mu.Unlock()
 	ls.pendingTurnTrace = traceID
 	ls.pendingTurnFlow = flow
 	ls.pendingTurnRootAt = rootAt
+}
+
+func (ls *liveSessionState) shouldSkipProactiveHint(hintText string, now time.Time) bool {
+	normalized := strings.TrimSpace(hintText)
+	if normalized == "" {
+		return true
+	}
+
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+
+	if ls.lastProactiveHintText == normalized &&
+		!ls.lastProactiveHintAt.IsZero() &&
+		now.Sub(ls.lastProactiveHintAt) < proactiveContextHintCooldown {
+		return true
+	}
+
+	ls.lastProactiveHintText = normalized
+	ls.lastProactiveHintAt = now
+	return false
 }
 
 func (ls *liveSessionState) clearPendingTurnTrace() {
@@ -584,7 +610,11 @@ func proactiveContextHintText(language string, rawContext string) string {
 	}
 
 	appLower := strings.ToLower(app)
+	bundleLower := strings.ToLower(strings.TrimSpace(ctx.BundleID))
 	targetLower := strings.ToLower(ctx.TargetKind)
+	if strings.Contains(appLower, "codex") || strings.Contains(bundleLower, "codex") {
+		return ""
+	}
 
 	switch uiLanguage(language) {
 	case "en":
@@ -593,8 +623,10 @@ func proactiveContextHintText(language string, rawContext string) string {
 			return fmt.Sprintf("%s is open in Xcode. Re-run one failing test or inspect the first error line before we go wider.", subject)
 		case strings.Contains(appLower, "terminal") || strings.Contains(appLower, "iterm") || strings.Contains(appLower, "warp") || strings.Contains(appLower, "ghostty"):
 			return fmt.Sprintf("%s is in the terminal. Start from the latest error line and confirm the exact command that triggered it.", subject)
-		case strings.Contains(appLower, "cursor") || strings.Contains(appLower, "visual studio code") || strings.Contains(appLower, "code"):
+		case isEditorLikeApp(appLower, bundleLower):
 			return fmt.Sprintf("%s is in the editor. Narrow it to one changed function or one failing file first.", subject)
+		case strings.Contains(appLower, "codex") || strings.Contains(bundleLower, "codex"):
+			return fmt.Sprintf("%s is open in Codex. Start from the latest task result or one changed file before going wider.", subject)
 		case strings.Contains(appLower, "chrome") || strings.Contains(appLower, "safari") || strings.Contains(appLower, "arc") || strings.Contains(appLower, "firefox"):
 			return fmt.Sprintf("%s is open in the browser. Keep one source tab and one work tab, then verify the next step from there.", subject)
 		case strings.Contains(targetLower, "display"):
@@ -608,8 +640,10 @@ func proactiveContextHintText(language string, rawContext string) string {
 			return fmt.Sprintf("いま %s を Xcode で開いています。まず 1 件だけ失敗テストを再実行するか、最初のエラー行を確認しましょう。", subject)
 		case strings.Contains(appLower, "terminal") || strings.Contains(appLower, "iterm") || strings.Contains(appLower, "warp") || strings.Contains(appLower, "ghostty"):
 			return fmt.Sprintf("いま %s はターミナルです。最後のエラー行と、その直前のコマンドから先に確認しましょう。", subject)
-		case strings.Contains(appLower, "cursor") || strings.Contains(appLower, "visual studio code") || strings.Contains(appLower, "code"):
+		case isEditorLikeApp(appLower, bundleLower):
 			return fmt.Sprintf("いま %s はエディタです。変更した関数 1 つか、失敗しているファイル 1 つまで先に絞りましょう。", subject)
+		case strings.Contains(appLower, "codex") || strings.Contains(bundleLower, "codex"):
+			return fmt.Sprintf("いま %s は Codex です。最新のタスク結果か、直近で変えたファイル 1 つから先に確認しましょう。", subject)
 		case strings.Contains(appLower, "chrome") || strings.Contains(appLower, "safari") || strings.Contains(appLower, "arc") || strings.Contains(appLower, "firefox"):
 			return fmt.Sprintf("いま %s はブラウザです。参照タブを 1 つに絞って、次の確認点だけ先に押さえましょう。", subject)
 		case strings.Contains(targetLower, "display"):
@@ -623,8 +657,10 @@ func proactiveContextHintText(language string, rawContext string) string {
 			return fmt.Sprintf("지금 %s가 Xcode에 열려 있어. 실패한 테스트 하나만 다시 돌리거나 첫 에러 줄부터 바로 보자.", subject)
 		case strings.Contains(appLower, "terminal") || strings.Contains(appLower, "iterm") || strings.Contains(appLower, "warp") || strings.Contains(appLower, "ghostty"):
 			return fmt.Sprintf("지금 %s가 터미널이야. 마지막 에러 줄과 그 직전 명령부터 먼저 확인하자.", subject)
-		case strings.Contains(appLower, "cursor") || strings.Contains(appLower, "visual studio code") || strings.Contains(appLower, "code"):
+		case isEditorLikeApp(appLower, bundleLower):
 			return fmt.Sprintf("지금 %s가 에디터에 열려 있어. 방금 바꾼 함수 하나나 깨진 파일 하나부터 좁혀보자.", subject)
+		case strings.Contains(appLower, "codex") || strings.Contains(bundleLower, "codex"):
+			return fmt.Sprintf("지금 %s가 Codex에 열려 있어. 최근 작업 결과 하나나 방금 바뀐 파일 하나부터 먼저 보자.", subject)
 		case strings.Contains(appLower, "chrome") || strings.Contains(appLower, "safari") || strings.Contains(appLower, "arc") || strings.Contains(appLower, "firefox"):
 			return fmt.Sprintf("지금 %s가 브라우저에 열려 있어. 참고 탭 하나만 남기고 다음 확인 포인트부터 잡자.", subject)
 		case strings.Contains(targetLower, "display"):
@@ -632,6 +668,25 @@ func proactiveContextHintText(language string, rawContext string) string {
 		default:
 			return fmt.Sprintf("지금 %s 쪽이야. 거기서 마지막으로 바뀐 지점 하나부터 먼저 확인하자.", subject)
 		}
+	}
+}
+
+func isEditorLikeApp(appLower, bundleLower string) bool {
+	if strings.Contains(appLower, "codex") || strings.Contains(bundleLower, "codex") {
+		return false
+	}
+
+	switch {
+	case strings.Contains(appLower, "cursor"):
+		return true
+	case strings.Contains(appLower, "visual studio code"):
+		return true
+	case appLower == "code":
+		return true
+	case bundleLower == "com.microsoft.vscode":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -652,6 +707,11 @@ func maybeStartProactiveContextHint(ctx context.Context, c *Conn, ls *liveSessio
 	if hintText == "" {
 		cancel()
 		slog.Debug("[HANDLER] proactive context hint skipped", "conn_id", c.ID, "reason", "empty_hint_text")
+		return func() {}
+	}
+	if ls.shouldSkipProactiveHint(hintText, time.Now()) {
+		cancel()
+		slog.Debug("[HANDLER] proactive context hint skipped", "conn_id", c.ID, "reason", "duplicate_hint_recently_shown")
 		return func() {}
 	}
 
@@ -1269,18 +1329,39 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 		navState := &navigatorSessionState{connectionID: c.ID}
 		actionStateOwner := strings.TrimSpace(c.ID)
 
+		loadActionState := func(owner string) (navigatorSessionState, bool, error) {
+			if actionStore == nil {
+				return navigatorSessionState{}, false, nil
+			}
+			loadCtx, cancel := context.WithTimeout(context.Background(), actionStateLoadTimeout)
+			defer cancel()
+			return actionStore.Load(loadCtx, owner)
+		}
+
+		saveActionState := func(owner string, state navigatorSessionState) error {
+			if actionStore == nil {
+				return nil
+			}
+			saveCtx, cancel := context.WithTimeout(context.Background(), actionStateWriteTimeout)
+			defer cancel()
+			return actionStore.Save(saveCtx, owner, state)
+		}
+
+		deleteActionState := func(owner string) error {
+			if actionStore == nil {
+				return nil
+			}
+			deleteCtx, cancel := context.WithTimeout(context.Background(), actionStateWriteTimeout)
+			defer cancel()
+			return actionStore.Delete(deleteCtx, owner)
+		}
+
 		persistNavigatorState := func() {
 			navState.bindLease(strings.TrimSpace(ls.getConfig().DeviceID), c.ID)
 			if actionStore == nil {
 				return
 			}
-			if !navState.hasPersistableState() {
-				if err := actionStore.Delete(context.Background(), actionStateOwner); err != nil {
-					slog.Warn("action state delete failed", "conn_id", c.ID, "owner", actionStateOwner, "error", err)
-				}
-				return
-			}
-			if err := actionStore.Save(context.Background(), actionStateOwner, *navState); err != nil {
+			if err := saveActionState(actionStateOwner, *navState); err != nil {
 				slog.Warn("action state save failed", "conn_id", c.ID, "owner", actionStateOwner, "error", err)
 			}
 		}
@@ -1289,7 +1370,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 			if actionStore == nil {
 				return true
 			}
-			restored, ok, err := actionStore.Load(context.Background(), actionStateOwner)
+			restored, ok, err := loadActionState(actionStateOwner)
 			if err != nil {
 				slog.Warn("action state sync failed", "conn_id", c.ID, "owner", actionStateOwner, "error", err)
 				return true
@@ -1473,14 +1554,14 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 					if strings.TrimSpace(cfg.DeviceID) != "" {
 						actionStateOwner = strings.TrimSpace(cfg.DeviceID)
 					}
-					if restored, ok, err := actionStore.Load(ctx, actionStateOwner); err != nil {
+					if restored, ok, err := loadActionState(actionStateOwner); err != nil {
 						slog.Warn("action state restore failed", "conn_id", c.ID, "owner", actionStateOwner, "error", err)
 					} else if ok {
 						*navState = restored
 						navState.bindLease(strings.TrimSpace(cfg.DeviceID), c.ID)
 						persistNavigatorState()
 						if previousActionStateOwner != actionStateOwner {
-							if err := actionStore.Delete(context.Background(), previousActionStateOwner); err != nil {
+							if err := deleteActionState(previousActionStateOwner); err != nil {
 								slog.Warn("legacy action state delete failed", "conn_id", c.ID, "owner", previousActionStateOwner, "error", err)
 							}
 						}
@@ -1494,9 +1575,9 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 						}
 					} else {
 						navState.bindLease(strings.TrimSpace(cfg.DeviceID), c.ID)
-						if previousActionStateOwner != actionStateOwner && navState.hasPersistableState() {
-							persistNavigatorState()
-							if err := actionStore.Delete(context.Background(), previousActionStateOwner); err != nil {
+						persistNavigatorState()
+						if previousActionStateOwner != actionStateOwner {
+							if err := deleteActionState(previousActionStateOwner); err != nil {
 								slog.Warn("legacy action state delete failed", "conn_id", c.ID, "owner", previousActionStateOwner, "error", err)
 							}
 						}
@@ -1642,15 +1723,17 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 					plan = maybeEscalateNavigatorPlan(ctx, adkClient, metrics, ls.getConfig().Language, navMsg.Command, navMsg.Context, plan, traceID)
 					switch {
 					case plan.IntentClass == navigatorIntentAmbiguous:
-						navState.stageClarification(navigatorPromptIntent, navMsg.Command)
+						clarifyKind := clarificationPromptKindForPlan(plan)
+						navState.stageClarification(clarifyKind, navMsg.Command)
 						persistNavigatorState()
 						if metrics != nil {
-							metrics.RecordClarification(context.Background(), string(navigatorPromptIntent), navigatorSurfaceFromContext(navMsg.Context))
+							metrics.RecordClarification(context.Background(), string(clarifyKind), navigatorSurfaceFromContext(navMsg.Context))
 						}
 						lockedSendJSON(c, map[string]any{
-							"type":     "navigator.intentClarificationNeeded",
-							"command":  navMsg.Command,
-							"question": plan.ClarifyQuestion,
+							"type":         "navigator.intentClarificationNeeded",
+							"command":      navMsg.Command,
+							"question":     plan.ClarifyQuestion,
+							"responseMode": clarificationResponseModeForPrompt(clarifyKind),
 						})
 					case plan.IntentClass == navigatorIntentAnalyzeOnly:
 						lockedSendJSON(c, map[string]any{
@@ -1688,9 +1771,10 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 							metrics.RecordTaskReplacement(context.Background(), surface)
 						}
 						lockedSendJSON(c, map[string]any{
-							"type":     "navigator.intentClarificationNeeded",
-							"command":  navMsg.Command,
-							"question": buildTaskReplacementQuestion(activeCommand, navMsg.Command),
+							"type":         "navigator.intentClarificationNeeded",
+							"command":      navMsg.Command,
+							"question":     buildTaskReplacementQuestion(activeCommand, navMsg.Command),
+							"responseMode": clarificationResponseModeForPrompt(navigatorPromptReplace),
 						})
 					case plan.RiskQuestion != "":
 						navState.pendingRiskyCommand = navMsg.Command
@@ -1764,6 +1848,70 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 						}
 						continue
 					}
+					if clarifyKind == navigatorPromptProvideDetail {
+						command = mergeClarificationCommand(command, confirmMsg.Answer, clarifyKind)
+						plan := planNavigatorCommand(command, confirmMsg.Context, false)
+						plan = maybeEscalateNavigatorPlan(ctx, adkClient, metrics, ls.getConfig().Language, command, confirmMsg.Context, plan, "")
+						switch {
+						case plan.IntentClass == navigatorIntentAmbiguous:
+							nextClarifyKind := clarificationPromptKindForPlan(plan)
+							navState.stageClarification(nextClarifyKind, command)
+							persistNavigatorState()
+							if metrics != nil {
+								metrics.RecordClarification(context.Background(), string(nextClarifyKind), navigatorSurfaceFromContext(confirmMsg.Context))
+							}
+							lockedSendJSON(c, map[string]any{
+								"type":         "navigator.intentClarificationNeeded",
+								"command":      command,
+								"question":     plan.ClarifyQuestion,
+								"responseMode": clarificationResponseModeForPrompt(nextClarifyKind),
+							})
+						case plan.RiskQuestion != "":
+							navState.pendingRiskyCommand = command
+							persistNavigatorState()
+							lockedSendJSON(c, map[string]any{
+								"type":     "navigator.riskyActionBlocked",
+								"command":  command,
+								"question": plan.RiskQuestion,
+								"reason":   plan.RiskReason,
+							})
+						case len(plan.Steps) == 0:
+							recordGuidedMetrics("clarified_but_not_supported", nil, "", navigatorSurfaceFromContext(confirmMsg.Context))
+							lockedSendJSON(c, map[string]any{
+								"type":        "navigator.guidedMode",
+								"taskId":      "",
+								"reason":      "clarified_but_not_supported",
+								"instruction": "I understand the intent now, but I still need a more specific or supported target.",
+							})
+							navState.clearPlan()
+							persistNavigatorState()
+						default:
+							taskID := navState.startPlan(command, plan.Steps)
+							navState.rememberInitialContext(confirmMsg.Context)
+							persistNavigatorState()
+							if metrics != nil {
+								metrics.RecordNavigatorTask(context.Background(), navigatorSurfaceFromState(*navState), plan.IntentClass)
+							}
+							lockedSendJSON(c, map[string]any{
+								"type":             "navigator.commandAccepted",
+								"taskId":           taskID,
+								"command":          command,
+								"intentClass":      plan.IntentClass,
+								"intentConfidence": plan.IntentConfidence,
+							})
+							if step, ok := navState.nextStep(); ok {
+								persistNavigatorState()
+								recordFirstActionMetric()
+								lockedSendJSON(c, map[string]any{
+									"type":    "navigator.stepPlanned",
+									"taskId":  taskID,
+									"step":    step,
+									"message": navigatorMessageForStep(step),
+								})
+							}
+						}
+						continue
+					}
 					if !affirmativeAnswer(confirmMsg.Answer) {
 						instruction := "I did not get a clear execution confirmation, so I stopped before acting."
 						if clarifyKind == navigatorPromptReplace {
@@ -1785,7 +1933,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 					if clarifyKind == navigatorPromptReplace {
 						finalizeNavigatorTask("replaced", "task replaced by a newer command", "")
 					}
-					plan := planNavigatorCommand(command+" "+confirmMsg.Answer, confirmMsg.Context, false)
+					plan := planNavigatorCommand(mergeClarificationCommand(command, confirmMsg.Answer, clarifyKind), confirmMsg.Context, false)
 					plan = maybeEscalateNavigatorPlan(ctx, adkClient, metrics, ls.getConfig().Language, command, confirmMsg.Context, plan, "")
 					if len(plan.Steps) == 0 {
 						recordGuidedMetrics("clarified_but_not_supported", nil, "", navigatorSurfaceFromContext(confirmMsg.Context))
@@ -2384,6 +2532,8 @@ func receiveFromGemini(ctx context.Context, c *Conn, sess *live.Session, ls *liv
 					turnHasAudio = false
 					ls.setModelSpeaking(false)
 					sendTurnState(c, "idle", "live")
+				} else {
+					ls.clearDiscardModelAudio()
 				}
 				if traceID, flow, rootAt, ok := ls.finishCurrentTurnTrace(); ok {
 					sendTraceEvent(c, flow, traceID, "turn_complete", rootAt, "")
@@ -2400,6 +2550,8 @@ func receiveFromGemini(ctx context.Context, c *Conn, sess *live.Session, ls *liv
 					turnHasAudio = false
 					ls.setModelSpeaking(false)
 					sendTurnState(c, "idle", "live")
+				} else {
+					ls.clearDiscardModelAudio()
 				}
 				if traceID, flow, rootAt, ok := ls.finishCurrentTurnTrace(); ok {
 					sendTraceEvent(c, flow, traceID, "turn_interrupted", rootAt, "")
@@ -2472,6 +2624,11 @@ func lockedSendBinary(c *Conn, payload []byte) error {
 	}
 	return nil
 }
+
+const (
+	actionStateLoadTimeout  = 350 * time.Millisecond
+	actionStateWriteTimeout = 500 * time.Millisecond
+)
 
 const minTranscriptionLen = 4
 

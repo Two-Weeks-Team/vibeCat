@@ -44,3 +44,16 @@ func TestBackgroundFallbackInfersReplayLabelAndSurface(t *testing.T) {
 		t.Fatal("expected tags")
 	}
 }
+
+func TestValidEscalationResultAllowsResolvedTextWithoutDescriptor(t *testing.T) {
+	result := models.NavigatorEscalationResult{
+		ResolvedText:           "AppDelegate.swift\nAudioDeviceMonitor.swift",
+		Confidence:             0.88,
+		FallbackRecommendation: "safe_immediate",
+		Reason:                 "visible_text_extracted",
+	}
+
+	if !validEscalationResult(result) {
+		t.Fatal("expected resolved text without descriptor to be valid")
+	}
+}

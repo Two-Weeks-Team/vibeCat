@@ -35,7 +35,7 @@ func maybeEscalateNavigatorPlan(ctx context.Context, adkClient adkService, metri
 		VisibleInputCandidateCount: navCtx.VisibleInputCandidates,
 		TraceID:                    traceID,
 	})
-	if err != nil || result == nil || result.ResolvedDescriptor == nil {
+	if err != nil || result == nil {
 		return plan
 	}
 	if result.Confidence < navigatorEscalationThreshold || strings.EqualFold(result.FallbackRecommendation, "guided_mode") {
@@ -69,6 +69,12 @@ func shouldAttemptConfidenceEscalation(command string, navCtx navigatorContext, 
 	if !(wantsTextEntry(command, navCtx) || looksLikeDirectClick(command)) {
 		return false
 	}
+	if wantsTextEntry(command, navCtx) && requiresDerivedTextPayload(command) {
+		return true
+	}
+	if wantsTextEntry(command, navCtx) && requestsTextInsertion(command) && resolveTextEntryPayload(command, "") == "" {
+		return false
+	}
 	if plan.IntentClass != navigatorIntentAmbiguous && len(plan.Steps) > 0 {
 		return false
 	}
@@ -76,18 +82,26 @@ func shouldAttemptConfidenceEscalation(command string, navCtx navigatorContext, 
 }
 
 func buildEscalatedTextEntrySteps(command string, navCtx navigatorContext, intentConfidence float64, escalation *adk.NavigatorEscalationResult) []navigatorStep {
-	if escalation == nil || escalation.ResolvedDescriptor == nil {
+	if escalation == nil {
 		return nil
 	}
-	descriptor := navigatorTargetDescriptor{
-		Role:           cleanTopic(escalation.ResolvedDescriptor.Role),
-		Label:          cleanTopic(escalation.ResolvedDescriptor.Label),
-		WindowTitle:    cleanTopic(firstNonEmptyString(escalation.ResolvedDescriptor.WindowTitle, navCtx.WindowTitle)),
-		AppName:        cleanTopic(firstNonEmptyString(escalation.ResolvedDescriptor.AppName, navCtx.AppName)),
-		RelativeAnchor: cleanTopic(escalation.ResolvedDescriptor.RelativeAnchor),
-		RegionHint:     cleanTopic(escalation.ResolvedDescriptor.RegionHint),
+	descriptor := navigatorTargetDescriptor{}
+	if escalation.ResolvedDescriptor != nil {
+		descriptor = navigatorTargetDescriptor{
+			Role:           cleanTopic(escalation.ResolvedDescriptor.Role),
+			Label:          cleanTopic(escalation.ResolvedDescriptor.Label),
+			WindowTitle:    cleanTopic(firstNonEmptyString(escalation.ResolvedDescriptor.WindowTitle, navCtx.WindowTitle)),
+			AppName:        cleanTopic(firstNonEmptyString(escalation.ResolvedDescriptor.AppName, navCtx.AppName)),
+			RelativeAnchor: cleanTopic(escalation.ResolvedDescriptor.RelativeAnchor),
+			RegionHint:     cleanTopic(escalation.ResolvedDescriptor.RegionHint),
+		}
+	} else if baseline, ok := buildTextEntryDescriptor(command, navCtx); ok {
+		descriptor = baseline
 	}
-	return buildTextEntryStepsForDescriptor(command, navCtx, intentConfidence, descriptor, escalation.Confidence)
+	if descriptor.Role == "" && descriptor.Label == "" && descriptor.AppName == "" {
+		return nil
+	}
+	return buildTextEntryStepsForDescriptor(command, navCtx, intentConfidence, descriptor, escalation.Confidence, escalation.ResolvedText)
 }
 
 func buildEscalatedAXPressStep(navCtx navigatorContext, intentConfidence float64, escalation *adk.NavigatorEscalationResult) (navigatorStep, bool) {
@@ -124,7 +138,7 @@ func buildEscalatedAXPressStep(navCtx navigatorContext, intentConfidence float64
 	}, true
 }
 
-func buildTextEntryStepsForDescriptor(command string, navCtx navigatorContext, intentConfidence float64, descriptor navigatorTargetDescriptor, confidence float64) []navigatorStep {
+func buildTextEntryStepsForDescriptor(command string, navCtx navigatorContext, intentConfidence float64, descriptor navigatorTargetDescriptor, confidence float64, resolvedText string) []navigatorStep {
 	targetApp := cleanTopic(firstNonEmptyString(descriptor.AppName, navCtx.AppName))
 	if targetApp == "" {
 		return nil
@@ -157,7 +171,7 @@ func buildTextEntryStepsForDescriptor(command string, navCtx navigatorContext, i
 		VerifyHint:       strings.ToLower(cleanTopic(fieldSummary)),
 	}}
 
-	if payload := extractTextEntryPayload(command); payload != "" {
+	if payload := resolveTextEntryPayload(command, resolvedText); payload != "" {
 		verifyHint := payload
 		if len(verifyHint) > 24 {
 			verifyHint = verifyHint[:24]
@@ -176,6 +190,8 @@ func buildTextEntryStepsForDescriptor(command string, navCtx navigatorContext, i
 			FallbackPolicy:   "guided_mode",
 			VerifyHint:       strings.ToLower(cleanTopic(verifyHint)),
 		})
+	} else if requestsTextInsertion(command) {
+		return nil
 	}
 	return steps
 }

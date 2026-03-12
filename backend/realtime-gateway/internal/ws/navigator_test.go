@@ -50,6 +50,39 @@ func sendNavigatorSetup(t *testing.T, conn *websocket.Conn, deviceID string) {
 	}
 }
 
+type slowActionStateStore struct {
+	loadDelay   time.Duration
+	writeDelay  time.Duration
+	deleteDelay time.Duration
+}
+
+func (s slowActionStateStore) Load(ctx context.Context, owner string) (navigatorSessionState, bool, error) {
+	select {
+	case <-time.After(s.loadDelay):
+		return navigatorSessionState{}, false, nil
+	case <-ctx.Done():
+		return navigatorSessionState{}, false, ctx.Err()
+	}
+}
+
+func (s slowActionStateStore) Save(ctx context.Context, owner string, state navigatorSessionState) error {
+	select {
+	case <-time.After(s.writeDelay):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (s slowActionStateStore) Delete(ctx context.Context, owner string) error {
+	select {
+	case <-time.After(s.deleteDelay):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 func TestClassifyNavigatorIntentTreatsImplicitApplyAsExecute(t *testing.T) {
 	intent, confidence, question := classifyNavigatorIntent("이거 반영해")
 	if intent != navigatorIntentExecuteNow {
@@ -161,6 +194,187 @@ func TestPlanNavigatorCommandBuildsInputFieldFocusStepWithoutPayload(t *testing.
 	}
 }
 
+func TestPlanNavigatorCommandRequiresDerivedTextForScreenContentInsertion(t *testing.T) {
+	plan := planNavigatorCommand("여기에 지금 최근 수정한 파일 세 개 이름을 입력해줘", navigatorContext{
+		AppName:                "Codex",
+		WindowTitle:            "Codex",
+		FocusedRole:            "AXTextArea",
+		FocusedLabel:           "후속 변경 사항을 부탁하세요",
+		LastInputDescriptor:    "bundle=com.openai.codex|window=Codex|role=textarea|label=후속 변경 사항을 부탁하세요",
+		VisibleInputCandidates: 1,
+		CaptureConfidence:      0.84,
+	}, false)
+
+	if plan.IntentClass != navigatorIntentAmbiguous {
+		t.Fatalf("intent = %q, want %q", plan.IntentClass, navigatorIntentAmbiguous)
+	}
+	if len(plan.Steps) != 0 {
+		t.Fatalf("steps = %d, want 0 until screen-derived text is resolved", len(plan.Steps))
+	}
+}
+
+func TestPlanNavigatorCommandRequiresDerivedTextForFindThenInsertFollowup(t *testing.T) {
+	plan := planNavigatorCommand("그럼 8명 세 개만 찾아서 입력해 줄래?", navigatorContext{
+		AppName:                "Codex",
+		WindowTitle:            "Codex",
+		FocusedRole:            "AXTextArea",
+		FocusedLabel:           "후속 변경 사항을 부탁하세요",
+		LastInputDescriptor:    "bundle=com.openai.codex|window=Codex|role=textarea|label=후속 변경 사항을 부탁하세요",
+		VisibleInputCandidates: 1,
+		CaptureConfidence:      0.86,
+	}, false)
+
+	if plan.IntentClass != navigatorIntentAmbiguous {
+		t.Fatalf("intent = %q, want %q", plan.IntentClass, navigatorIntentAmbiguous)
+	}
+	if len(plan.Steps) != 0 {
+		t.Fatalf("steps = %d, want 0 until visible text is resolved", len(plan.Steps))
+	}
+	if !strings.Contains(strings.ToLower(plan.ClarifyQuestion), "exact text to type") {
+		t.Fatalf("clarify question = %q, want text-resolution guidance", plan.ClarifyQuestion)
+	}
+}
+
+func TestPlanNavigatorCommandUsesIntrinsicAssistantNameForTextEntry(t *testing.T) {
+	plan := planNavigatorCommand("네 이름을 입력해 보고", navigatorContext{
+		AppName:                "Codex",
+		WindowTitle:            "Codex",
+		FocusedRole:            "AXTextArea",
+		FocusedLabel:           "후속 변경 사항을 부탁하세요",
+		LastInputDescriptor:    "bundle=com.openai.codex|window=Codex|role=textarea|label=후속 변경 사항을 부탁하세요",
+		VisibleInputCandidates: 1,
+		CaptureConfidence:      0.88,
+	}, false)
+
+	if plan.IntentClass != navigatorIntentExecuteNow {
+		t.Fatalf("intent = %q, want %q", plan.IntentClass, navigatorIntentExecuteNow)
+	}
+	if len(plan.Steps) != 2 {
+		t.Fatalf("steps = %d, want 2", len(plan.Steps))
+	}
+	if got := plan.Steps[1].ActionType; got != "paste_text" {
+		t.Fatalf("second action = %q, want paste_text", got)
+	}
+	if got := plan.Steps[1].InputText; got != "VibeCat" {
+		t.Fatalf("inputText = %q, want VibeCat", got)
+	}
+}
+
+func TestPlanNavigatorCommandTreatsAlphabetRangeAsLiteralTextPayload(t *testing.T) {
+	plan := planNavigatorCommand("지금 입력 창에 A부터 Z까지 입력해 줘.", navigatorContext{
+		AppName:                "Codex",
+		WindowTitle:            "Codex",
+		FocusedRole:            "AXTextArea",
+		FocusedLabel:           "후속 변경 사항을 부탁하세요",
+		LastInputDescriptor:    "bundle=com.openai.codex|window=Codex|role=textarea|label=후속 변경 사항을 부탁하세요",
+		VisibleInputCandidates: 1,
+		CaptureConfidence:      0.91,
+	}, false)
+
+	if plan.IntentClass != navigatorIntentExecuteNow {
+		t.Fatalf("intent = %q, want %q", plan.IntentClass, navigatorIntentExecuteNow)
+	}
+	if len(plan.Steps) != 2 {
+		t.Fatalf("steps = %d, want 2", len(plan.Steps))
+	}
+	if got := plan.Steps[1].ActionType; got != "paste_text" {
+		t.Fatalf("second action = %q, want paste_text", got)
+	}
+	if got := plan.Steps[1].InputText; got != "ABCDEFGHIJKLMNOPQRSTUVWXYZ" {
+		t.Fatalf("inputText = %q, want alphabet payload", got)
+	}
+}
+
+func TestPlanNavigatorCommandTreatsAlphabetRangeWithSuffixAsLiteralTextPayload(t *testing.T) {
+	plan := planNavigatorCommand("지금 입력 창에 A부터 Z 뒤에 한 칸 띄고 하이라고 입력해 줘.", navigatorContext{
+		AppName:                "Codex",
+		WindowTitle:            "Codex",
+		FocusedRole:            "AXTextArea",
+		FocusedLabel:           "후속 변경 사항을 부탁하세요",
+		LastInputDescriptor:    "bundle=com.openai.codex|window=Codex|role=textarea|label=후속 변경 사항을 부탁하세요",
+		VisibleInputCandidates: 1,
+		CaptureConfidence:      0.91,
+	}, false)
+
+	if plan.IntentClass != navigatorIntentExecuteNow {
+		t.Fatalf("intent = %q, want %q", plan.IntentClass, navigatorIntentExecuteNow)
+	}
+	if len(plan.Steps) != 2 {
+		t.Fatalf("steps = %d, want 2", len(plan.Steps))
+	}
+	if got := plan.Steps[1].InputText; got != "ABCDEFGHIJKLMNOPQRSTUVWXYZ 하이" {
+		t.Fatalf("inputText = %q, want compound alphabet payload", got)
+	}
+}
+
+func TestPlanNavigatorCommandTreatsRelativeAppendAsPayload(t *testing.T) {
+	plan := planNavigatorCommand("Z 뒤에 하이라고 입력해 줘.", navigatorContext{
+		AppName:                "Codex",
+		WindowTitle:            "Codex",
+		FocusedRole:            "AXTextArea",
+		FocusedLabel:           "후속 변경 사항을 부탁하세요",
+		LastInputDescriptor:    "bundle=com.openai.codex|window=Codex|role=textarea|label=후속 변경 사항을 부탁하세요",
+		VisibleInputCandidates: 1,
+		CaptureConfidence:      0.94,
+	}, false)
+
+	if plan.IntentClass != navigatorIntentExecuteNow {
+		t.Fatalf("intent = %q, want %q", plan.IntentClass, navigatorIntentExecuteNow)
+	}
+	if len(plan.Steps) != 2 {
+		t.Fatalf("steps = %d, want 2", len(plan.Steps))
+	}
+	if got := plan.Steps[1].InputText; got != "하이" {
+		t.Fatalf("inputText = %q, want appended payload", got)
+	}
+}
+
+func TestPlanNavigatorCommandTreatsBareDirectTextAsPayload(t *testing.T) {
+	plan := planNavigatorCommand("하이라고 입력해 줘.", navigatorContext{
+		AppName:                "Codex",
+		WindowTitle:            "Codex",
+		FocusedRole:            "AXTextArea",
+		FocusedLabel:           "후속 변경 사항을 부탁하세요",
+		LastInputDescriptor:    "bundle=com.openai.codex|window=Codex|role=textarea|label=후속 변경 사항을 부탁하세요",
+		VisibleInputCandidates: 1,
+		CaptureConfidence:      0.94,
+	}, false)
+
+	if plan.IntentClass != navigatorIntentExecuteNow {
+		t.Fatalf("intent = %q, want %q", plan.IntentClass, navigatorIntentExecuteNow)
+	}
+	if len(plan.Steps) != 2 {
+		t.Fatalf("steps = %d, want 2", len(plan.Steps))
+	}
+	if got := plan.Steps[1].InputText; got != "하이" {
+		t.Fatalf("inputText = %q, want bare direct payload", got)
+	}
+}
+
+func TestPlanNavigatorCommandClarifiesWhenExactTextIsMissing(t *testing.T) {
+	plan := planNavigatorCommand("검색창에 입력해줘", navigatorContext{
+		AppName:                "Google Chrome",
+		WindowTitle:            "Google",
+		FocusedRole:            "AXTextField",
+		FocusedLabel:           "Search",
+		VisibleInputCandidates: 1,
+		CaptureConfidence:      0.9,
+	}, false)
+
+	if plan.IntentClass != navigatorIntentAmbiguous {
+		t.Fatalf("intent = %q, want %q", plan.IntentClass, navigatorIntentAmbiguous)
+	}
+	if len(plan.Steps) != 0 {
+		t.Fatalf("steps = %d, want 0 when exact text is missing", len(plan.Steps))
+	}
+	if !strings.Contains(strings.ToLower(plan.ClarifyQuestion), "exact text") {
+		t.Fatalf("clarify question = %q, want exact-text clarification", plan.ClarifyQuestion)
+	}
+	if plan.ClarifyMode != navigatorClarificationProvideDetail {
+		t.Fatalf("clarify mode = %q, want %q", plan.ClarifyMode, navigatorClarificationProvideDetail)
+	}
+}
+
 func TestPlanNavigatorCommandUsesInputFieldHintForImplicitTextEntry(t *testing.T) {
 	plan := planNavigatorCommand(`거기에 "gemini live api" 입력해줘`, navigatorContext{
 		AppName:        "Google Chrome",
@@ -179,6 +393,31 @@ func TestPlanNavigatorCommandUsesInputFieldHintForImplicitTextEntry(t *testing.T
 	}
 	if got := plan.Steps[0].TargetDescriptor.Label; got != "Search" {
 		t.Fatalf("label = %q, want Search", got)
+	}
+}
+
+func TestPlanNavigatorCommandBuildsSystemActionStepForVolume(t *testing.T) {
+	plan := planNavigatorCommand("볼륨 15 줄여줘", navigatorContext{
+		AppName: "Codex",
+	}, false)
+
+	if plan.IntentClass != navigatorIntentExecuteNow {
+		t.Fatalf("intent = %q, want %q", plan.IntentClass, navigatorIntentExecuteNow)
+	}
+	if len(plan.Steps) != 1 {
+		t.Fatalf("steps = %d, want 1", len(plan.Steps))
+	}
+	if got := plan.Steps[0].ActionType; got != "system_action" {
+		t.Fatalf("action = %q, want system_action", got)
+	}
+	if got := plan.Steps[0].SystemCommand; got != "volume" {
+		t.Fatalf("system command = %q, want volume", got)
+	}
+	if got := plan.Steps[0].SystemValue; got != "down" {
+		t.Fatalf("system value = %q, want down", got)
+	}
+	if got := plan.Steps[0].SystemAmount; got != 15 {
+		t.Fatalf("system amount = %d, want 15", got)
 	}
 }
 
@@ -201,6 +440,26 @@ func TestPlanNavigatorCommandUsesLastInputFieldDescriptorWhenHintIsMissing(t *te
 	}
 	if got := plan.Steps[0].TargetDescriptor.Label; got != "Search" {
 		t.Fatalf("label = %q, want Search", got)
+	}
+}
+
+func TestPlanNavigatorCommandUsesLastInputFieldDescriptorRoleWhenFocusedRoleIsNotInput(t *testing.T) {
+	plan := planNavigatorCommand(`거기에 "ABCDEFGHIJKLMNOPQRSTUVWXYZ" 입력해줘`, navigatorContext{
+		AppName:             "Codex",
+		WindowTitle:         "Codex",
+		FocusedRole:         "AXGroup",
+		LastInputDescriptor: "bundle=com.openai.codex|window=Codex|role=textarea|label=후속 변경 사항을 부탁하세요",
+		CaptureConfidence:   0.86,
+	}, false)
+
+	if plan.IntentClass != navigatorIntentExecuteNow {
+		t.Fatalf("intent = %q, want %q", plan.IntentClass, navigatorIntentExecuteNow)
+	}
+	if len(plan.Steps) != 2 {
+		t.Fatalf("steps = %d, want 2", len(plan.Steps))
+	}
+	if got := plan.Steps[0].TargetDescriptor.Role; got != "textarea" {
+		t.Fatalf("role = %q, want textarea", got)
 	}
 }
 
@@ -300,6 +559,49 @@ func TestNavigatorSessionStateRejectsStaleRefresh(t *testing.T) {
 	}
 }
 
+func TestMaybeEscalateNavigatorPlanUsesResolvedTextForScreenDerivedEntry(t *testing.T) {
+	command := "그럼 8명 세 개만 찾아서 입력해 줄래?"
+	ctx := navigatorContext{
+		AppName:                "Codex",
+		WindowTitle:            "Codex",
+		FocusedRole:            "AXTextArea",
+		FocusedLabel:           "후속 변경 사항을 부탁하세요",
+		LastInputDescriptor:    "bundle=com.openai.codex|window=Codex|role=textarea|label=후속 변경 사항을 부탁하세요",
+		Screenshot:             "dGVzdA==",
+		VisibleInputCandidates: 1,
+		CaptureConfidence:      0.83,
+	}
+
+	plan := planNavigatorCommand(command, ctx, false)
+	if plan.IntentClass != navigatorIntentAmbiguous {
+		t.Fatalf("baseline intent = %q, want ambiguous", plan.IntentClass)
+	}
+
+	escalated := maybeEscalateNavigatorPlan(context.Background(), &stubADK{
+		navigatorEscalateFn: func(_ context.Context, req adk.NavigatorEscalationRequest) (*adk.NavigatorEscalationResult, error) {
+			return &adk.NavigatorEscalationResult{
+				ResolvedText:           "AppDelegate.swift\nAudioDeviceMonitor.swift\nNavigatorVoiceCommandDetector.swift",
+				Confidence:             0.9,
+				FallbackRecommendation: "safe_immediate",
+				Reason:                 "visible_text_extracted",
+			}, nil
+		},
+	}, nil, "ko", command, ctx, plan, "trace_nav_screen_text")
+
+	if escalated.IntentClass != navigatorIntentExecuteNow {
+		t.Fatalf("escalated intent = %q, want execute_now", escalated.IntentClass)
+	}
+	if len(escalated.Steps) != 2 {
+		t.Fatalf("steps = %d, want 2", len(escalated.Steps))
+	}
+	if got := escalated.Steps[1].ActionType; got != "paste_text" {
+		t.Fatalf("last action = %q, want paste_text", got)
+	}
+	if got := escalated.Steps[1].InputText; !strings.Contains(got, "AppDelegate.swift") {
+		t.Fatalf("inputText = %q, want extracted filenames", got)
+	}
+}
+
 func TestNavigatorSessionStateRejectsWrongTaskID(t *testing.T) {
 	var state navigatorSessionState
 	state.startPlan("run it", []navigatorStep{{ID: "step-1"}})
@@ -340,6 +642,37 @@ func TestHandlerNavigatorCommandClarifiesAmbiguousRequest(t *testing.T) {
 	}
 }
 
+func TestHandlerNavigatorCommandClarificationIncludesProvideDetailsModeForMissingText(t *testing.T) {
+	reg := NewRegistry()
+	server := httptest.NewServer(Handler(reg, nil, nil, nil, nil, NewInMemoryActionStateStore()))
+	defer server.Close()
+
+	conn := dialTestWebSocket(t, server.URL)
+	defer conn.Close()
+
+	if err := conn.WriteJSON(map[string]any{
+		"type":    "navigator.command",
+		"command": "검색창에 입력해줘",
+		"context": map[string]any{
+			"appName":                    "Codex",
+			"windowTitle":                "Codex",
+			"focusedRole":                "AXTextArea",
+			"focusedLabel":               "후속 변경 사항을 부탁하세요",
+			"lastInputFieldDescriptor":   "bundle=com.openai.codex|window=Codex|role=textarea|label=후속 변경 사항을 부탁하세요",
+			"visibleInputCandidateCount": 1,
+			"captureConfidence":          0.93,
+			"accessibilityTrusted":       true,
+		},
+	}); err != nil {
+		t.Fatalf("send navigator.command: %v", err)
+	}
+
+	msg := readJSONMessageOfType(t, conn, "navigator.intentClarificationNeeded")
+	if got := msg["responseMode"]; got != string(navigatorClarificationProvideDetail) {
+		t.Fatalf("responseMode = %v, want %q", got, navigatorClarificationProvideDetail)
+	}
+}
+
 func TestHandlerNavigatorCommandPlansStep(t *testing.T) {
 	reg := NewRegistry()
 	server := httptest.NewServer(Handler(reg, nil, nil, nil, nil, NewInMemoryActionStateStore()))
@@ -375,6 +708,116 @@ func TestHandlerNavigatorCommandPlansStep(t *testing.T) {
 	}
 	if planned["taskId"] == nil || planned["taskId"] == "" {
 		t.Fatal("missing taskId on planned step")
+	}
+}
+
+func TestHandlerNavigatorCommandDoesNotBlockOnSlowActionStateStore(t *testing.T) {
+	reg := NewRegistry()
+	server := httptest.NewServer(Handler(reg, nil, nil, nil, nil, slowActionStateStore{
+		loadDelay:   2 * time.Second,
+		writeDelay:  2 * time.Second,
+		deleteDelay: 2 * time.Second,
+	}))
+	defer server.Close()
+
+	conn := dialTestWebSocket(t, server.URL)
+	defer conn.Close()
+
+	sendNavigatorSetup(t, conn, "device-slow-store")
+	_ = readJSONMessageOfType(t, conn, "setupComplete")
+
+	if err := conn.WriteJSON(map[string]any{
+		"type":    "navigator.command",
+		"command": "공식 문서 쪽으로 가보자",
+		"context": map[string]any{
+			"appName":              "Antigravity IDE",
+			"windowTitle":          "AuthServiceTests.swift",
+			"selectedText":         "AuthServiceTests missing token",
+			"accessibilityTrusted": true,
+		},
+	}); err != nil {
+		t.Fatalf("send navigator.command: %v", err)
+	}
+
+	accepted := readJSONMessageOfType(t, conn, "navigator.commandAccepted")
+	if accepted["taskId"] == nil || accepted["taskId"] == "" {
+		t.Fatal("missing taskId")
+	}
+}
+
+func TestHandlerNavigatorProvideDetailsClarificationReplansTextEntry(t *testing.T) {
+	reg := NewRegistry()
+	server := httptest.NewServer(Handler(reg, nil, nil, nil, nil, NewInMemoryActionStateStore()))
+	defer server.Close()
+
+	conn := dialTestWebSocket(t, server.URL)
+	defer conn.Close()
+
+	contextPayload := map[string]any{
+		"appName":                    "Codex",
+		"windowTitle":                "Codex",
+		"focusedRole":                "AXTextArea",
+		"focusedLabel":               "후속 변경 사항을 부탁하세요",
+		"lastInputFieldDescriptor":   "bundle=com.openai.codex|window=Codex|role=textarea|label=후속 변경 사항을 부탁하세요",
+		"visibleInputCandidateCount": 1,
+		"captureConfidence":          0.93,
+		"accessibilityTrusted":       true,
+	}
+
+	if err := conn.WriteJSON(map[string]any{
+		"type":    "navigator.command",
+		"command": "검색창에 입력해줘",
+		"context": contextPayload,
+	}); err != nil {
+		t.Fatalf("send navigator.command: %v", err)
+	}
+
+	clarification := readJSONMessageOfType(t, conn, "navigator.intentClarificationNeeded")
+	if got := clarification["responseMode"]; got != string(navigatorClarificationProvideDetail) {
+		t.Fatalf("responseMode = %v, want %q", got, navigatorClarificationProvideDetail)
+	}
+
+	if err := conn.WriteJSON(map[string]any{
+		"type":    "navigator.confirmAmbiguousIntent",
+		"command": "검색창에 입력해줘",
+		"answer":  "A부터 Z 뒤에 한 칸 띄고 하이라고 입력해 줘.",
+		"context": contextPayload,
+	}); err != nil {
+		t.Fatalf("send navigator.confirmAmbiguousIntent: %v", err)
+	}
+
+	accepted := readJSONMessageOfType(t, conn, "navigator.commandAccepted")
+	if got := accepted["command"]; got != "A부터 Z 뒤에 한 칸 띄고 하이라고 입력해 줘." {
+		t.Fatalf("accepted command = %v, want clarified command", got)
+	}
+	taskID, _ := accepted["taskId"].(string)
+	if taskID == "" {
+		t.Fatal("missing taskId")
+	}
+	planned := readJSONMessageOfType(t, conn, "navigator.stepPlanned")
+	step, _ := planned["step"].(map[string]any)
+	if got := step["actionType"]; got != "press_ax" {
+		t.Fatalf("first action = %v, want press_ax", got)
+	}
+	if err := conn.WriteJSON(map[string]any{
+		"type":            "navigator.refreshContext",
+		"command":         "A부터 Z 뒤에 한 칸 띄고 하이라고 입력해 줘.",
+		"taskId":          taskID,
+		"step":            step,
+		"status":          "success",
+		"observedOutcome": "Focused the target input field",
+		"context":         contextPayload,
+	}); err != nil {
+		t.Fatalf("send navigator.refreshContext: %v", err)
+	}
+	_ = readJSONMessageOfType(t, conn, "navigator.stepVerified")
+	next := readJSONMessageOfType(t, conn, "navigator.stepPlanned")
+	nextStep, _ := next["step"].(map[string]any)
+	if got := nextStep["actionType"]; got != "paste_text" {
+		t.Fatalf("next action = %v, want paste_text", got)
+	}
+	if got := nextStep["inputText"]; got != "ABCDEFGHIJKLMNOPQRSTUVWXYZ 하이" {
+		t.Fatalf("inputText = %v, want clarified compound payload", got)
 	}
 }
 

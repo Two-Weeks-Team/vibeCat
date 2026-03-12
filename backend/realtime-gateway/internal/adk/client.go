@@ -139,6 +139,7 @@ type NavigatorEscalationRequest struct {
 
 type NavigatorEscalationResult struct {
 	ResolvedDescriptor     *NavigatorTargetDescriptor `json:"resolvedDescriptor,omitempty"`
+	ResolvedText           string                     `json:"resolvedText,omitempty"`
 	Confidence             float64                    `json:"confidence"`
 	FallbackRecommendation string                     `json:"fallbackRecommendation,omitempty"`
 	Reason                 string                     `json:"reason,omitempty"`

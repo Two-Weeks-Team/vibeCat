@@ -78,4 +78,34 @@ final class ModelsTests: XCTestCase {
 
         XCTAssertEqual(decoded, original)
     }
+
+    func testNavigatorStepCodableRoundTripPreservesSystemActionFields() throws {
+        let original = NavigatorStep(
+            id: "volume_down",
+            actionType: .systemAction,
+            targetApp: "macOS",
+            targetDescriptor: .init(appName: "macOS"),
+            expectedOutcome: "System volume is lower",
+            confidence: 0.9,
+            intentConfidence: 0.84,
+            riskLevel: "low",
+            executionPolicy: "safe_immediate",
+            fallbackPolicy: "guided_mode",
+            systemCommand: "volume",
+            systemValue: "down",
+            systemAmount: 12
+        )
+
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(NavigatorStep.self, from: data)
+
+        XCTAssertEqual(decoded, original)
+    }
+
+    func testNavigatorClarificationResponseModeCodableRoundTrip() throws {
+        let original = NavigatorClarificationResponseMode.provideDetails
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(NavigatorClarificationResponseMode.self, from: data)
+        XCTAssertEqual(decoded, original)
+    }
 }

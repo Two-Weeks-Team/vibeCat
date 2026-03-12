@@ -171,6 +171,24 @@ final class AudioMessageParserTests: XCTestCase {
         XCTAssertEqual(confidence, 0.87, accuracy: 0.0001)
     }
 
+    func testParseNavigatorClarificationResponseMode() throws {
+        let payload = try makeJSON([
+            "type": "navigator.intentClarificationNeeded",
+            "command": "검색창에 입력해줘",
+            "question": "Tell me the exact text to type.",
+            "responseMode": "provide_details"
+        ])
+
+        let message = AudioMessageParser.parse(payload)
+        guard case .navigatorIntentClarificationNeeded(let command, let question, let responseMode) = message else {
+            XCTFail("Expected .navigatorIntentClarificationNeeded")
+            return
+        }
+        XCTAssertEqual(command, "검색창에 입력해줘")
+        XCTAssertEqual(question, "Tell me the exact text to type.")
+        XCTAssertEqual(responseMode, .provideDetails)
+    }
+
     func testParseNavigatorStepPlanned() throws {
         let payload = try makeJSON([
             "type": "navigator.stepPlanned",
@@ -209,6 +227,41 @@ final class AudioMessageParserTests: XCTestCase {
         XCTAssertEqual(step.targetDescriptor.windowTitle, "AuthServiceTests")
         XCTAssertEqual(step.url, "https://www.google.com/search?q=auth")
         XCTAssertEqual(step.verifyHint, "google")
+    }
+
+    func testParseNavigatorSystemActionStep() throws {
+        let payload = try makeJSON([
+            "type": "navigator.stepPlanned",
+            "taskId": "task_volume",
+            "message": "I can apply that macOS system change now.",
+            "step": [
+                "id": "volume_down",
+                "actionType": "system_action",
+                "targetApp": "macOS",
+                "targetDescriptor": [
+                    "appName": "macOS"
+                ],
+                "expectedOutcome": "System volume is lower",
+                "confidence": 0.9,
+                "intentConfidence": 0.87,
+                "riskLevel": "low",
+                "executionPolicy": "safe_immediate",
+                "fallbackPolicy": "guided_mode",
+                "systemCommand": "volume",
+                "systemValue": "down",
+                "systemAmount": 15
+            ]
+        ])
+
+        let message = AudioMessageParser.parse(payload)
+        guard case .navigatorStepPlanned(_, let step, _) = message else {
+            XCTFail("Expected .navigatorStepPlanned")
+            return
+        }
+        XCTAssertEqual(step.actionType, .systemAction)
+        XCTAssertEqual(step.systemCommand, "volume")
+        XCTAssertEqual(step.systemValue, "down")
+        XCTAssertEqual(step.systemAmount, 15)
     }
 
     func testParseNavigatorRiskBlockAndCompletion() throws {

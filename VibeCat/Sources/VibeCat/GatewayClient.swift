@@ -142,7 +142,6 @@ final class GatewayClient {
 
     func sendAudio(_ pcmData: Data) {
         guard case .connected = state else { return }
-        NSLog("[GW-OUT] sendAudio: %lu bytes", pcmData.count)
         webSocketTask?.send(.data(pcmData)) { _ in }
     }
 
@@ -181,6 +180,7 @@ final class GatewayClient {
         guard !trimmed.isEmpty else { return }
         let traceID = "nav_" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
         guard let contextObject = encodableJSONObject(context) as? [String: Any] else { return }
+        NSLog("[GW-OUT] sendNavigatorCommand: %@ app=%@ role=%@ visibleInputs=%d screenshot=%d", trimmed, context.appName, context.focusedRole, context.visibleInputCandidateCount, context.screenshot.isEmpty ? 0 : 1)
         sendJSON([
             "type": "navigator.command",
             "traceId": traceID,
@@ -453,11 +453,9 @@ final class GatewayClient {
         updateHeartbeatReceipt()
         switch message {
         case .data(let data):
-            NSLog("[GW-IN] data: %lu bytes", data.count)
             let parsed = AudioMessageParser.parse(data)
             switch parsed {
             case .audio(let audioData):
-                NSLog("[GW-IN] message type=audio, size=%lu bytes", audioData.count)
                 onAudioData?(audioData)
             case .setupComplete(let sid):
                 NSLog("[GW-IN] message type=setupComplete, sessionId=%@", sid)

@@ -112,6 +112,48 @@ func TestProactiveContextHintTextUsesWindowAndAppGuidance(t *testing.T) {
 	}
 }
 
+func TestProactiveContextHintTextDoesNotClassifyCodexAsGenericEditor(t *testing.T) {
+	got := proactiveContextHintText("ko", "[app=Codex target=frontmost_window bundle=com.openai.codex window=Codex]")
+
+	if got != "" {
+		t.Fatalf("proactiveContextHintText() = %q, want empty for Codex startup hint suppression", got)
+	}
+}
+
+func TestLiveSessionStateSkipsDuplicateProactiveHintWithinCooldown(t *testing.T) {
+	ls := &liveSessionState{}
+	now := time.Now()
+
+	if ls.shouldSkipProactiveHint("지금 Codex가 에디터에 열려 있어.", now) {
+		t.Fatal("first hint should not be skipped")
+	}
+	if !ls.shouldSkipProactiveHint("지금 Codex가 에디터에 열려 있어.", now.Add(10*time.Second)) {
+		t.Fatal("duplicate hint inside cooldown should be skipped")
+	}
+	if ls.shouldSkipProactiveHint("지금 다른 창이 열려 있어.", now.Add(11*time.Second)) {
+		t.Fatal("different hint should not be skipped")
+	}
+	if ls.shouldSkipProactiveHint("지금 Codex가 에디터에 열려 있어.", now.Add(proactiveContextHintCooldown+time.Second)) {
+		t.Fatal("same hint after cooldown should not be skipped")
+	}
+}
+
+func TestMarkBargeInPendingDiscardsPendingOutputEvenBeforeModelSpeaking(t *testing.T) {
+	ls := &liveSessionState{}
+
+	if interrupted := ls.markBargeInPending(); interrupted {
+		t.Fatal("barge-in before model speaking should not emit interrupted")
+	}
+	if !ls.shouldDiscardModelAudio() {
+		t.Fatal("barge-in should discard the pending live output")
+	}
+
+	ls.clearDiscardModelAudio()
+	if ls.shouldDiscardModelAudio() {
+		t.Fatal("clearDiscardModelAudio should reset discard flag")
+	}
+}
+
 func TestLegacyClientContentFallsBackToType(t *testing.T) {
 	payload := []byte(`{"clientContent":{"turnComplete":true,"turns":[{"role":"user","parts":[{"text":"hello"}]}]}}`)
 
@@ -732,13 +774,13 @@ func installTestTracerProvider(t *testing.T) {
 }
 
 type stubADK struct {
-	analyzeFn            func(context.Context, adk.AnalysisRequest) (*adk.AnalysisResult, error)
-	searchFn             func(context.Context, adk.SearchRequest) (*adk.SearchResult, error)
-	toolFn               func(context.Context, adk.ToolRequest) (*adk.ToolResult, error)
-	saveSessionSummaryFn func(context.Context, adk.SessionSummaryRequest) error
-	navigatorEscalateFn  func(context.Context, adk.NavigatorEscalationRequest) (*adk.NavigatorEscalationResult, error)
+	analyzeFn             func(context.Context, adk.AnalysisRequest) (*adk.AnalysisResult, error)
+	searchFn              func(context.Context, adk.SearchRequest) (*adk.SearchResult, error)
+	toolFn                func(context.Context, adk.ToolRequest) (*adk.ToolResult, error)
+	saveSessionSummaryFn  func(context.Context, adk.SessionSummaryRequest) error
+	navigatorEscalateFn   func(context.Context, adk.NavigatorEscalationRequest) (*adk.NavigatorEscalationResult, error)
 	navigatorBackgroundFn func(context.Context, adk.NavigatorBackgroundRequest) (*adk.NavigatorBackgroundResult, error)
-	memoryContextFn      func(context.Context, adk.MemoryContextRequest) (string, error)
+	memoryContextFn       func(context.Context, adk.MemoryContextRequest) (string, error)
 }
 
 func (s *stubADK) Analyze(ctx context.Context, req adk.AnalysisRequest) (*adk.AnalysisResult, error) {
