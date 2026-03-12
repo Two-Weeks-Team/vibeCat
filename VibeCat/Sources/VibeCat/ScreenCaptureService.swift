@@ -79,7 +79,17 @@ final class ScreenCaptureService {
 
     private var lastImage: CGImage?
     private var lastTargetIdentity: String?
+    private let shareableContentProvider: @Sendable () async throws -> SCShareableContent
+    private let shareableContentCache = ScreenCaptureContentCache<SCShareableContent>(ttl: 1.0)
     var probePointProvider: (() -> CGPoint)?
+
+    init(
+        shareableContentProvider: @escaping @Sendable () async throws -> SCShareableContent = {
+            try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        }
+    ) {
+        self.shareableContentProvider = shareableContentProvider
+    }
 
     private func currentProbePoint() -> CGPoint {
         probePointProvider?() ?? NSEvent.mouseLocation
@@ -197,7 +207,11 @@ final class ScreenCaptureService {
     // MARK: - Private
 
     private func performCapture(mode: CaptureMode) async throws -> CaptureSnapshot {
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        let initial = try await shareableContentCache.get(loader: shareableContentProvider)
+        return try await performCapture(mode: mode, content: initial.value, contentWasCached: initial.cached)
+    }
+
+    private func performCapture(mode: CaptureMode, content: SCShareableContent, contentWasCached: Bool) async throws -> CaptureSnapshot {
 
         guard !content.displays.isEmpty else {
             throw CaptureError.noDisplay
@@ -233,6 +247,11 @@ final class ScreenCaptureService {
                     screenBasisID: UUID().uuidString.lowercased()
                 )
             }
+            if contentWasCached {
+                shareableContentCache.invalidate()
+                let refreshed = try await shareableContentCache.get(loader: shareableContentProvider)
+                return try await performCapture(mode: mode, content: refreshed.value, contentWasCached: false)
+            }
 
         case .frontmostWindow:
             if let target = frontmostWindow(from: content) {
@@ -249,6 +268,11 @@ final class ScreenCaptureService {
                     capturedAt: Date(),
                     screenBasisID: UUID().uuidString.lowercased()
                 )
+            }
+            if contentWasCached {
+                shareableContentCache.invalidate()
+                let refreshed = try await shareableContentCache.get(loader: shareableContentProvider)
+                return try await performCapture(mode: mode, content: refreshed.value, contentWasCached: false)
             }
 
         case .display:
