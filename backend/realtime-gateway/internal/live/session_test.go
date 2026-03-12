@@ -158,21 +158,40 @@ func TestBuildLiveConfig(t *testing.T) {
 			cfg:  Config{GoogleSearch: true},
 			check: func(t *testing.T, lc *genai.LiveConnectConfig) {
 				t.Helper()
-				if len(lc.Tools) != 1 {
-					t.Fatalf("expected one live tool, got %d", len(lc.Tools))
+				if len(lc.Tools) != 2 {
+					t.Fatalf("expected navigator + search tools, got %d", len(lc.Tools))
 				}
-				if lc.Tools[0] == nil || lc.Tools[0].GoogleSearch == nil {
+				hasNavigator := false
+				hasSearch := false
+				for _, tool := range lc.Tools {
+					if tool.FunctionDeclarations != nil {
+						hasNavigator = true
+					}
+					if tool.GoogleSearch != nil {
+						hasSearch = true
+					}
+				}
+				if !hasNavigator {
+					t.Fatal("expected navigator function declarations tool")
+				}
+				if !hasSearch {
 					t.Fatal("expected Google Search live tool")
 				}
 			},
 		},
 		{
-			name: "no tools by default",
+			name: "navigator tools always present",
 			cfg:  Config{},
 			check: func(t *testing.T, lc *genai.LiveConnectConfig) {
 				t.Helper()
-				if len(lc.Tools) != 0 {
-					t.Fatalf("expected no tools, got %d", len(lc.Tools))
+				if len(lc.Tools) != 1 {
+					t.Fatalf("expected navigator tool only, got %d", len(lc.Tools))
+				}
+				if lc.Tools[0].FunctionDeclarations == nil || len(lc.Tools[0].FunctionDeclarations) == 0 {
+					t.Fatal("expected navigator function declarations")
+				}
+				if lc.Tools[0].FunctionDeclarations[0].Name != "navigate_text_entry" {
+					t.Fatalf("expected navigate_text_entry, got %q", lc.Tools[0].FunctionDeclarations[0].Name)
 				}
 			},
 		},
