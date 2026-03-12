@@ -3,6 +3,15 @@ import VibeCatCore
 
 @MainActor
 final class CatPanel: NSPanel {
+    private enum WindowTitleBadgeLayout {
+        static let cornerRadius: CGFloat = 10
+        static let horizontalPadding: CGFloat = 14
+        static let verticalPadding: CGFloat = 8
+        static let minimumWidth: CGFloat = 120
+        static let maximumWidth: CGFloat = 280
+        static let topSpacing: CGFloat = 8
+    }
+
     private enum PrivacyBadgeLayout {
         static let cornerRadius: CGFloat = 11
         static let horizontalPadding: CGFloat = 30
@@ -27,6 +36,8 @@ final class CatPanel: NSPanel {
     private let privacyDotView = NSView()
     private let privacyTitleLabel = NSTextField(labelWithString: "")
     private let privacyDetailLabel = NSTextField(labelWithString: "")
+    private let windowTitleBadgeView = NSVisualEffectView()
+    private let windowTitleLabel = NSTextField(labelWithString: "")
     private let catViewModel: CatViewModel
     private let spriteAnimator: SpriteAnimator
     private var spriteSize: CGFloat = 100
@@ -113,6 +124,21 @@ final class CatPanel: NSPanel {
         privacyDetailLabel.textColor = NSColor.white.withAlphaComponent(0.78)
         privacyBadgeView.addSubview(privacyDetailLabel)
 
+        windowTitleBadgeView.material = .hudWindow
+        windowTitleBadgeView.blendingMode = .withinWindow
+        windowTitleBadgeView.state = .active
+        windowTitleBadgeView.wantsLayer = true
+        windowTitleBadgeView.layer?.cornerRadius = WindowTitleBadgeLayout.cornerRadius
+        windowTitleBadgeView.layer?.masksToBounds = true
+        windowTitleBadgeView.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.52).cgColor
+        windowTitleBadgeView.isHidden = true
+        contentView.addSubview(windowTitleBadgeView)
+
+        windowTitleLabel.font = NSFont.systemFont(ofSize: 10, weight: .medium)
+        windowTitleLabel.textColor = .white
+        windowTitleLabel.lineBreakMode = .byTruncatingMiddle
+        windowTitleBadgeView.addSubview(windowTitleLabel)
+
         emotionIndicator.font = NSFont.systemFont(ofSize: 18)
         emotionIndicator.textColor = .white
         emotionIndicator.isHidden = true
@@ -149,10 +175,9 @@ final class CatPanel: NSPanel {
     }
 
     func showSpeechBubble(text: String, meta: String?) {
-        let preview = String(text.prefix(50))
-        NSLog("[BUBBLE] showBubble: %@", preview)
         let displayText = text
         let wasVisible = !bubbleView.isHidden && bubbleView.alphaValue > 0
+        NSLog("[CAT-PANEL] showSpeechBubble len=%d metaLen=%d wasVisible=%d", text.count, (meta ?? "").count, wasVisible ? 1 : 0)
         if let traceContext = traceLogContextProvider?() {
             NSLog("[TRACE] %@ phase=%@ text_len=%d", traceContext, wasVisible ? "bubble_update" : "bubble_show", displayText.count)
         }
@@ -173,7 +198,7 @@ final class CatPanel: NSPanel {
     }
 
     func showStatusBubble(text: String, detail: String?) {
-        NSLog("[BUBBLE] showStatusBubble: %@ / %@", text, detail ?? "")
+        NSLog("[BUBBLE] status show: text=%@ detail=%@", text, detail ?? "")
         currentBubbleText = text
         currentBubbleMeta = detail
         bubbleShowsSpinner = true
@@ -353,6 +378,34 @@ final class CatPanel: NSPanel {
         showPrivacyBadgeTemporarily()
     }
 
+    func updateCurrentWindowTitle(appName: String, windowTitle: String?) {
+        let app = appName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = (windowTitle ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let text: String
+        if !app.isEmpty && !title.isEmpty {
+            text = "\(app) - \(title)"
+        } else if !title.isEmpty {
+            text = title
+        } else {
+            text = app
+        }
+
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            windowTitleBadgeView.isHidden = true
+            return
+        }
+
+        windowTitleLabel.stringValue = trimmed
+        windowTitleBadgeView.isHidden = false
+        layoutWindowTitleBadge()
+    }
+
+    func currentGlobalProbePoint() -> CGPoint {
+        CGPoint(x: frame.minX + imageView.frame.midX, y: frame.minY + imageView.frame.midY)
+    }
+
     func beginCharacterTransition() {
         showBubble(text: VibeCatL10n.characterChanging())
         spinnerView.isHidden = false
@@ -392,6 +445,9 @@ final class CatPanel: NSPanel {
             y: localPoint.y - imageView.frame.height / 2
         )
         emotionIndicator.frame.origin = NSPoint(x: imageView.frame.maxX - 4, y: imageView.frame.maxY - 4)
+        if !windowTitleBadgeView.isHidden {
+            layoutWindowTitleBadge()
+        }
         if !bubbleView.isHidden, currentBubbleText != nil {
             updateBubbleFrame()
         }
@@ -403,6 +459,9 @@ final class CatPanel: NSPanel {
         layoutSpinner()
         if !privacyBadgeView.isHidden || privacyBadgeView.alphaValue > 0 {
             layoutPrivacyBadge()
+        }
+        if !windowTitleBadgeView.isHidden {
+            layoutWindowTitleBadge()
         }
         if currentBubbleText != nil {
             updateBubbleFrame()
@@ -427,7 +486,7 @@ final class CatPanel: NSPanel {
         var badgeX = catFrame.maxX + PrivacyBadgeLayout.sideSpacing
         let badgeY = max(catFrame.midY - badgeHeight / 2, PrivacyBadgeLayout.minimumInset)
 
-        if let visibleFrame = screen?.visibleFrame ?? NSScreen.main?.visibleFrame,
+        if let visibleFrame = visibleFrameContainingCat(),
            frame.minX + badgeX + badgeWidth > visibleFrame.maxX - PrivacyBadgeLayout.minimumInset {
             badgeX = max(catFrame.minX - badgeWidth - PrivacyBadgeLayout.sideSpacing, PrivacyBadgeLayout.minimumInset)
         }
@@ -489,9 +548,31 @@ final class CatPanel: NSPanel {
         })
     }
 
+    private func layoutWindowTitleBadge() {
+        let catFrame = imageView.frame
+        let constrainedSize = NSSize(width: WindowTitleBadgeLayout.maximumWidth - WindowTitleBadgeLayout.horizontalPadding * 2, height: .greatestFiniteMagnitude)
+        let textSize = windowTitleLabel.attributedStringValue.boundingRect(
+            with: constrainedSize,
+            options: [.usesLineFragmentOrigin, .usesFontLeading]
+        ).integral.size
+
+        let badgeWidth = min(max(textSize.width + WindowTitleBadgeLayout.horizontalPadding * 2, WindowTitleBadgeLayout.minimumWidth), WindowTitleBadgeLayout.maximumWidth)
+        let badgeHeight = textSize.height + WindowTitleBadgeLayout.verticalPadding * 2
+        let badgeX = catFrame.midX - badgeWidth / 2
+        let badgeY = max(catFrame.minY - badgeHeight - WindowTitleBadgeLayout.topSpacing, 6)
+
+        windowTitleBadgeView.frame = NSRect(x: badgeX, y: badgeY, width: badgeWidth, height: badgeHeight)
+        windowTitleLabel.frame = NSRect(
+            x: WindowTitleBadgeLayout.horizontalPadding,
+            y: WindowTitleBadgeLayout.verticalPadding - 1,
+            width: badgeWidth - WindowTitleBadgeLayout.horizontalPadding * 2,
+            height: textSize.height + 2
+        )
+    }
+
     private func updateBubbleFrame() {
         guard let text = currentBubbleText else { return }
-        guard let screenFrame = screen?.visibleFrame ?? NSScreen.main?.visibleFrame,
+        guard let screenFrame = visibleFrameContainingCat(),
               let _ = contentView else { return }
 
         let size = bubbleView.preferredSize(primary: text, meta: currentBubbleMeta, showsSpinner: bubbleShowsSpinner)
@@ -522,5 +603,11 @@ final class CatPanel: NSPanel {
         bubbleView.setTailDirection(tailDir)
         bubbleView.frame = NSRect(x: bubbleX, y: bubbleY, width: size.width, height: size.height)
         bubbleView.layoutSubtreeIfNeeded()
+    }
+
+    private func visibleFrameContainingCat() -> CGRect? {
+        let catGlobalPoint = CGPoint(x: frame.minX + imageView.frame.midX, y: frame.minY + imageView.frame.midY)
+        return NSScreen.screens.first(where: { $0.frame.contains(catGlobalPoint) })?.visibleFrame
+            ?? NSScreen.main?.visibleFrame
     }
 }

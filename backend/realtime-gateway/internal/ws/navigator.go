@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -27,6 +28,12 @@ type navigatorContext struct {
 	VisibleInputCandidates  int     `json:"visibleInputCandidateCount"`
 	AccessibilityPermission string  `json:"accessibilityPermission"`
 	AccessibilityTrusted    bool    `json:"accessibilityTrusted"`
+	ActiveDisplayID         string  `json:"activeDisplayID,omitempty"`
+	TargetDisplayID         string  `json:"targetDisplayID,omitempty"`
+	ScreenshotAgeMs         int     `json:"screenshotAgeMs,omitempty"`
+	ScreenshotSource        string  `json:"screenshotSource,omitempty"`
+	ScreenshotCached        bool    `json:"screenshotCached,omitempty"`
+	ScreenBasisID           string  `json:"screenBasisId,omitempty"`
 }
 
 type navigatorContextSnapshot struct {
@@ -49,20 +56,45 @@ type navigatorTargetDescriptor struct {
 }
 
 type navigatorStep struct {
-	ID               string                    `json:"id"`
-	ActionType       string                    `json:"actionType"`
-	TargetApp        string                    `json:"targetApp"`
-	TargetDescriptor navigatorTargetDescriptor `json:"targetDescriptor"`
-	InputText        string                    `json:"inputText,omitempty"`
-	ExpectedOutcome  string                    `json:"expectedOutcome"`
-	Confidence       float64                   `json:"confidence"`
-	IntentConfidence float64                   `json:"intentConfidence"`
-	RiskLevel        string                    `json:"riskLevel"`
-	ExecutionPolicy  string                    `json:"executionPolicy"`
-	FallbackPolicy   string                    `json:"fallbackPolicy"`
-	URL              string                    `json:"url,omitempty"`
-	Hotkey           []string                  `json:"hotkey,omitempty"`
-	VerifyHint       string                    `json:"verifyHint,omitempty"`
+	ID                 string                    `json:"id"`
+	ActionType         string                    `json:"actionType"`
+	TargetApp          string                    `json:"targetApp"`
+	TargetDescriptor   navigatorTargetDescriptor `json:"targetDescriptor"`
+	InputText          string                    `json:"inputText,omitempty"`
+	ExpectedOutcome    string                    `json:"expectedOutcome"`
+	Confidence         float64                   `json:"confidence"`
+	IntentConfidence   float64                   `json:"intentConfidence"`
+	RiskLevel          string                    `json:"riskLevel"`
+	ExecutionPolicy    string                    `json:"executionPolicy"`
+	FallbackPolicy     string                    `json:"fallbackPolicy"`
+	URL                string                    `json:"url,omitempty"`
+	Hotkey             []string                  `json:"hotkey,omitempty"`
+	VerifyHint         string                    `json:"verifyHint,omitempty"`
+	SystemCommand      string                    `json:"systemCommand,omitempty"`
+	SystemValue        string                    `json:"systemValue,omitempty"`
+	SystemAmount       int                       `json:"systemAmount,omitempty"`
+	Surface            string                    `json:"surface,omitempty"`
+	MacroID            string                    `json:"macroID,omitempty"`
+	Narration          string                    `json:"narration,omitempty"`
+	VerifyContract     *navigatorVerifyContract  `json:"verifyContract,omitempty"`
+	FallbackActionType string                    `json:"fallbackActionType,omitempty"`
+	FallbackHotkey     []string                  `json:"fallbackHotkey,omitempty"`
+	MaxLocalRetries    int                       `json:"maxLocalRetries,omitempty"`
+	TimeoutMs          int                       `json:"timeoutMs,omitempty"`
+	ProofLevel         string                    `json:"proofLevel,omitempty"`
+}
+
+type navigatorVerifyContract struct {
+	ExpectedBundleID          string  `json:"expectedBundleId,omitempty"`
+	ExpectedWindowContains    string  `json:"expectedWindowContains,omitempty"`
+	ExpectedFocusedRole       string  `json:"expectedFocusedRole,omitempty"`
+	ExpectedFocusedLabel      string  `json:"expectedFocusedLabel,omitempty"`
+	ExpectedAXContains        string  `json:"expectedAXContains,omitempty"`
+	ExpectedSelectedPrefix    string  `json:"expectedSelectedTextPrefix,omitempty"`
+	RequireWritableTarget     bool    `json:"requireWritableTarget,omitempty"`
+	RequireFrontmostApp       bool    `json:"requireFrontmostApp,omitempty"`
+	MinCaptureConfidenceAfter float64 `json:"minCaptureConfidenceAfter,omitempty"`
+	ProofStrategy             string  `json:"proofStrategy,omitempty"`
 }
 
 type navigatorIntentClass string
@@ -81,6 +113,7 @@ type navigatorPlan struct {
 	IntentClass      navigatorIntentClass
 	IntentConfidence float64
 	ClarifyQuestion  string
+	ClarifyMode      navigatorClarificationResponseMode
 	RiskQuestion     string
 	RiskReason       string
 	Steps            []navigatorStep
@@ -97,11 +130,36 @@ type navigatorStepTrace struct {
 	CompletedAt      time.Time                 `json:"completedAt,omitempty"`
 }
 
+type navigatorAttemptTrace struct {
+	ID               string    `json:"id"`
+	TaskID           string    `json:"taskId,omitempty"`
+	Command          string    `json:"command"`
+	Surface          string    `json:"surface,omitempty"`
+	Route            string    `json:"route"`
+	RouteReason      string    `json:"routeReason,omitempty"`
+	ContextHash      string    `json:"contextHash,omitempty"`
+	ScreenshotSource string    `json:"screenshotSource,omitempty"`
+	ScreenshotCached bool      `json:"screenshotCached,omitempty"`
+	ScreenBasisID    string    `json:"screenBasisId,omitempty"`
+	ActiveDisplayID  string    `json:"activeDisplayId,omitempty"`
+	TargetDisplayID  string    `json:"targetDisplayId,omitempty"`
+	Outcome          string    `json:"outcome,omitempty"`
+	OutcomeDetail    string    `json:"outcomeDetail,omitempty"`
+	StartedAt        time.Time `json:"startedAt,omitempty"`
+	CompletedAt      time.Time `json:"completedAt,omitempty"`
+}
+
 type navigatorPromptKind string
 
+type navigatorClarificationResponseMode string
+
 const (
-	navigatorPromptIntent  navigatorPromptKind = "intent"
-	navigatorPromptReplace navigatorPromptKind = "replace_task"
+	navigatorPromptConfirmIntent navigatorPromptKind = "intent_confirmation"
+	navigatorPromptProvideDetail navigatorPromptKind = "provide_details"
+	navigatorPromptReplace       navigatorPromptKind = "replace_task"
+
+	navigatorClarificationConfirm       navigatorClarificationResponseMode = "confirmation"
+	navigatorClarificationProvideDetail navigatorClarificationResponseMode = "provide_details"
 )
 
 type navigatorSessionState struct {
@@ -113,6 +171,7 @@ type navigatorSessionState struct {
 	steps                       []navigatorStep
 	nextStepIndex               int
 	currentStepID               string
+	stepRetryCount              int
 	deviceID                    string
 	connectionID                string
 	initialContext              navigatorContextSnapshot
@@ -120,6 +179,8 @@ type navigatorSessionState struct {
 	initialAppName              string
 	initialWindowTitle          string
 	stepHistory                 []navigatorStepTrace
+	attemptHistory              []navigatorAttemptTrace
+	currentAttemptID            string
 	lastVerifiedContextHash     string
 	createdAt                   time.Time
 	updatedAt                   time.Time
@@ -134,11 +195,14 @@ func (s *navigatorSessionState) startPlan(command string, steps []navigatorStep)
 	s.steps = steps
 	s.nextStepIndex = 0
 	s.currentStepID = ""
+	s.stepRetryCount = 0
 	s.initialContext = navigatorContextSnapshot{}
 	s.initialContextHash = ""
 	s.initialAppName = ""
 	s.initialWindowTitle = ""
 	s.stepHistory = nil
+	s.attemptHistory = nil
+	s.currentAttemptID = ""
 	s.lastVerifiedContextHash = ""
 	now := time.Now().UTC()
 	s.createdAt = now
@@ -155,14 +219,28 @@ func (s *navigatorSessionState) clearPlan() {
 	s.steps = nil
 	s.nextStepIndex = 0
 	s.currentStepID = ""
+	s.stepRetryCount = 0
 	s.initialContext = navigatorContextSnapshot{}
 	s.initialContextHash = ""
 	s.initialAppName = ""
 	s.initialWindowTitle = ""
 	s.stepHistory = nil
+	s.attemptHistory = nil
+	s.currentAttemptID = ""
 	s.lastVerifiedContextHash = ""
 	s.createdAt = time.Time{}
 	s.updatedAt = time.Time{}
+}
+
+func (s *navigatorSessionState) incrementStepRetry() int {
+	s.stepRetryCount++
+	s.touch()
+	return s.stepRetryCount
+}
+
+func (s *navigatorSessionState) resetStepRetry() {
+	s.stepRetryCount = 0
+	s.touch()
 }
 
 func (s *navigatorSessionState) nextStep() (navigatorStep, bool) {
@@ -319,6 +397,69 @@ func (s *navigatorSessionState) recordStepResult(step navigatorStep, status, obs
 	s.touch()
 }
 
+func (s *navigatorSessionState) beginAttempt(command string, ctx navigatorContext, route, routeReason string) string {
+	attemptID := newTraceID("attempt")
+	s.currentAttemptID = attemptID
+	s.attemptHistory = append(s.attemptHistory, navigatorAttemptTrace{
+		ID:               attemptID,
+		Command:          strings.TrimSpace(command),
+		Surface:          navigatorSurfaceFromContext(ctx),
+		Route:            strings.TrimSpace(route),
+		RouteReason:      strings.TrimSpace(routeReason),
+		ContextHash:      navigatorContextHash(ctx),
+		ScreenshotSource: strings.TrimSpace(ctx.ScreenshotSource),
+		ScreenshotCached: ctx.ScreenshotCached,
+		ScreenBasisID:    strings.TrimSpace(ctx.ScreenBasisID),
+		ActiveDisplayID:  strings.TrimSpace(ctx.ActiveDisplayID),
+		TargetDisplayID:  strings.TrimSpace(ctx.TargetDisplayID),
+		StartedAt:        time.Now().UTC(),
+	})
+	s.touch()
+	return attemptID
+}
+
+func (s *navigatorSessionState) attachAttemptTask(taskID string) {
+	if strings.TrimSpace(s.currentAttemptID) == "" {
+		return
+	}
+	for idx := len(s.attemptHistory) - 1; idx >= 0; idx-- {
+		if s.attemptHistory[idx].ID != s.currentAttemptID {
+			continue
+		}
+		s.attemptHistory[idx].TaskID = strings.TrimSpace(taskID)
+		s.touch()
+		return
+	}
+}
+
+func (s *navigatorSessionState) completeAttempt(outcome, detail string) {
+	if strings.TrimSpace(s.currentAttemptID) == "" {
+		return
+	}
+	for idx := len(s.attemptHistory) - 1; idx >= 0; idx-- {
+		if s.attemptHistory[idx].ID != s.currentAttemptID {
+			continue
+		}
+		s.attemptHistory[idx].Outcome = strings.TrimSpace(outcome)
+		if strings.TrimSpace(detail) != "" {
+			s.attemptHistory[idx].OutcomeDetail = strings.TrimSpace(detail)
+		}
+		s.attemptHistory[idx].CompletedAt = time.Now().UTC()
+		s.currentAttemptID = ""
+		s.touch()
+		return
+	}
+	currentAttemptID := s.currentAttemptID
+	s.attemptHistory = append(s.attemptHistory, navigatorAttemptTrace{
+		ID:            currentAttemptID,
+		Outcome:       strings.TrimSpace(outcome),
+		OutcomeDetail: strings.TrimSpace(detail),
+		CompletedAt:   time.Now().UTC(),
+	})
+	s.currentAttemptID = ""
+	s.touch()
+}
+
 func (s *navigatorSessionState) firstPlannedStep() (navigatorStepTrace, bool) {
 	if len(s.stepHistory) == 0 {
 		return navigatorStepTrace{}, false
@@ -341,6 +482,7 @@ type navigatorTaskSnapshot struct {
 	StartedAt               time.Time
 	CompletedAt             time.Time
 	Steps                   []navigatorStepTrace
+	Attempts                []navigatorAttemptTrace
 }
 
 func (s *navigatorSessionState) snapshotTask(completedAt time.Time) *navigatorTaskSnapshot {
@@ -348,6 +490,7 @@ func (s *navigatorSessionState) snapshotTask(completedAt time.Time) *navigatorTa
 		return nil
 	}
 	steps := append([]navigatorStepTrace(nil), s.stepHistory...)
+	attempts := append([]navigatorAttemptTrace(nil), s.attemptHistory...)
 	return &navigatorTaskSnapshot{
 		TaskID:                  strings.TrimSpace(s.activeTaskID),
 		Command:                 strings.TrimSpace(s.activeCommand),
@@ -359,6 +502,7 @@ func (s *navigatorSessionState) snapshotTask(completedAt time.Time) *navigatorTa
 		StartedAt:               s.createdAt,
 		CompletedAt:             completedAt.UTC(),
 		Steps:                   steps,
+		Attempts:                attempts,
 	}
 }
 
@@ -424,6 +568,7 @@ func planNavigatorCommand(command string, ctx navigatorContext, allowRisky bool)
 		IntentClass:      intentClass,
 		IntentConfidence: confidence,
 		ClarifyQuestion:  clarifyQuestion,
+		ClarifyMode:      navigatorClarificationConfirm,
 	}
 
 	if intentClass == navigatorIntentAmbiguous {
@@ -434,6 +579,8 @@ func planNavigatorCommand(command string, ctx navigatorContext, allowRisky bool)
 	}
 
 	switch {
+	case looksLikeSystemAction(command):
+		plan.Steps = buildSystemActionSteps(command, confidence)
 	case wantsTextEntry(command, ctx):
 		plan.Steps = buildTextEntrySteps(command, ctx, confidence)
 	case shouldUseDocsLookup(command):
@@ -456,6 +603,7 @@ func planNavigatorCommand(command string, ctx navigatorContext, allowRisky bool)
 	if plan.IntentClass != navigatorIntentAnalyzeOnly && plan.IntentClass != navigatorIntentAmbiguous && len(plan.Steps) == 0 {
 		plan.IntentClass = navigatorIntentAmbiguous
 		plan.ClarifyQuestion = clarificationForUnresolvedTarget(command, ctx)
+		plan.ClarifyMode = clarificationModeForUnresolvedTarget(command, ctx)
 	}
 
 	if plan.IntentClass == navigatorIntentAnalyzeOnly || plan.IntentClass == navigatorIntentAmbiguous {
@@ -480,7 +628,8 @@ func classifyNavigatorIntent(command string) (navigatorIntentClass, float64, str
 	executeScore := keywordScore(lowered, []string{
 		"apply", "do it", "run it", "rerun", "retry", "fix", "execute", "take care of",
 		"type", "enter", "paste", "fill", "write", "focus the input", "focus the field",
-		"반영", "적용", "실행", "다시 돌려", "다시 실행", "수정", "해결", "처리해", "눌러", "입력", "붙여넣", "써",
+		"volume", "mute", "unmute", "quieter", "louder",
+		"반영", "적용", "실행", "다시 돌려", "다시 실행", "수정", "해결", "처리해", "눌러", "입력", "붙여넣", "써", "쳐", "볼륨", "음량", "음소거", "소리",
 	})
 	openScore := keywordScore(lowered, []string{
 		"open", "go to", "take me", "bring me", "jump", "navigate", "show me",
@@ -506,10 +655,14 @@ func classifyNavigatorIntent(command string) (navigatorIntentClass, float64, str
 		strings.Contains(lowered, "다시 돌려") {
 		executeScore = maxFloat(executeScore, 0.76)
 	}
-	if strings.Contains(lowered, "입력해") || strings.Contains(lowered, "입력해줘") || strings.Contains(lowered, "붙여넣어") ||
-		strings.Contains(lowered, "써줘") || strings.Contains(lowered, "type ") || strings.Contains(lowered, "enter ") ||
-		strings.Contains(lowered, "paste ") || strings.Contains(lowered, "fill ") {
-		executeScore = maxFloat(executeScore, 0.8)
+	if containsKeywordAny(lowered, "입력해 주세요", "넣어주세요", "쳐줘", "쳐 줘", "입력하자", "넣어보자") {
+		executeScore = maxFloat(executeScore, 0.78)
+	}
+	if requestsTextInsertion(command) {
+		executeScore = maxFloat(executeScore, 0.88)
+	}
+	if containsKeywordAny(lowered, "volume", "mute", "unmute", "quieter", "louder", "볼륨", "음량", "음소거", "소리 줄", "소리 키") {
+		executeScore = maxFloat(executeScore, 0.82)
 	}
 	if strings.Contains(lowered, "열어줘") || strings.Contains(lowered, "데려가") || strings.Contains(lowered, "가보자") {
 		openScore = maxFloat(openScore, 0.72)
@@ -573,7 +726,10 @@ func keywordScore(text string, keywords []string) float64 {
 }
 
 func planRiskReason(command string, ctx navigatorContext, steps []navigatorStep) string {
-	inputs := []string{command, ctx.SelectedText}
+	// Only check the command text and the text being pasted/typed.
+	// Do NOT check ctx.SelectedText — it is ambient screen context, not an action payload.
+	// Including it causes false positives when variable names like "token" appear on screen.
+	inputs := []string{command}
 	for _, step := range steps {
 		inputs = append(inputs, step.InputText)
 	}
@@ -618,9 +774,24 @@ func defaultClarifyQuestion(command string) string {
 	return "Do you want me to act on this now, or just explain the next step?"
 }
 
+func clarificationModeForUnresolvedTarget(command string, ctx navigatorContext) navigatorClarificationResponseMode {
+	switch {
+	case wantsTextEntry(command, ctx):
+		return navigatorClarificationProvideDetail
+	case looksLikeDirectClick(command):
+		return navigatorClarificationProvideDetail
+	default:
+		return navigatorClarificationConfirm
+	}
+}
+
 func clarificationForUnresolvedTarget(command string, ctx navigatorContext) string {
 	lowered := strings.ToLower(strings.TrimSpace(command))
 	switch {
+	case wantsTextEntry(command, ctx) && requiresDerivedTextPayload(command):
+		return "I could not safely read the exact text to type from the current screen yet. Do you want me to keep analyzing the visible content, or should I only explain the next step?"
+	case wantsTextEntry(command, ctx) && requiresExactTextPayload(command):
+		return "I can focus the input field, but I still need the exact text to type. Tell me the text, or ask me to copy it from what is visible."
 	case wantsTextEntry(command, ctx) && ctx.VisibleInputCandidates > 1 && ctx.CaptureConfidence < 0.7:
 		return fmt.Sprintf("I can see %d possible input fields, so I should not guess. Do you want me to focus the likely one first, or should I only explain the next step?", ctx.VisibleInputCandidates)
 	case wantsTextEntry(command, ctx):
@@ -631,6 +802,24 @@ func clarificationForUnresolvedTarget(command string, ctx navigatorContext) stri
 		return "The current focus is still changing. Do you want me to wait for the UI to settle and try again, or should I only explain the next step?"
 	default:
 		return defaultClarifyQuestion(command)
+	}
+}
+
+func clarificationPromptKindForPlan(plan navigatorPlan) navigatorPromptKind {
+	switch plan.ClarifyMode {
+	case navigatorClarificationProvideDetail:
+		return navigatorPromptProvideDetail
+	default:
+		return navigatorPromptConfirmIntent
+	}
+}
+
+func clarificationResponseModeForPrompt(kind navigatorPromptKind) navigatorClarificationResponseMode {
+	switch kind {
+	case navigatorPromptProvideDetail:
+		return navigatorClarificationProvideDetail
+	default:
+		return navigatorClarificationConfirm
 	}
 }
 
@@ -683,6 +872,79 @@ func looksLikeDirectClick(command string) bool {
 	return strings.Contains(lowered, "click ") || strings.Contains(lowered, "press ") || strings.Contains(lowered, "눌러")
 }
 
+var volumeAmountPattern = regexp.MustCompile(`(\d{1,3})`)
+
+func looksLikeSystemAction(command string) bool {
+	_, _, _, _, ok := parseSystemAction(command)
+	return ok
+}
+
+func buildSystemActionSteps(command string, intentConfidence float64) []navigatorStep {
+	systemCommand, systemValue, amount, expectedOutcome, ok := parseSystemAction(command)
+	if !ok {
+		return nil
+	}
+	return []navigatorStep{{
+		ID:               systemCommand + "_" + systemValue,
+		ActionType:       "system_action",
+		TargetApp:        "macOS",
+		TargetDescriptor: navigatorTargetDescriptor{AppName: "macOS"},
+		ExpectedOutcome:  expectedOutcome,
+		Confidence:       0.9,
+		IntentConfidence: intentConfidence,
+		RiskLevel:        "low",
+		ExecutionPolicy:  navigatorExecutionPolicyLow,
+		FallbackPolicy:   "guided_mode",
+		SystemCommand:    systemCommand,
+		SystemValue:      systemValue,
+		SystemAmount:     amount,
+		Narration:        expectedOutcome,
+		TimeoutMs:        1200,
+		ProofLevel:       "basic",
+	}}
+}
+
+func parseSystemAction(command string) (string, string, int, string, bool) {
+	lowered := strings.ToLower(strings.TrimSpace(command))
+	if lowered == "" {
+		return "", "", 0, "", false
+	}
+	if requestsTextInsertion(command) {
+		return "", "", 0, "", false
+	}
+
+	switch {
+	case containsKeywordAny(lowered, "unmute", "음소거 해제", "mute off", "소리 켜", "소리 다시 켜", "음량 다시 켜"):
+		return "volume", "unmute", 0, "System audio is unmuted", true
+	case containsKeywordAny(lowered, "mute", "음소거", "소리 꺼", "음량 꺼"):
+		return "volume", "mute", 0, "System audio is muted", true
+	case containsKeywordAny(lowered, "volume down", "turn down", "lower volume", "quieter") ||
+		(containsKeywordAny(lowered, "볼륨", "소리", "음량") && containsKeywordAny(lowered, "줄", "낮")):
+		return "volume", "down", parsedSystemAmount(lowered, 12), "System volume is lower", true
+	case containsKeywordAny(lowered, "volume up", "turn up", "raise volume", "louder") ||
+		(containsKeywordAny(lowered, "볼륨", "소리", "음량") && containsKeywordAny(lowered, "올", "높", "키")):
+		return "volume", "up", parsedSystemAmount(lowered, 12), "System volume is higher", true
+	default:
+		return "", "", 0, "", false
+	}
+}
+
+func parsedSystemAmount(command string, fallback int) int {
+	if matches := volumeAmountPattern.FindStringSubmatch(command); len(matches) == 2 {
+		if value, err := strconv.Atoi(matches[1]); err == nil {
+			switch {
+			case value < 1:
+				return fallback
+			case value > 100:
+				return 100
+			default:
+				return value
+			}
+		}
+	}
+	return fallback
+}
+
 func buildDocsLookupSteps(command string, ctx navigatorContext, intentConfidence float64) []navigatorStep {
 	steps := make([]navigatorStep, 0, 2)
 	if !strings.Contains(strings.ToLower(ctx.AppName), "chrome") {
@@ -698,6 +960,17 @@ func buildDocsLookupSteps(command string, ctx navigatorContext, intentConfidence
 			ExecutionPolicy:  navigatorExecutionPolicyLow,
 			FallbackPolicy:   "guided_mode",
 			VerifyHint:       "chrome",
+			Surface:          "chrome",
+			MacroID:          "focus_chrome",
+			Narration:        "Switching to Chrome first.",
+			VerifyContract: &navigatorVerifyContract{
+				ExpectedBundleID:       "com.google.Chrome",
+				ExpectedWindowContains: "Chrome",
+				RequireFrontmostApp:    true,
+				ProofStrategy:          "frontmost_app",
+			},
+			TimeoutMs:  900,
+			ProofLevel: "strong",
 		})
 	}
 
@@ -717,6 +990,20 @@ func buildDocsLookupSteps(command string, ctx navigatorContext, intentConfidence
 		FallbackPolicy:   "guided_mode",
 		URL:              "https://www.google.com/search?q=" + url.QueryEscape(query),
 		VerifyHint:       "google",
+		Surface:          "chrome",
+		MacroID:          "open_docs_search",
+		Narration:        "Opening the official docs in Chrome.",
+		VerifyContract: &navigatorVerifyContract{
+			ExpectedBundleID:       "com.google.Chrome",
+			ExpectedWindowContains: "Google",
+			RequireFrontmostApp:    true,
+			ProofStrategy:          "window_change",
+		},
+		FallbackActionType: "hotkey",
+		FallbackHotkey:     []string{"command", "l"},
+		MaxLocalRetries:    1,
+		TimeoutMs:          1500,
+		ProofLevel:         "strong",
 	})
 	return steps
 }
@@ -750,6 +1037,17 @@ func buildAntigravityInlineSteps(command string, ctx navigatorContext, intentCon
 			ExecutionPolicy:  navigatorExecutionPolicyLow,
 			FallbackPolicy:   "guided_mode",
 			VerifyHint:       "antigravity",
+			Surface:          "antigravity",
+			MacroID:          "focus_antigravity",
+			Narration:        "Switching back to Antigravity.",
+			VerifyContract: &navigatorVerifyContract{
+				ExpectedBundleID:       "com.openai.codex",
+				ExpectedWindowContains: "Codex",
+				RequireFrontmostApp:    true,
+				ProofStrategy:          "frontmost_app",
+			},
+			TimeoutMs:  900,
+			ProofLevel: "strong",
 		})
 	}
 
@@ -767,6 +1065,16 @@ func buildAntigravityInlineSteps(command string, ctx navigatorContext, intentCon
 			ExecutionPolicy:  navigatorExecutionPolicyLow,
 			FallbackPolicy:   "guided_mode",
 			Hotkey:           []string{"command", "i"},
+			Surface:          "antigravity",
+			MacroID:          "open_antigravity_inline_prompt",
+			Narration:        "Opening Antigravity inline prompt.",
+			VerifyContract: &navigatorVerifyContract{
+				ExpectedBundleID:    "com.openai.codex",
+				RequireFrontmostApp: true,
+				ProofStrategy:       "frontmost_app",
+			},
+			TimeoutMs:  900,
+			ProofLevel: "strong",
 		},
 		navigatorStep{
 			ID:               "paste_antigravity_instruction",
@@ -780,6 +1088,19 @@ func buildAntigravityInlineSteps(command string, ctx navigatorContext, intentCon
 			RiskLevel:        "low",
 			ExecutionPolicy:  navigatorExecutionPolicyLow,
 			FallbackPolicy:   "guided_mode",
+			Surface:          "antigravity",
+			MacroID:          "paste_antigravity_instruction",
+			Narration:        "Inserting the Antigravity instruction.",
+			VerifyContract: &navigatorVerifyContract{
+				ExpectedBundleID:          "com.openai.codex",
+				RequireFrontmostApp:       true,
+				RequireWritableTarget:     true,
+				MinCaptureConfidenceAfter: 0.6,
+				ProofStrategy:             "text_entry",
+			},
+			MaxLocalRetries: 1,
+			TimeoutMs:       1200,
+			ProofLevel:      "strict",
 		},
 		navigatorStep{
 			ID:               "submit_antigravity_instruction",
@@ -793,6 +1114,16 @@ func buildAntigravityInlineSteps(command string, ctx navigatorContext, intentCon
 			ExecutionPolicy:  navigatorExecutionPolicyLow,
 			FallbackPolicy:   "guided_mode",
 			Hotkey:           []string{"return"},
+			Surface:          "antigravity",
+			MacroID:          "submit_antigravity_instruction",
+			Narration:        "Submitting the Antigravity instruction.",
+			VerifyContract: &navigatorVerifyContract{
+				ExpectedBundleID:    "com.openai.codex",
+				RequireFrontmostApp: true,
+				ProofStrategy:       "post_submit",
+			},
+			TimeoutMs:  900,
+			ProofLevel: "strong",
 		},
 	)
 	return steps
@@ -836,6 +1167,17 @@ func buildTerminalCommandSteps(command string, ctx navigatorContext, intentConfi
 			ExecutionPolicy:  navigatorExecutionPolicyLow,
 			FallbackPolicy:   "guided_mode",
 			VerifyHint:       "terminal",
+			Surface:          "terminal",
+			MacroID:          "focus_terminal",
+			Narration:        "Switching to Terminal.",
+			VerifyContract: &navigatorVerifyContract{
+				ExpectedBundleID:       "com.apple.Terminal",
+				ExpectedWindowContains: "Terminal",
+				RequireFrontmostApp:    true,
+				ProofStrategy:          "frontmost_app",
+			},
+			TimeoutMs:  900,
+			ProofLevel: "strong",
 		})
 	}
 	steps = append(steps,
@@ -851,6 +1193,19 @@ func buildTerminalCommandSteps(command string, ctx navigatorContext, intentConfi
 			RiskLevel:        "low",
 			ExecutionPolicy:  navigatorExecutionPolicyLow,
 			FallbackPolicy:   "guided_mode",
+			Surface:          "terminal",
+			MacroID:          "paste_terminal_command",
+			Narration:        "Placing the command into Terminal.",
+			VerifyContract: &navigatorVerifyContract{
+				ExpectedBundleID:          "com.apple.Terminal",
+				RequireFrontmostApp:       true,
+				RequireWritableTarget:     true,
+				MinCaptureConfidenceAfter: 0.55,
+				ProofStrategy:             "terminal_prompt",
+			},
+			MaxLocalRetries: 1,
+			TimeoutMs:       1100,
+			ProofLevel:      "strict",
 		},
 		navigatorStep{
 			ID:               "submit_terminal_command",
@@ -865,6 +1220,16 @@ func buildTerminalCommandSteps(command string, ctx navigatorContext, intentConfi
 			FallbackPolicy:   "guided_mode",
 			Hotkey:           []string{"return"},
 			VerifyHint:       "terminal",
+			Surface:          "terminal",
+			MacroID:          "submit_terminal_command",
+			Narration:        "Running the command in Terminal.",
+			VerifyContract: &navigatorVerifyContract{
+				ExpectedBundleID:    "com.apple.Terminal",
+				RequireFrontmostApp: true,
+				ProofStrategy:       "post_submit",
+			},
+			TimeoutMs:  900,
+			ProofLevel: "strong",
 		},
 	)
 	return steps
@@ -892,10 +1257,23 @@ func buildAXPressStep(command string, ctx navigatorContext, intentConfidence flo
 		ExecutionPolicy:  navigatorExecutionPolicyLow,
 		FallbackPolicy:   "guided_mode",
 		VerifyHint:       strings.ToLower(label),
+		Surface:          navigatorSurfaceValue(ctx.AppName),
+		MacroID:          "press_ax_target",
+		Narration:        "Focusing the target control.",
+		VerifyContract: &navigatorVerifyContract{
+			ExpectedWindowContains: ctx.WindowTitle,
+			ExpectedFocusedLabel:   label,
+			RequireFrontmostApp:    true,
+			ProofStrategy:          "target_focus",
+		},
+		TimeoutMs:  800,
+		ProofLevel: "strong",
 	}, true
 }
 
 var quotedTextPattern = regexp.MustCompile(`"([^"]+)"|“([^”]+)”|'([^']+)'|‘([^’]+)’`)
+var characterRangePattern = regexp.MustCompile(`(?i)\b([a-z0-9])\s*(?:부터|to|through|until|til|~|-)\s*([a-z0-9])(?:\s*까지)?\b`)
+var characterRangeAppendLeadPattern = regexp.MustCompile(`(?is)\b([a-z0-9])\s*(?:부터|to|through|until|til|~|-)\s*([a-z0-9])(?:\s*까지)?\s*(?:뒤에|after)\s*(.*)$`)
 
 func wantsTextEntry(command string, ctx navigatorContext) bool {
 	lowered := strings.ToLower(strings.TrimSpace(command))
@@ -918,75 +1296,11 @@ func wantsTextEntry(command string, ctx navigatorContext) bool {
 }
 
 func buildTextEntrySteps(command string, ctx navigatorContext, intentConfidence float64) []navigatorStep {
-	targetApp := cleanTopic(ctx.AppName)
-	if targetApp == "" {
-		return nil
-	}
-
 	descriptor, ok := buildTextEntryDescriptor(command, ctx)
 	if !ok {
 		return nil
 	}
-
-	steps := make([]navigatorStep, 0, 2)
-	fieldSummary := descriptor.Label
-	if fieldSummary == "" {
-		fieldSummary = fallbackFieldSummary(descriptor.Role, ctx)
-	}
-	if fieldSummary == "" {
-		fieldSummary = "input field"
-	}
-
-	steps = append(steps, navigatorStep{
-		ID:         "focus_input_field",
-		ActionType: "press_ax",
-		TargetApp:  targetApp,
-		TargetDescriptor: navigatorTargetDescriptor{
-			Role:           descriptor.Role,
-			Label:          descriptor.Label,
-			WindowTitle:    descriptor.WindowTitle,
-			AppName:        descriptor.AppName,
-			RelativeAnchor: descriptor.RelativeAnchor,
-			RegionHint:     descriptor.RegionHint,
-		},
-		ExpectedOutcome:  fmt.Sprintf("Focus the %s", fieldSummary),
-		Confidence:       0.82,
-		IntentConfidence: intentConfidence,
-		RiskLevel:        "low",
-		ExecutionPolicy:  navigatorExecutionPolicyLow,
-		FallbackPolicy:   "guided_mode",
-		VerifyHint:       strings.ToLower(cleanTopic(fieldSummary)),
-	})
-
-	if payload := extractTextEntryPayload(command); payload != "" {
-		verifyHint := payload
-		if len(verifyHint) > 24 {
-			verifyHint = verifyHint[:24]
-		}
-		steps = append(steps, navigatorStep{
-			ID:         "paste_input_text",
-			ActionType: "paste_text",
-			TargetApp:  targetApp,
-			TargetDescriptor: navigatorTargetDescriptor{
-				Role:           descriptor.Role,
-				Label:          descriptor.Label,
-				WindowTitle:    descriptor.WindowTitle,
-				AppName:        descriptor.AppName,
-				RelativeAnchor: descriptor.RelativeAnchor,
-				RegionHint:     descriptor.RegionHint,
-			},
-			InputText:        payload,
-			ExpectedOutcome:  fmt.Sprintf("Insert text into the %s", fieldSummary),
-			Confidence:       0.8,
-			IntentConfidence: intentConfidence,
-			RiskLevel:        "low",
-			ExecutionPolicy:  navigatorExecutionPolicyLow,
-			FallbackPolicy:   "guided_mode",
-			VerifyHint:       strings.ToLower(cleanTopic(verifyHint)),
-		})
-	}
-
-	return steps
+	return buildTextEntryStepsForDescriptor(command, ctx, intentConfidence, descriptor, 0.82, "")
 }
 
 func buildTextEntryDescriptor(command string, ctx navigatorContext) (navigatorTargetDescriptor, bool) {
@@ -1031,6 +1345,9 @@ func inferTextEntryRole(command string, ctx navigatorContext) string {
 	if looksLikeTextInputRole(ctx.FocusedRole) && containsKeywordAny(lowered, "여기", "거기", "here", "there", "current") {
 		return normalizeRoleToken(ctx.FocusedRole)
 	}
+	if descriptorRole := normalizeRoleToken(lastInputFieldDescriptorRole(ctx.LastInputDescriptor)); looksLikeTextInputRole(descriptorRole) {
+		return descriptorRole
+	}
 	return "textfield"
 }
 
@@ -1058,6 +1375,33 @@ func extractTextEntryFieldLabel(command string, ctx navigatorContext) string {
 	}
 }
 
+func normalizeKoreanVerbSpacing(s string) string {
+	r := s
+	for _, pair := range [][2]string{
+		{"적어 줘", "적어줘"}, {"입력해 줘", "입력해줘"}, {"쳐 줘", "쳐줘"},
+		{"써 줘", "써줘"}, {"넣어 줘", "넣어줘"}, {"적어 주세요", "적어줘"},
+		{"입력해 주세요", "입력해줘"}, {"쳐 주세요", "쳐줘"}, {"써 주세요", "써줘"},
+		{"넣어 주세요", "넣어줘"},
+	} {
+		r = strings.ReplaceAll(r, pair[0], pair[1])
+	}
+	r = strings.TrimSuffix(r, "요")
+	r = strings.TrimSuffix(r, ".")
+	return r
+}
+
+func stripLocationPrefix(s string) string {
+	for _, particle := range []string{"에서 ", "에 "} {
+		if idx := strings.LastIndex(s, particle); idx >= 0 {
+			remainder := strings.TrimSpace(s[idx+len(particle):])
+			if remainder != "" {
+				return remainder
+			}
+		}
+	}
+	return s
+}
+
 func extractTextEntryPayload(command string) string {
 	if matches := commandLiteralPattern.FindStringSubmatch(command); len(matches) == 2 {
 		return cleanTopic(matches[1])
@@ -1074,7 +1418,238 @@ func extractTextEntryPayload(command string) string {
 			return cleanTopic(command[idx+len(marker):])
 		}
 	}
+	if payload := extractCharacterRangeAppendPayload(command); payload != "" {
+		return payload
+	}
+	if payload := extractRelativeAppendPayload(command); payload != "" {
+		return payload
+	}
+	if payload := extractCharacterRangePayload(command); payload != "" {
+		return payload
+	}
+	if payload := extractBareDirectTextPayload(command); payload != "" {
+		return payload
+	}
+	normalized := normalizeKoreanVerbSpacing(command)
+	for _, suffix := range []string{
+		"이라고 입력해줘", "이라고 입력해", "이라고 입력",
+		"라고 입력해줘", "라고 입력해", "라고 입력",
+		"이라고 쳐줘", "라고 쳐줘",
+		"이라고 써줘", "라고 써줘",
+		"이라고 넣어줘", "라고 넣어줘",
+		"이라고 적어줘", "라고 적어줘",
+	} {
+		if idx := strings.Index(strings.ToLower(normalized), suffix); idx > 0 {
+			candidate := strings.TrimSpace(normalized[:idx])
+			if candidate != "" {
+				return stripLocationPrefix(candidate)
+			}
+		}
+	}
 	return ""
+}
+
+func extractCharacterRangeAppendPayload(command string) string {
+	matches := characterRangeAppendLeadPattern.FindStringSubmatch(strings.TrimSpace(command))
+	if len(matches) != 4 {
+		return ""
+	}
+
+	base := characterRangePayload(matches[1], matches[2])
+	if base == "" {
+		return ""
+	}
+
+	remainder := strings.TrimSpace(matches[3])
+	if remainder == "" {
+		return ""
+	}
+
+	leadingSpace := false
+	for _, prefix := range []string{
+		"한 칸 띄고", "한칸 띄고", "한 칸 띄운 다음", "한칸 띄운 다음",
+		"1 칸 띄고", "1칸 띄고", "one space", "space",
+	} {
+		if strings.HasPrefix(strings.ToLower(remainder), prefix) {
+			leadingSpace = true
+			remainder = strings.TrimSpace(remainder[len(prefix):])
+			break
+		}
+	}
+
+	suffix := cleanTopic(trimTrailingTextEntryActionClause(remainder))
+	if suffix == "" {
+		return ""
+	}
+	if leadingSpace {
+		return base + " " + suffix
+	}
+	return base + suffix
+}
+
+func extractRelativeAppendPayload(command string) string {
+	lowered := strings.ToLower(strings.TrimSpace(command))
+	if lowered == "" || !hasTextInsertionCue(lowered) {
+		return ""
+	}
+
+	markerIndex := strings.LastIndex(lowered, "뒤에")
+	markerLength := len("뒤에")
+	if markerIndex < 0 {
+		markerIndex = strings.LastIndex(lowered, "after")
+		markerLength = len("after")
+	}
+	if markerIndex <= 0 {
+		return ""
+	}
+
+	remainder := strings.TrimSpace(command[markerIndex+markerLength:])
+	if remainder == "" {
+		return ""
+	}
+
+	leadingSpace := false
+	for _, prefix := range []string{
+		"한 칸 띄고", "한칸 띄고", "한 칸 띄운 다음", "한칸 띄운 다음",
+		"1 칸 띄고", "1칸 띄고", "one space", "space",
+	} {
+		if strings.HasPrefix(strings.ToLower(remainder), prefix) {
+			leadingSpace = true
+			remainder = strings.TrimSpace(remainder[len(prefix):])
+			break
+		}
+	}
+
+	suffix := cleanTopic(trimTrailingTextEntryActionClause(remainder))
+	if suffix == "" {
+		return ""
+	}
+	if leadingSpace {
+		return " " + suffix
+	}
+	return suffix
+}
+
+func extractBareDirectTextPayload(command string) string {
+	lowered := strings.ToLower(strings.TrimSpace(command))
+	if lowered == "" || !hasTextInsertionCue(lowered) {
+		return ""
+	}
+	if extractIntrinsicTextEntryPayload(command) != "" {
+		return ""
+	}
+	if looksLikeScreenDerivedTextRequest(command, lowered) {
+		return ""
+	}
+
+	trimmed := strings.TrimSpace(command)
+	candidate := cleanTopic(trimTrailingTextEntryActionClause(command))
+	if candidate == "" || candidate == cleanTopic(trimmed) {
+		return ""
+	}
+	if containsKeywordAny(strings.ToLower(candidate),
+		"뒤에", "after", "앞에", "before",
+		"검색창", "입력창", "text field", "search box", "prompt", "field", "box",
+		"codex", "chrome", "terminal", "여기", "거기", "here", "there",
+	) {
+		return ""
+	}
+	return candidate
+}
+
+func extractCharacterRangePayload(command string) string {
+	matches := characterRangePattern.FindStringSubmatch(strings.TrimSpace(command))
+	if len(matches) != 3 {
+		return ""
+	}
+
+	return characterRangePayload(matches[1], matches[2])
+}
+
+func characterRangePayload(startRaw, endRaw string) string {
+	start := []rune(strings.ToUpper(startRaw))
+	end := []rune(strings.ToUpper(endRaw))
+	if len(start) != 1 || len(end) != 1 {
+		return ""
+	}
+
+	switch {
+	case start[0] >= 'A' && start[0] <= 'Z' && end[0] >= 'A' && end[0] <= 'Z':
+		if start[0] > end[0] {
+			return ""
+		}
+		var b strings.Builder
+		for r := start[0]; r <= end[0]; r++ {
+			b.WriteRune(r)
+		}
+		return b.String()
+	case start[0] >= '0' && start[0] <= '9' && end[0] >= '0' && end[0] <= '9':
+		if start[0] > end[0] {
+			return ""
+		}
+		var parts []string
+		for r := start[0]; r <= end[0]; r++ {
+			parts = append(parts, string(r))
+		}
+		return strings.Join(parts, "")
+	default:
+		return ""
+	}
+}
+
+func requestsTextInsertion(command string) bool {
+	lowered := strings.ToLower(strings.TrimSpace(command))
+	if lowered == "" {
+		return false
+	}
+	if extractTextEntryPayload(command) != "" {
+		return true
+	}
+	return hasTextInsertionCue(lowered)
+}
+
+func extractIntrinsicTextEntryPayload(command string) string {
+	lowered := strings.ToLower(strings.TrimSpace(command))
+	if lowered == "" {
+		return ""
+	}
+	if containsKeywordAny(lowered,
+		"your name", "assistant name", "vibecat name",
+		"네 이름", "너 이름", "니 이름", "자기 이름", "어시스턴트 이름", "바이브캣 이름",
+	) {
+		return "VibeCat"
+	}
+	return ""
+}
+
+func requiresDerivedTextPayload(command string) bool {
+	lowered := strings.ToLower(strings.TrimSpace(command))
+	if lowered == "" || !requestsTextInsertion(command) {
+		return false
+	}
+	if extractTextEntryPayload(command) != "" || extractIntrinsicTextEntryPayload(command) != "" {
+		return false
+	}
+	return looksLikeScreenDerivedTextRequest(command, lowered)
+}
+
+func requiresExactTextPayload(command string) bool {
+	if !requestsTextInsertion(command) {
+		return false
+	}
+	return extractTextEntryPayload(command) == "" &&
+		extractIntrinsicTextEntryPayload(command) == "" &&
+		!requiresDerivedTextPayload(command)
+}
+
+func resolveTextEntryPayload(command, resolvedText string) string {
+	if payload := extractTextEntryPayload(command); payload != "" {
+		return payload
+	}
+	if payload := extractIntrinsicTextEntryPayload(command); payload != "" {
+		return payload
+	}
+	return cleanTopic(resolvedText)
 }
 
 func hasVisibleTextInput(ctx navigatorContext) bool {
@@ -1092,12 +1667,21 @@ func hasVisibleTextInput(ctx navigatorContext) bool {
 }
 
 func lastInputFieldDescriptorLabel(raw string) string {
+	return lastInputFieldDescriptorValue(raw, "label")
+}
+
+func lastInputFieldDescriptorRole(raw string) string {
+	return lastInputFieldDescriptorValue(raw, "role")
+}
+
+func lastInputFieldDescriptorValue(raw, key string) string {
 	for _, part := range strings.Split(raw, "|") {
 		part = strings.TrimSpace(part)
-		if !strings.HasPrefix(strings.ToLower(part), "label=") {
+		marker := strings.ToLower(key) + "="
+		if !strings.HasPrefix(strings.ToLower(part), marker) {
 			continue
 		}
-		return strings.TrimSpace(part[len("label="):])
+		return strings.TrimSpace(part[len(marker):])
 	}
 	return ""
 }
@@ -1122,6 +1706,115 @@ func normalizeRoleToken(role string) string {
 	default:
 		return cleanTopic(role)
 	}
+}
+
+func hasTextInsertionCue(lowered string) bool {
+	return containsKeywordAny(lowered,
+		"type ", "enter ", "paste ", "fill ", "write ", "insert ",
+		"입력", "붙여넣", "써", "적어", "채워", "쳐",
+	)
+}
+
+func looksLikeScreenDerivedTextRequest(command, lowered string) bool {
+	hasContentCue := containsKeywordAny(lowered,
+		"name", "names", "text", "content", "item", "items", "label", "labels", "file", "files", "filename", "filenames",
+		"log", "logs", "message", "messages", "line", "lines", "title", "titles",
+		"이름", "내용", "문구", "텍스트", "항목", "파일", "파일명", "로그", "메시지", "줄", "제목",
+	)
+	hasScreenCue := containsKeywordAny(lowered,
+		"screen", "visible", "shown", "showing", "on screen", "from screen", "here", "there", "this", "current", "listed",
+		"보이는", "보여", "화면", "여기", "거기", "지금", "현재", "목록", "적혀", "되어 있", "최근",
+	)
+	hasExtractionCue := containsKeywordAny(lowered,
+		"find", "read", "copy", "pick", "select", "list", "search", "look for",
+		"찾아", "읽", "복사", "골라", "선택", "뽑", "가져와", "추려", "찾아서", "읽어서",
+	)
+	hasQuantityCue := containsKeywordAny(lowered,
+		"one", "two", "three", "few", "first", "second", "third", "last", "recent",
+		"한 개", "두 개", "세 개", "몇 개", "하나", "둘", "셋", "첫", "두 번째", "세 번째", "마지막", "최근",
+	)
+	return (hasContentCue && hasScreenCue) ||
+		(hasExtractionCue && (hasContentCue || hasQuantityCue || hasScreenCue || referencesCurrentTarget(command)))
+}
+
+func clarificationAnswerIsSelfContained(answer string) bool {
+	trimmed := strings.TrimSpace(answer)
+	if trimmed == "" {
+		return false
+	}
+	if requestsTextInsertion(trimmed) || looksLikeSystemAction(trimmed) || looksLikeDirectClick(trimmed) ||
+		shouldUseDocsLookup(trimmed) || canUseTerminalCommand(trimmed, navigatorContext{}) {
+		return true
+	}
+	intentClass, _, _ := classifyNavigatorIntent(trimmed)
+	return intentClass != navigatorIntentAmbiguous
+}
+
+func mergeClarificationCommand(command, answer string, kind navigatorPromptKind) string {
+	trimmedCommand := strings.TrimSpace(command)
+	trimmedAnswer := strings.TrimSpace(answer)
+	if trimmedCommand == "" {
+		return trimmedAnswer
+	}
+	if trimmedAnswer == "" {
+		return trimmedCommand
+	}
+	if kind == navigatorPromptProvideDetail && clarificationAnswerIsSelfContained(trimmedAnswer) {
+		return trimmedAnswer
+	}
+	return strings.TrimSpace(trimmedCommand + " " + trimmedAnswer)
+}
+
+func trimTrailingTextEntryActionClause(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+
+	lowered := strings.ToLower(trimmed)
+	cut := len(trimmed)
+	for _, marker := range []string{
+		" 입력", "붙여넣", " type", " enter", " paste", " fill",
+	} {
+		if idx := strings.Index(lowered, marker); idx >= 0 && idx < cut {
+			cut = idx
+		}
+	}
+	trimmed = strings.TrimSpace(trimmed[:cut])
+	trimmed = trimTrailingQuotedParticle(trimmed)
+	return strings.TrimSpace(trimmed)
+}
+
+func trimTrailingQuotedParticle(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	if strings.HasSuffix(trimmed, "이라고") {
+		candidate := strings.TrimSpace(strings.TrimSuffix(trimmed, "이라고"))
+		if endsWithHangulFinalConsonant(candidate) {
+			return candidate
+		}
+	}
+	for _, suffix := range []string{"라고", "으로", "를", "을", "이라"} {
+		if strings.HasSuffix(trimmed, suffix) {
+			return strings.TrimSpace(strings.TrimSuffix(trimmed, suffix))
+		}
+	}
+	return trimmed
+}
+
+func endsWithHangulFinalConsonant(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return false
+	}
+	runes := []rune(trimmed)
+	last := runes[len(runes)-1]
+	if last < 0xAC00 || last > 0xD7A3 {
+		return false
+	}
+	return (last-0xAC00)%28 != 0
 }
 
 func fallbackFieldSummary(role string, ctx navigatorContext) string {
@@ -1216,6 +1909,8 @@ func navigatorMessageForStep(step navigatorStep) string {
 		return fmt.Sprintf("I can switch to %s now.", step.TargetApp)
 	case "open_url":
 		return "I can open the relevant docs now."
+	case "system_action":
+		return "I can apply that macOS system change now."
 	case "press_ax":
 		if looksLikeTextInputRole(step.TargetDescriptor.Role) {
 			return "I found the input field and can focus it now."

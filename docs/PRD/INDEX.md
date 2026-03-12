@@ -13,6 +13,9 @@
 - `DETAILS/IMPLEMENTATION_STATUS_MATRIX.md`: feature scope and verification evidence matrix
 - `DETAILS/TDD_VERIFICATION_PLAN.md`: Red-Green-Refactor implementation and test order
 - `DETAILS/IMPLEMENTATION_EXECUTION_PLAN.md`: immediate build order, module dependencies, completion gates
+- `DETAILS/UI_NAVIGATOR_EXECUTION_CONTROL_PLANE_DESIGN_20260312.md`: next-step design for teammate-like action execution, surface adapters, verification, and bounded recovery
+- `DETAILS/UI_NAVIGATOR_WINNING_STRATEGY_20260312.md`: narrowed award-maximizing plan for judging criteria, proof, and hero workflow
+- `DETAILS/UI_NAVIGATOR_JUDGE_PROOF_MATRIX_20260312.md`: criterion-to-evidence matrix for the final video, assets, architecture, and Cloud proof
 - `DETAILS/END_TO_END_IMPLEMENTATION_TASKS.md`: task-by-task implementation guide from startup menu to full runtime
 - `DETAILS/MENU_AND_RUNTIME_OPERATIONS_SPEC.md`: menu behavior, runtime flows, operational scenarios
 - `DETAILS/ASSET_MIGRATION_PLAN.md`: asset copy structure, inventory, and usage rules

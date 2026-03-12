@@ -18,6 +18,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/genai"
 	"vibecat/realtime-gateway/internal/adk"
+	"vibecat/realtime-gateway/internal/cdp"
 	"vibecat/realtime-gateway/internal/lang"
 	"vibecat/realtime-gateway/internal/live"
 	"vibecat/realtime-gateway/internal/tts"
@@ -42,6 +43,7 @@ const (
 )
 
 var proactiveContextHintDelay = 1200 * time.Millisecond
+var proactiveContextHintCooldown = 90 * time.Second
 
 type adkService interface {
 	Analyze(context.Context, adk.AnalysisRequest) (*adk.AnalysisResult, error)
@@ -160,14 +162,50 @@ type liveSessionState struct {
 
 	// modelSpeaking is true while any assistant audio is actively streaming to the client.
 	// While true, screen captures are deferred and incoming user speech is treated as barge-in.
-	modelSpeaking     bool
-	discardModelAudio bool
-	pendingTurnTrace  string
-	pendingTurnFlow   string
-	pendingTurnRootAt time.Time
-	currentTurnTrace  string
-	currentTurnFlow   string
-	currentTurnRootAt time.Time
+	modelSpeaking         bool
+	discardModelAudio     bool
+	pendingTurnTrace      string
+	pendingTurnFlow       string
+	pendingTurnRootAt     time.Time
+	currentTurnTrace      string
+	currentTurnFlow       string
+	currentTurnRootAt     time.Time
+	lastProactiveHintText string
+	lastProactiveHintAt   time.Time
+
+	pendingFCMu             sync.Mutex
+	pendingFCID             string
+	pendingFCName           string
+	pendingFCTaskID         string
+	pendingFCText           string
+	pendingFCTarget         string
+	pendingFCSteps          []navigatorStep
+	pendingFCCurrentStep    string
+	pendingFCStepRetryCount int
+
+	pendingVMu    sync.Mutex
+	pendingVision *pendingVisionVerification
+
+	cdpMu   sync.Mutex
+	cdpCtrl *cdp.ChromeController
+	cdpInit bool
+}
+
+type pendingVisionVerification struct {
+	fcID     string
+	fcName   string
+	fcText   string
+	fcTarget string
+	taskID   string
+	observed string
+	imgCh    chan visionCapturePayload
+}
+
+type visionCapturePayload struct {
+	image     string
+	sessionID string
+	userID    string
+	traceID   string
 }
 
 type sessionRuntime struct {
@@ -282,18 +320,21 @@ func (ls *liveSessionState) setModelSpeaking(v bool) {
 func (ls *liveSessionState) markBargeInPending() bool {
 	ls.mu.Lock()
 	defer ls.mu.Unlock()
-	if !ls.modelSpeaking {
-		return false
-	}
 	alreadyDiscarding := ls.discardModelAudio
 	ls.discardModelAudio = true
-	return !alreadyDiscarding
+	return ls.modelSpeaking && !alreadyDiscarding
 }
 
 func (ls *liveSessionState) shouldDiscardModelAudio() bool {
 	ls.mu.RLock()
 	defer ls.mu.RUnlock()
 	return ls.discardModelAudio
+}
+
+func (ls *liveSessionState) clearDiscardModelAudio() {
+	ls.mu.Lock()
+	ls.discardModelAudio = false
+	ls.mu.Unlock()
 }
 
 func (ls *liveSessionState) queueTurnTrace(traceID, flow string, rootAt time.Time) {
@@ -304,12 +345,140 @@ func (ls *liveSessionState) queueTurnTrace(traceID, flow string, rootAt time.Tim
 	ls.pendingTurnRootAt = rootAt
 }
 
+func (ls *liveSessionState) shouldSkipProactiveHint(hintText string, now time.Time) bool {
+	normalized := strings.TrimSpace(hintText)
+	if normalized == "" {
+		return true
+	}
+
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+
+	if ls.lastProactiveHintText == normalized &&
+		!ls.lastProactiveHintAt.IsZero() &&
+		now.Sub(ls.lastProactiveHintAt) < proactiveContextHintCooldown {
+		return true
+	}
+
+	ls.lastProactiveHintText = normalized
+	ls.lastProactiveHintAt = now
+	return false
+}
+
 func (ls *liveSessionState) clearPendingTurnTrace() {
 	ls.mu.Lock()
 	defer ls.mu.Unlock()
 	ls.pendingTurnTrace = ""
 	ls.pendingTurnFlow = ""
 	ls.pendingTurnRootAt = time.Time{}
+}
+
+func (ls *liveSessionState) setPendingFC(id, name, taskID, text, target, firstStepID string, remainingSteps []navigatorStep) {
+	ls.pendingFCMu.Lock()
+	defer ls.pendingFCMu.Unlock()
+	ls.pendingFCID = id
+	ls.pendingFCName = name
+	ls.pendingFCTaskID = taskID
+	ls.pendingFCText = text
+	ls.pendingFCTarget = target
+	ls.pendingFCSteps = remainingSteps
+	ls.pendingFCCurrentStep = firstStepID
+}
+
+func (ls *liveSessionState) hasPendingFCForTask(taskID, stepID string) bool {
+	ls.pendingFCMu.Lock()
+	defer ls.pendingFCMu.Unlock()
+	return ls.pendingFCID != "" && ls.pendingFCTaskID == taskID && ls.pendingFCCurrentStep == stepID
+}
+
+func (ls *liveSessionState) advancePendingFCStep() (navigatorStep, bool) {
+	ls.pendingFCMu.Lock()
+	defer ls.pendingFCMu.Unlock()
+	if len(ls.pendingFCSteps) == 0 {
+		return navigatorStep{}, false
+	}
+	next := ls.pendingFCSteps[0]
+	ls.pendingFCSteps = ls.pendingFCSteps[1:]
+	ls.pendingFCCurrentStep = next.ID
+	return next, true
+}
+
+func (ls *liveSessionState) clearPendingFC() (id, name, text, target string) {
+	ls.pendingFCMu.Lock()
+	defer ls.pendingFCMu.Unlock()
+	id = ls.pendingFCID
+	name = ls.pendingFCName
+	text = ls.pendingFCText
+	target = ls.pendingFCTarget
+	ls.pendingFCID = ""
+	ls.pendingFCName = ""
+	ls.pendingFCTaskID = ""
+	ls.pendingFCText = ""
+	ls.pendingFCTarget = ""
+	ls.pendingFCSteps = nil
+	ls.pendingFCCurrentStep = ""
+	ls.pendingFCStepRetryCount = 0
+	return
+}
+
+func (ls *liveSessionState) incrementFCStepRetry() int {
+	ls.pendingFCMu.Lock()
+	defer ls.pendingFCMu.Unlock()
+	ls.pendingFCStepRetryCount++
+	return ls.pendingFCStepRetryCount
+}
+
+func (ls *liveSessionState) setPendingVision(pv *pendingVisionVerification) {
+	ls.pendingVMu.Lock()
+	ls.pendingVision = pv
+	ls.pendingVMu.Unlock()
+}
+
+func (ls *liveSessionState) clearPendingVision() {
+	ls.pendingVMu.Lock()
+	ls.pendingVision = nil
+	ls.pendingVMu.Unlock()
+}
+
+func (ls *liveSessionState) getCDPController() *cdp.ChromeController {
+	ls.cdpMu.Lock()
+	defer ls.cdpMu.Unlock()
+	if ls.cdpInit {
+		return ls.cdpCtrl
+	}
+	ls.cdpInit = true
+	ctrl, err := cdp.NewChromeController()
+	if err != nil {
+		slog.Info("[CDP] chrome not available, using AX fallback", "error", err)
+		return nil
+	}
+	ls.cdpCtrl = ctrl
+	slog.Info("[CDP] chrome controller connected")
+	return ls.cdpCtrl
+}
+
+func (ls *liveSessionState) closeCDPController() {
+	ls.cdpMu.Lock()
+	defer ls.cdpMu.Unlock()
+	if ls.cdpCtrl != nil {
+		ls.cdpCtrl.Close()
+		ls.cdpCtrl = nil
+	}
+}
+
+func (ls *liveSessionState) deliverVisionCapture(cap visionCapturePayload) bool {
+	ls.pendingVMu.Lock()
+	pv := ls.pendingVision
+	ls.pendingVMu.Unlock()
+	if pv == nil {
+		return false
+	}
+	select {
+	case pv.imgCh <- cap:
+		return true
+	default:
+		return false
+	}
 }
 
 func (ls *liveSessionState) ensureCurrentTurnTrace(defaultFlow string) (string, string, time.Time) {
@@ -533,6 +702,34 @@ func currentWindowPreparingDetail(language string) string {
 	return localizedText(language, "현재 창 기준으로 정리 중", "Preparing response from current window", "現在のウィンドウを基準に整理中")
 }
 
+func navigatorAnalyzingLabel(language string) string {
+	return localizedText(language, "명령 분석 중...", "Analyzing command...", "コマンドを分析中...")
+}
+
+func navigatorPlanningLabel(language string) string {
+	return localizedText(language, "실행 계획 중...", "Planning steps...", "ステップを計画中...")
+}
+
+func navigatorExecutingLabel(language string) string {
+	return localizedText(language, "실행 중...", "Executing action...", "アクションを実行中...")
+}
+
+func navigatorVerifyingLabel(language string) string {
+	return localizedText(language, "결과 확인 중...", "Verifying result...", "結果を確認中...")
+}
+
+func navigatorRetryingLabel(language string) string {
+	return localizedText(language, "재시도 중...", "Retrying with alternative...", "代替手段で再試行中...")
+}
+
+func navigatorCompletingLabel(language string) string {
+	return localizedText(language, "작업 완료 중...", "Completing task...", "タスクを完了中...")
+}
+
+func navigatorObservingLabel(language string) string {
+	return localizedText(language, "화면 관찰 중...", "Observing screen...", "画面を観察中...")
+}
+
 type proactiveCaptureContext struct {
 	AppName     string
 	BundleID    string
@@ -584,7 +781,11 @@ func proactiveContextHintText(language string, rawContext string) string {
 	}
 
 	appLower := strings.ToLower(app)
+	bundleLower := strings.ToLower(strings.TrimSpace(ctx.BundleID))
 	targetLower := strings.ToLower(ctx.TargetKind)
+	if strings.Contains(appLower, "codex") || strings.Contains(bundleLower, "codex") {
+		return ""
+	}
 
 	switch uiLanguage(language) {
 	case "en":
@@ -593,8 +794,10 @@ func proactiveContextHintText(language string, rawContext string) string {
 			return fmt.Sprintf("%s is open in Xcode. Re-run one failing test or inspect the first error line before we go wider.", subject)
 		case strings.Contains(appLower, "terminal") || strings.Contains(appLower, "iterm") || strings.Contains(appLower, "warp") || strings.Contains(appLower, "ghostty"):
 			return fmt.Sprintf("%s is in the terminal. Start from the latest error line and confirm the exact command that triggered it.", subject)
-		case strings.Contains(appLower, "cursor") || strings.Contains(appLower, "visual studio code") || strings.Contains(appLower, "code"):
+		case isEditorLikeApp(appLower, bundleLower):
 			return fmt.Sprintf("%s is in the editor. Narrow it to one changed function or one failing file first.", subject)
+		case strings.Contains(appLower, "codex") || strings.Contains(bundleLower, "codex"):
+			return fmt.Sprintf("%s is open in Codex. Start from the latest task result or one changed file before going wider.", subject)
 		case strings.Contains(appLower, "chrome") || strings.Contains(appLower, "safari") || strings.Contains(appLower, "arc") || strings.Contains(appLower, "firefox"):
 			return fmt.Sprintf("%s is open in the browser. Keep one source tab and one work tab, then verify the next step from there.", subject)
 		case strings.Contains(targetLower, "display"):
@@ -608,8 +811,10 @@ func proactiveContextHintText(language string, rawContext string) string {
 			return fmt.Sprintf("いま %s を Xcode で開いています。まず 1 件だけ失敗テストを再実行するか、最初のエラー行を確認しましょう。", subject)
 		case strings.Contains(appLower, "terminal") || strings.Contains(appLower, "iterm") || strings.Contains(appLower, "warp") || strings.Contains(appLower, "ghostty"):
 			return fmt.Sprintf("いま %s はターミナルです。最後のエラー行と、その直前のコマンドから先に確認しましょう。", subject)
-		case strings.Contains(appLower, "cursor") || strings.Contains(appLower, "visual studio code") || strings.Contains(appLower, "code"):
+		case isEditorLikeApp(appLower, bundleLower):
 			return fmt.Sprintf("いま %s はエディタです。変更した関数 1 つか、失敗しているファイル 1 つまで先に絞りましょう。", subject)
+		case strings.Contains(appLower, "codex") || strings.Contains(bundleLower, "codex"):
+			return fmt.Sprintf("いま %s は Codex です。最新のタスク結果か、直近で変えたファイル 1 つから先に確認しましょう。", subject)
 		case strings.Contains(appLower, "chrome") || strings.Contains(appLower, "safari") || strings.Contains(appLower, "arc") || strings.Contains(appLower, "firefox"):
 			return fmt.Sprintf("いま %s はブラウザです。参照タブを 1 つに絞って、次の確認点だけ先に押さえましょう。", subject)
 		case strings.Contains(targetLower, "display"):
@@ -623,8 +828,10 @@ func proactiveContextHintText(language string, rawContext string) string {
 			return fmt.Sprintf("지금 %s가 Xcode에 열려 있어. 실패한 테스트 하나만 다시 돌리거나 첫 에러 줄부터 바로 보자.", subject)
 		case strings.Contains(appLower, "terminal") || strings.Contains(appLower, "iterm") || strings.Contains(appLower, "warp") || strings.Contains(appLower, "ghostty"):
 			return fmt.Sprintf("지금 %s가 터미널이야. 마지막 에러 줄과 그 직전 명령부터 먼저 확인하자.", subject)
-		case strings.Contains(appLower, "cursor") || strings.Contains(appLower, "visual studio code") || strings.Contains(appLower, "code"):
+		case isEditorLikeApp(appLower, bundleLower):
 			return fmt.Sprintf("지금 %s가 에디터에 열려 있어. 방금 바꾼 함수 하나나 깨진 파일 하나부터 좁혀보자.", subject)
+		case strings.Contains(appLower, "codex") || strings.Contains(bundleLower, "codex"):
+			return fmt.Sprintf("지금 %s가 Codex에 열려 있어. 최근 작업 결과 하나나 방금 바뀐 파일 하나부터 먼저 보자.", subject)
 		case strings.Contains(appLower, "chrome") || strings.Contains(appLower, "safari") || strings.Contains(appLower, "arc") || strings.Contains(appLower, "firefox"):
 			return fmt.Sprintf("지금 %s가 브라우저에 열려 있어. 참고 탭 하나만 남기고 다음 확인 포인트부터 잡자.", subject)
 		case strings.Contains(targetLower, "display"):
@@ -632,6 +839,25 @@ func proactiveContextHintText(language string, rawContext string) string {
 		default:
 			return fmt.Sprintf("지금 %s 쪽이야. 거기서 마지막으로 바뀐 지점 하나부터 먼저 확인하자.", subject)
 		}
+	}
+}
+
+func isEditorLikeApp(appLower, bundleLower string) bool {
+	if strings.Contains(appLower, "codex") || strings.Contains(bundleLower, "codex") {
+		return false
+	}
+
+	switch {
+	case strings.Contains(appLower, "cursor"):
+		return true
+	case strings.Contains(appLower, "visual studio code"):
+		return true
+	case appLower == "code":
+		return true
+	case bundleLower == "com.microsoft.vscode":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -652,6 +878,11 @@ func maybeStartProactiveContextHint(ctx context.Context, c *Conn, ls *liveSessio
 	if hintText == "" {
 		cancel()
 		slog.Debug("[HANDLER] proactive context hint skipped", "conn_id", c.ID, "reason", "empty_hint_text")
+		return func() {}
+	}
+	if ls.shouldSkipProactiveHint(hintText, time.Now()) {
+		cancel()
+		slog.Debug("[HANDLER] proactive context hint skipped", "conn_id", c.ID, "reason", "duplicate_hint_recently_shown")
 		return func() {}
 	}
 
@@ -1267,20 +1498,42 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 		ls := &liveSessionState{errChan: make(chan error, 1)}
 		runtime := newSessionRuntime("default", c.ID)
 		navState := &navigatorSessionState{connectionID: c.ID}
+		var navigatorActiveTraceID string
 		actionStateOwner := strings.TrimSpace(c.ID)
+
+		loadActionState := func(owner string) (navigatorSessionState, bool, error) {
+			if actionStore == nil {
+				return navigatorSessionState{}, false, nil
+			}
+			loadCtx, cancel := context.WithTimeout(context.Background(), actionStateLoadTimeout)
+			defer cancel()
+			return actionStore.Load(loadCtx, owner)
+		}
+
+		saveActionState := func(owner string, state navigatorSessionState) error {
+			if actionStore == nil {
+				return nil
+			}
+			saveCtx, cancel := context.WithTimeout(context.Background(), actionStateWriteTimeout)
+			defer cancel()
+			return actionStore.Save(saveCtx, owner, state)
+		}
+
+		deleteActionState := func(owner string) error {
+			if actionStore == nil {
+				return nil
+			}
+			deleteCtx, cancel := context.WithTimeout(context.Background(), actionStateWriteTimeout)
+			defer cancel()
+			return actionStore.Delete(deleteCtx, owner)
+		}
 
 		persistNavigatorState := func() {
 			navState.bindLease(strings.TrimSpace(ls.getConfig().DeviceID), c.ID)
 			if actionStore == nil {
 				return
 			}
-			if !navState.hasPersistableState() {
-				if err := actionStore.Delete(context.Background(), actionStateOwner); err != nil {
-					slog.Warn("action state delete failed", "conn_id", c.ID, "owner", actionStateOwner, "error", err)
-				}
-				return
-			}
-			if err := actionStore.Save(context.Background(), actionStateOwner, *navState); err != nil {
+			if err := saveActionState(actionStateOwner, *navState); err != nil {
 				slog.Warn("action state save failed", "conn_id", c.ID, "owner", actionStateOwner, "error", err)
 			}
 		}
@@ -1289,7 +1542,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 			if actionStore == nil {
 				return true
 			}
-			restored, ok, err := actionStore.Load(context.Background(), actionStateOwner)
+			restored, ok, err := loadActionState(actionStateOwner)
 			if err != nil {
 				slog.Warn("action state sync failed", "conn_id", c.ID, "owner", actionStateOwner, "error", err)
 				return true
@@ -1356,7 +1609,27 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 			}
 		}
 
+		recordAttemptLog := func(event, attemptID, command, outcome, detail string) {
+			slog.Info("navigator attempt",
+				"conn_id", c.ID,
+				"event", event,
+				"attempt_id", strings.TrimSpace(attemptID),
+				"command_len", len(strings.TrimSpace(command)),
+				"outcome", strings.TrimSpace(outcome),
+				"detail", truncateText(strings.TrimSpace(detail), 200),
+			)
+			runtime.append(fmt.Sprintf(
+				"navigator_attempt[%s]: event=%s outcome=%s detail=%s command_len=%d",
+				strings.TrimSpace(attemptID),
+				strings.TrimSpace(event),
+				strings.TrimSpace(outcome),
+				truncateText(strings.TrimSpace(detail), 180),
+				len(strings.TrimSpace(command)),
+			))
+		}
+
 		finalizeNavigatorTask := func(outcome, outcomeDetail, traceID string) {
+			navState.completeAttempt(outcome, outcomeDetail)
 			snapshot := navState.snapshotTask(time.Now().UTC())
 			enqueueNavigatorBackground(context.Background(), adkClient, runtime, ls.getConfig(), snapshot, outcome, outcomeDetail, traceID)
 			navState.clearPlan()
@@ -1368,6 +1641,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 			if sess := ls.getSession(); sess != nil {
 				sess.Close()
 			}
+			ls.closeCDPController()
 			reg.Remove(c.ID)
 			metrics.ConnectionClosed(context.Background())
 			rawConn.Close()
@@ -1473,14 +1747,14 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 					if strings.TrimSpace(cfg.DeviceID) != "" {
 						actionStateOwner = strings.TrimSpace(cfg.DeviceID)
 					}
-					if restored, ok, err := actionStore.Load(ctx, actionStateOwner); err != nil {
+					if restored, ok, err := loadActionState(actionStateOwner); err != nil {
 						slog.Warn("action state restore failed", "conn_id", c.ID, "owner", actionStateOwner, "error", err)
 					} else if ok {
 						*navState = restored
 						navState.bindLease(strings.TrimSpace(cfg.DeviceID), c.ID)
 						persistNavigatorState()
 						if previousActionStateOwner != actionStateOwner {
-							if err := actionStore.Delete(context.Background(), previousActionStateOwner); err != nil {
+							if err := deleteActionState(previousActionStateOwner); err != nil {
 								slog.Warn("legacy action state delete failed", "conn_id", c.ID, "owner", previousActionStateOwner, "error", err)
 							}
 						}
@@ -1494,9 +1768,9 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 						}
 					} else {
 						navState.bindLease(strings.TrimSpace(cfg.DeviceID), c.ID)
-						if previousActionStateOwner != actionStateOwner && navState.hasPersistableState() {
-							persistNavigatorState()
-							if err := actionStore.Delete(context.Background(), previousActionStateOwner); err != nil {
+						persistNavigatorState()
+						if previousActionStateOwner != actionStateOwner {
+							if err := deleteActionState(previousActionStateOwner); err != nil {
 								slog.Warn("legacy action state delete failed", "conn_id", c.ID, "owner", previousActionStateOwner, "error", err)
 							}
 						}
@@ -1636,23 +1910,32 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 					if !syncNavigatorState() {
 						continue
 					}
+					attemptID := navState.beginAttempt(navMsg.Command, navMsg.Context, "navigator_command", "client_reroute")
+					recordAttemptLog("received", attemptID, navMsg.Command, "received", "")
 					rootAt := time.Now()
 					sendTraceEvent(c, "navigator", traceID, "command_received", rootAt, truncateText(navMsg.Command, 120))
+					sendProcessingState(c, "navigator", traceID, "analyzing_command", navigatorAnalyzingLabel(ls.getConfig().Language), "", "", 0, true)
 					plan := planNavigatorCommand(navMsg.Command, navMsg.Context, false)
 					plan = maybeEscalateNavigatorPlan(ctx, adkClient, metrics, ls.getConfig().Language, navMsg.Command, navMsg.Context, plan, traceID)
 					switch {
 					case plan.IntentClass == navigatorIntentAmbiguous:
-						navState.stageClarification(navigatorPromptIntent, navMsg.Command)
+						navState.completeAttempt("clarification_needed", plan.ClarifyQuestion)
+						recordAttemptLog("clarification_needed", attemptID, navMsg.Command, "clarification_needed", plan.ClarifyQuestion)
+						clarifyKind := clarificationPromptKindForPlan(plan)
+						navState.stageClarification(clarifyKind, navMsg.Command)
 						persistNavigatorState()
 						if metrics != nil {
-							metrics.RecordClarification(context.Background(), string(navigatorPromptIntent), navigatorSurfaceFromContext(navMsg.Context))
+							metrics.RecordClarification(context.Background(), string(clarifyKind), navigatorSurfaceFromContext(navMsg.Context))
 						}
 						lockedSendJSON(c, map[string]any{
-							"type":     "navigator.intentClarificationNeeded",
-							"command":  navMsg.Command,
-							"question": plan.ClarifyQuestion,
+							"type":         "navigator.intentClarificationNeeded",
+							"command":      navMsg.Command,
+							"question":     plan.ClarifyQuestion,
+							"responseMode": clarificationResponseModeForPrompt(clarifyKind),
 						})
 					case plan.IntentClass == navigatorIntentAnalyzeOnly:
+						navState.completeAttempt("analyze_only", "routed to general live analysis")
+						recordAttemptLog("analyze_only", attemptID, navMsg.Command, "analyze_only", "routed to general live analysis")
 						lockedSendJSON(c, map[string]any{
 							"type":             "navigator.commandAccepted",
 							"taskId":           "",
@@ -1662,6 +1945,8 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 						})
 						handleUserTextQuery(ctx, c, ls, adkClient, ttsClient, metrics, runtime, navMsg.Command, traceID, rootAt)
 					case len(plan.Steps) == 0:
+						navState.completeAttempt("guided_mode", "no_supported_step")
+						recordAttemptLog("guided_mode", attemptID, navMsg.Command, "guided_mode", "no_supported_step")
 						recordGuidedMetrics("no_supported_step", nil, "", navigatorSurfaceFromContext(navMsg.Context))
 						lockedSendJSON(c, map[string]any{
 							"type":        "navigator.guidedMode",
@@ -1670,6 +1955,8 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 							"instruction": "I can see the request, but I need a more specific target or a supported surface.",
 						})
 					case navState.hasActiveTask():
+						navState.completeAttempt("clarification_needed", "active_task_exists")
+						recordAttemptLog("clarification_needed", attemptID, navMsg.Command, "clarification_needed", "active_task_exists")
 						activeTaskID, activeCommand, currentStepID, _ := navState.activeTaskSnapshot()
 						if strings.TrimSpace(navMsg.Command) == strings.TrimSpace(activeCommand) {
 							lockedSendJSON(c, map[string]any{
@@ -1688,11 +1975,14 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 							metrics.RecordTaskReplacement(context.Background(), surface)
 						}
 						lockedSendJSON(c, map[string]any{
-							"type":     "navigator.intentClarificationNeeded",
-							"command":  navMsg.Command,
-							"question": buildTaskReplacementQuestion(activeCommand, navMsg.Command),
+							"type":         "navigator.intentClarificationNeeded",
+							"command":      navMsg.Command,
+							"question":     buildTaskReplacementQuestion(activeCommand, navMsg.Command),
+							"responseMode": clarificationResponseModeForPrompt(navigatorPromptReplace),
 						})
 					case plan.RiskQuestion != "":
+						navState.completeAttempt("risk_confirmation_needed", plan.RiskReason)
+						recordAttemptLog("risk_confirmation_needed", attemptID, navMsg.Command, "risk_confirmation_needed", plan.RiskReason)
 						navState.pendingRiskyCommand = navMsg.Command
 						persistNavigatorState()
 						lockedSendJSON(c, map[string]any{
@@ -1703,11 +1993,16 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 						})
 					default:
 						taskID := navState.startPlan(navMsg.Command, plan.Steps)
+						navState.attachAttemptTask(taskID)
+						recordAttemptLog("accepted", attemptID, navMsg.Command, "accepted", taskID)
 						navState.rememberInitialContext(navMsg.Context)
 						persistNavigatorState()
 						if metrics != nil {
 							metrics.RecordNavigatorTask(context.Background(), navigatorSurfaceFromState(*navState), plan.IntentClass)
 						}
+						navigatorActiveTraceID = traceID
+						sendProcessingState(c, "navigator", traceID, "analyzing_command", "", "", "", 0, false)
+						sendProcessingState(c, "navigator", traceID, "planning_steps", navigatorPlanningLabel(ls.getConfig().Language), "", "", len(plan.Steps), true)
 						lockedSendJSON(c, map[string]any{
 							"type":             "navigator.commandAccepted",
 							"taskId":           taskID,
@@ -1718,6 +2013,8 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 						if step, ok := navState.nextStep(); ok {
 							persistNavigatorState()
 							recordFirstActionMetric()
+							sendProcessingState(c, "navigator", traceID, "planning_steps", "", "", "", 0, false)
+							sendProcessingState(c, "navigator", traceID, "executing_step", navigatorExecutingLabel(ls.getConfig().Language), step.ActionType, "", 0, true)
 							lockedSendJSON(c, map[string]any{
 								"type":    "navigator.stepPlanned",
 								"taskId":  taskID,
@@ -1764,6 +2061,70 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 						}
 						continue
 					}
+					if clarifyKind == navigatorPromptProvideDetail {
+						command = mergeClarificationCommand(command, confirmMsg.Answer, clarifyKind)
+						plan := planNavigatorCommand(command, confirmMsg.Context, false)
+						plan = maybeEscalateNavigatorPlan(ctx, adkClient, metrics, ls.getConfig().Language, command, confirmMsg.Context, plan, "")
+						switch {
+						case plan.IntentClass == navigatorIntentAmbiguous:
+							nextClarifyKind := clarificationPromptKindForPlan(plan)
+							navState.stageClarification(nextClarifyKind, command)
+							persistNavigatorState()
+							if metrics != nil {
+								metrics.RecordClarification(context.Background(), string(nextClarifyKind), navigatorSurfaceFromContext(confirmMsg.Context))
+							}
+							lockedSendJSON(c, map[string]any{
+								"type":         "navigator.intentClarificationNeeded",
+								"command":      command,
+								"question":     plan.ClarifyQuestion,
+								"responseMode": clarificationResponseModeForPrompt(nextClarifyKind),
+							})
+						case plan.RiskQuestion != "":
+							navState.pendingRiskyCommand = command
+							persistNavigatorState()
+							lockedSendJSON(c, map[string]any{
+								"type":     "navigator.riskyActionBlocked",
+								"command":  command,
+								"question": plan.RiskQuestion,
+								"reason":   plan.RiskReason,
+							})
+						case len(plan.Steps) == 0:
+							recordGuidedMetrics("clarified_but_not_supported", nil, "", navigatorSurfaceFromContext(confirmMsg.Context))
+							lockedSendJSON(c, map[string]any{
+								"type":        "navigator.guidedMode",
+								"taskId":      "",
+								"reason":      "clarified_but_not_supported",
+								"instruction": "I understand the intent now, but I still need a more specific or supported target.",
+							})
+							navState.clearPlan()
+							persistNavigatorState()
+						default:
+							taskID := navState.startPlan(command, plan.Steps)
+							navState.rememberInitialContext(confirmMsg.Context)
+							persistNavigatorState()
+							if metrics != nil {
+								metrics.RecordNavigatorTask(context.Background(), navigatorSurfaceFromState(*navState), plan.IntentClass)
+							}
+							lockedSendJSON(c, map[string]any{
+								"type":             "navigator.commandAccepted",
+								"taskId":           taskID,
+								"command":          command,
+								"intentClass":      plan.IntentClass,
+								"intentConfidence": plan.IntentConfidence,
+							})
+							if step, ok := navState.nextStep(); ok {
+								persistNavigatorState()
+								recordFirstActionMetric()
+								lockedSendJSON(c, map[string]any{
+									"type":    "navigator.stepPlanned",
+									"taskId":  taskID,
+									"step":    step,
+									"message": navigatorMessageForStep(step),
+								})
+							}
+						}
+						continue
+					}
 					if !affirmativeAnswer(confirmMsg.Answer) {
 						instruction := "I did not get a clear execution confirmation, so I stopped before acting."
 						if clarifyKind == navigatorPromptReplace {
@@ -1785,7 +2146,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 					if clarifyKind == navigatorPromptReplace {
 						finalizeNavigatorTask("replaced", "task replaced by a newer command", "")
 					}
-					plan := planNavigatorCommand(command+" "+confirmMsg.Answer, confirmMsg.Context, false)
+					plan := planNavigatorCommand(mergeClarificationCommand(command, confirmMsg.Answer, clarifyKind), confirmMsg.Context, false)
 					plan = maybeEscalateNavigatorPlan(ctx, adkClient, metrics, ls.getConfig().Language, command, confirmMsg.Context, plan, "")
 					if len(plan.Steps) == 0 {
 						recordGuidedMetrics("clarified_but_not_supported", nil, "", navigatorSurfaceFromContext(confirmMsg.Context))
@@ -1904,13 +2265,157 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 					if !syncNavigatorState() {
 						continue
 					}
-					if !navState.acceptsRefresh(refreshMsg.Command, refreshMsg.TaskID, refreshMsg.Step.ID) {
+					isNavStateRefresh := navState.acceptsRefresh(refreshMsg.Command, refreshMsg.TaskID, refreshMsg.Step.ID)
+					isPendingFCRefresh := !isNavStateRefresh && ls.hasPendingFCForTask(refreshMsg.TaskID, refreshMsg.Step.ID)
+					if !isNavStateRefresh && !isPendingFCRefresh {
 						slog.Warn("navigator refresh ignored", "conn_id", c.ID, "command", refreshMsg.Command, "task_id", refreshMsg.TaskID, "step_id", refreshMsg.Step.ID, "active_command", navState.activeCommand)
+						continue
+					}
+					sendProcessingState(c, "navigator", navigatorActiveTraceID, "executing_step", "", "", "", 0, false)
+					sendProcessingState(c, "navigator", navigatorActiveTraceID, "verifying_result", navigatorVerifyingLabel(ls.getConfig().Language), "", "", 0, true)
+					if isPendingFCRefresh {
+						switch refreshMsg.Status {
+						case "success":
+							lockedSendJSON(c, map[string]any{
+								"type":            "navigator.stepVerified",
+								"taskId":          refreshMsg.TaskID,
+								"stepId":          refreshMsg.Step.ID,
+								"status":          "success",
+								"observedOutcome": refreshMsg.ObservedOutcome,
+							})
+							sendProcessingState(c, "navigator", navigatorActiveTraceID, "verifying_result", "", "", "", 0, false)
+							if nextStep, hasNext := ls.advancePendingFCStep(); hasNext {
+								sendProcessingState(c, "navigator", navigatorActiveTraceID, "executing_step", navigatorExecutingLabel(ls.getConfig().Language), nextStep.ActionType, "", 0, true)
+								lockedSendJSON(c, map[string]any{
+									"type":    "navigator.stepPlanned",
+									"taskId":  refreshMsg.TaskID,
+									"step":    nextStep,
+									"message": navigatorMessageForStep(nextStep),
+								})
+							} else {
+								fcID, fcName, fcText, fcTarget := ls.clearPendingFC()
+								sendProcessingState(c, "navigator", navigatorActiveTraceID, "completing", navigatorCompletingLabel(ls.getConfig().Language), "", "", 0, true)
+								lockedSendJSON(c, map[string]any{
+									"type":    "navigator.completed",
+									"taskId":  refreshMsg.TaskID,
+									"summary": refreshMsg.ObservedOutcome,
+								})
+								sendProcessingState(c, "navigator", navigatorActiveTraceID, "completing", "", "", "", 0, false)
+								if adkClient != nil {
+									pv := &pendingVisionVerification{
+										fcID:     fcID,
+										fcName:   fcName,
+										fcText:   fcText,
+										fcTarget: fcTarget,
+										taskID:   refreshMsg.TaskID,
+										observed: refreshMsg.ObservedOutcome,
+										imgCh:    make(chan visionCapturePayload, 1),
+									}
+									ls.setPendingVision(pv)
+									sendProcessingState(c, "navigator", navigatorActiveTraceID, "observing_screen", navigatorObservingLabel(ls.getConfig().Language), "", "", 0, true)
+									lockedSendJSON(c, map[string]any{
+										"type":   "requestScreenCapture",
+										"reason": "post_action_verification",
+									})
+									capturedCtx := ctx
+									go func() {
+										var visionText string
+										select {
+										case cap := <-pv.imgCh:
+											analyzeCtx, analyzeCancel := context.WithTimeout(capturedCtx, 4*time.Second)
+											defer analyzeCancel()
+											result, err := adkClient.Analyze(analyzeCtx, adk.AnalysisRequest{
+												Image:     cap.image,
+												Context:   "post-action verification: " + truncateText(pv.fcText, 120),
+												SessionID: cap.sessionID,
+												UserID:    cap.userID,
+												TraceID:   cap.traceID,
+											})
+											if err == nil && result != nil && result.Vision != nil && result.Vision.Content != "" {
+												visionText = result.Vision.Content
+											}
+										case <-time.After(3 * time.Second):
+											slog.Info("[HANDLER] vision verification timeout", "conn_id", c.ID, "task_id", pv.taskID)
+										}
+										ls.clearPendingVision()
+										if fcSess := ls.getSession(); fcSess != nil {
+											resp := map[string]any{
+												"status": "completed",
+												"text":   pv.fcText,
+												"target": pv.fcTarget,
+											}
+											if visionText != "" {
+												resp["vision"] = visionText
+											}
+											if err := fcSess.SendToolResponse([]*genai.FunctionResponse{{
+												ID:       pv.fcID,
+												Name:     pv.fcName,
+												Response: resp,
+											}}); err != nil {
+												slog.Warn("[HANDLER] FC SendToolResponse (vision) failed", "conn_id", c.ID, "error", err)
+											}
+										}
+									}()
+								} else {
+									if fcSess := ls.getSession(); fcSess != nil {
+										if err := fcSess.SendToolResponse([]*genai.FunctionResponse{{
+											ID:   fcID,
+											Name: fcName,
+											Response: map[string]any{
+												"status": "completed",
+												"text":   fcText,
+												"target": fcTarget,
+											},
+										}}); err != nil {
+											slog.Warn("[HANDLER] FC SendToolResponse failed", "conn_id", c.ID, "error", err)
+										}
+									}
+								}
+							}
+						default:
+							retryCount := ls.incrementFCStepRetry()
+							if retryCount <= 2 {
+								retryStep := refreshMsg.Step
+								if retryCount == 2 && retryStep.FallbackActionType != "" {
+									retryStep.ActionType = retryStep.FallbackActionType
+									if len(retryStep.FallbackHotkey) > 0 {
+										retryStep.Hotkey = retryStep.FallbackHotkey
+									}
+								}
+								slog.Info("navigator FC self-healing retry", "conn_id", c.ID, "step_id", retryStep.ID, "retry", retryCount, "status", refreshMsg.Status)
+								sendProcessingState(c, "navigator", navigatorActiveTraceID, "verifying_result", "", "", "", 0, false)
+								sendProcessingState(c, "navigator", navigatorActiveTraceID, "retrying_step", navigatorRetryingLabel(ls.getConfig().Language), "", "", 0, true)
+								sendProcessingState(c, "navigator", navigatorActiveTraceID, "retrying_step", "", "", "", 0, false)
+								sendProcessingState(c, "navigator", navigatorActiveTraceID, "executing_step", navigatorExecutingLabel(ls.getConfig().Language), retryStep.ActionType, "", 0, true)
+								lockedSendJSON(c, map[string]any{
+									"type":    "navigator.stepPlanned",
+									"taskId":  refreshMsg.TaskID,
+									"step":    retryStep,
+									"message": navigatorMessageForStep(retryStep),
+								})
+								continue
+							}
+							sendProcessingState(c, "navigator", navigatorActiveTraceID, "verifying_result", "", "", "", 0, false)
+							fcID, fcName, _, _ := ls.clearPendingFC()
+							lockedSendJSON(c, map[string]any{
+								"type":   "navigator.failed",
+								"taskId": refreshMsg.TaskID,
+								"reason": refreshMsg.ObservedOutcome,
+							})
+							if fcSess := ls.getSession(); fcSess != nil {
+								_ = fcSess.SendToolResponse([]*genai.FunctionResponse{{
+									ID:       fcID,
+									Name:     fcName,
+									Response: map[string]any{"error": "step failed: " + refreshMsg.ObservedOutcome},
+								}})
+							}
+						}
 						continue
 					}
 					switch refreshMsg.Status {
 					case "success":
 						navState.recordStepResult(refreshMsg.Step, refreshMsg.Status, refreshMsg.ObservedOutcome)
+						navState.resetStepRetry()
 						navState.clearCurrentStep()
 						navState.markVerifiedContext(refreshMsg.Context)
 						persistNavigatorState()
@@ -1924,8 +2429,10 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 							"status":          "success",
 							"observedOutcome": refreshMsg.ObservedOutcome,
 						})
+						sendProcessingState(c, "navigator", navigatorActiveTraceID, "verifying_result", "", "", "", 0, false)
 						if next, ok := navState.nextStep(); ok {
 							persistNavigatorState()
+							sendProcessingState(c, "navigator", navigatorActiveTraceID, "executing_step", navigatorExecutingLabel(ls.getConfig().Language), next.ActionType, "", 0, true)
 							lockedSendJSON(c, map[string]any{
 								"type":    "navigator.stepPlanned",
 								"taskId":  refreshMsg.TaskID,
@@ -1933,16 +2440,20 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 								"message": navigatorMessageForStep(next),
 							})
 						} else {
+							sendProcessingState(c, "navigator", navigatorActiveTraceID, "completing", navigatorCompletingLabel(ls.getConfig().Language), "", "", 0, true)
 							lockedSendJSON(c, map[string]any{
 								"type":    "navigator.completed",
 								"taskId":  refreshMsg.TaskID,
 								"summary": refreshMsg.ObservedOutcome,
 							})
+							sendProcessingState(c, "navigator", navigatorActiveTraceID, "completing", "", "", "", 0, false)
 							finalizeNavigatorTask("completed", refreshMsg.ObservedOutcome, "")
 						}
 					case "guided_mode":
 						navState.recordStepResult(refreshMsg.Step, refreshMsg.Status, refreshMsg.ObservedOutcome)
+						navState.resetStepRetry()
 						recordGuidedMetrics("verification_guided_mode", &refreshMsg.Step, refreshMsg.ObservedOutcome, navigatorSurfaceFromState(*navState))
+						sendProcessingState(c, "navigator", navigatorActiveTraceID, "verifying_result", "", "", "", 0, false)
 						lockedSendJSON(c, map[string]any{
 							"type":        "navigator.guidedMode",
 							"taskId":      refreshMsg.TaskID,
@@ -1952,6 +2463,31 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 						finalizeNavigatorTask("guided_mode", refreshMsg.ObservedOutcome, "")
 					default:
 						navState.recordStepResult(refreshMsg.Step, refreshMsg.Status, refreshMsg.ObservedOutcome)
+						retryCount := navState.incrementStepRetry()
+						if retryCount <= 2 {
+							retryStep := refreshMsg.Step
+							if retryCount == 2 && retryStep.FallbackActionType != "" {
+								retryStep.ActionType = retryStep.FallbackActionType
+								if len(retryStep.FallbackHotkey) > 0 {
+									retryStep.Hotkey = retryStep.FallbackHotkey
+								}
+							}
+							slog.Info("navigator self-healing retry", "conn_id", c.ID, "step_id", retryStep.ID, "retry", retryCount, "status", refreshMsg.Status)
+							persistNavigatorState()
+							sendProcessingState(c, "navigator", navigatorActiveTraceID, "verifying_result", "", "", "", 0, false)
+							sendProcessingState(c, "navigator", navigatorActiveTraceID, "retrying_step", navigatorRetryingLabel(ls.getConfig().Language), "", "", 0, true)
+							sendProcessingState(c, "navigator", navigatorActiveTraceID, "retrying_step", "", "", "", 0, false)
+							sendProcessingState(c, "navigator", navigatorActiveTraceID, "executing_step", navigatorExecutingLabel(ls.getConfig().Language), retryStep.ActionType, "", 0, true)
+							lockedSendJSON(c, map[string]any{
+								"type":    "navigator.stepPlanned",
+								"taskId":  refreshMsg.TaskID,
+								"step":    retryStep,
+								"message": navigatorMessageForStep(retryStep),
+							})
+							continue
+						}
+						navState.resetStepRetry()
+						sendProcessingState(c, "navigator", navigatorActiveTraceID, "verifying_result", "", "", "", 0, false)
 						recordFailureMetrics(refreshMsg.Step, refreshMsg.ObservedOutcome, navigatorSurfaceFromState(*navState))
 						lockedSendJSON(c, map[string]any{
 							"type":   "navigator.failed",
@@ -1985,6 +2521,21 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 						continue
 					}
 					runtime.setIdentity(captureMsg.UserID, captureMsg.SessionID)
+					{
+						capTraceID := strings.TrimSpace(captureMsg.TraceID)
+						if capTraceID == "" {
+							capTraceID = newTraceID("cap")
+						}
+						if ls.deliverVisionCapture(visionCapturePayload{
+							image:     captureMsg.Image,
+							sessionID: captureMsg.SessionID,
+							userID:    captureMsg.UserID,
+							traceID:   capTraceID,
+						}) {
+							slog.Info("[HANDLER] screen capture delivered to vision verification", "conn_id", c.ID, "trace_id", capTraceID)
+							continue
+						}
+					}
 					go func() {
 						traceID := strings.TrimSpace(captureMsg.TraceID)
 						if traceID == "" {
@@ -2384,6 +2935,8 @@ func receiveFromGemini(ctx context.Context, c *Conn, sess *live.Session, ls *liv
 					turnHasAudio = false
 					ls.setModelSpeaking(false)
 					sendTurnState(c, "idle", "live")
+				} else {
+					ls.clearDiscardModelAudio()
 				}
 				if traceID, flow, rootAt, ok := ls.finishCurrentTurnTrace(); ok {
 					sendTraceEvent(c, flow, traceID, "turn_complete", rootAt, "")
@@ -2400,6 +2953,8 @@ func receiveFromGemini(ctx context.Context, c *Conn, sess *live.Session, ls *liv
 					turnHasAudio = false
 					ls.setModelSpeaking(false)
 					sendTurnState(c, "idle", "live")
+				} else {
+					ls.clearDiscardModelAudio()
 				}
 				if traceID, flow, rootAt, ok := ls.finishCurrentTurnTrace(); ok {
 					sendTraceEvent(c, flow, traceID, "turn_interrupted", rootAt, "")
@@ -2428,6 +2983,14 @@ func receiveFromGemini(ctx context.Context, c *Conn, sess *live.Session, ls *liv
 				"tool_prompt_tokens", msg.UsageMetadata.ToolUsePromptTokenCount,
 				"total_tokens", msg.UsageMetadata.TotalTokenCount,
 			)
+		}
+
+		if msg.ToolCall != nil && len(msg.ToolCall.FunctionCalls) > 0 {
+			handleLiveToolCall(c, sess, ls, metrics, runtime, msg.ToolCall)
+		}
+
+		if msg.ToolCallCancellation != nil {
+			slog.Info("[GEMINI-RX] tool call cancellation", "conn_id", c.ID, "ids", msg.ToolCallCancellation.IDs)
 		}
 
 		if msg.VoiceActivity != nil {
@@ -2471,6 +3034,489 @@ func lockedSendBinary(c *Conn, payload []byte) error {
 		return err
 	}
 	return nil
+}
+
+const (
+	actionStateLoadTimeout  = 350 * time.Millisecond
+	actionStateWriteTimeout = 500 * time.Millisecond
+)
+
+func handleLiveToolCall(c *Conn, sess *live.Session, ls *liveSessionState, metrics *Metrics, runtime *sessionRuntime, toolCall *genai.LiveServerToolCall) {
+	for _, fc := range toolCall.FunctionCalls {
+		slog.Info("[GEMINI-RX] function call received", "conn_id", c.ID, "function", fc.Name, "call_id", fc.ID)
+		switch fc.Name {
+		case "navigate_text_entry":
+			handleNavigateTextEntryToolCall(c, sess, ls, metrics, runtime, fc)
+		case "navigate_hotkey":
+			handleNavigateHotkeyToolCall(c, sess, ls, metrics, runtime, fc)
+		case "navigate_focus_app":
+			handleNavigateFocusAppToolCall(c, sess, ls, metrics, runtime, fc)
+		case "navigate_open_url":
+			handleNavigateOpenURLToolCall(c, sess, ls, metrics, runtime, fc)
+		case "navigate_type_and_submit":
+			handleNavigateTypeAndSubmitToolCall(c, sess, ls, metrics, runtime, fc)
+		default:
+			slog.Warn("[GEMINI-RX] unknown function call", "conn_id", c.ID, "function", fc.Name)
+			sendToolErrorResponse(sess, fc, "unknown function: "+fc.Name)
+		}
+	}
+}
+
+func handleNavigateTextEntryToolCall(c *Conn, sess *live.Session, ls *liveSessionState, metrics *Metrics, runtime *sessionRuntime, fc *genai.FunctionCall) {
+	text, _ := fc.Args["text"].(string)
+	target, _ := fc.Args["target"].(string)
+	text = strings.TrimSpace(text)
+	target = strings.TrimSpace(target)
+
+	// submit defaults to true when not explicitly set to false
+	submit := true
+	if raw, ok := fc.Args["submit"]; ok {
+		if b, ok := raw.(bool); ok {
+			submit = b
+		}
+	}
+
+	if text == "" {
+		slog.Warn("[GEMINI-RX] navigate_text_entry called with empty text", "conn_id", c.ID, "call_id", fc.ID)
+		sendToolErrorResponse(sess, fc, "text parameter is required")
+		return
+	}
+
+	traceID := newTraceID("fc_nav")
+	rootAt := time.Now()
+	runtime.append(fmt.Sprintf("tool_call[navigate_text_entry]: text=%q target=%q submit=%v", truncateText(text, 80), target, submit))
+
+	taskID := "fc_" + newConnID()
+	sendTraceEvent(c, "navigator", traceID, "function_call_text_entry", rootAt, fmt.Sprintf("text_len=%d target=%q submit=%v", len(text), target, submit))
+
+	targetApp := resolveToolCallTargetApp(target)
+	targetLabel := resolveToolCallTargetLabel(target)
+
+	steps := buildToolCallTextEntrySteps(text, targetApp, targetLabel, submit)
+	lockedSendJSON(c, map[string]any{
+		"type":             "navigator.commandAccepted",
+		"taskId":           taskID,
+		"command":          fmt.Sprintf("navigate_text_entry: %s", truncateText(text, 60)),
+		"intentClass":      "execute_now",
+		"intentConfidence": 0.95,
+		"source":           "function_call",
+	})
+
+	if len(steps) == 0 {
+		sendTraceEvent(c, "navigator", traceID, "function_call_steps_sent", rootAt, "step_count=0")
+		if err := sess.SendToolResponse([]*genai.FunctionResponse{{
+			ID:       fc.ID,
+			Name:     fc.Name,
+			Response: map[string]any{"status": "no_steps", "text": text, "target": target},
+		}}); err != nil {
+			slog.Warn("[GEMINI-RX] SendToolResponse failed", "conn_id", c.ID, "call_id", fc.ID, "error", err)
+		}
+		return
+	}
+
+	ls.setPendingFC(fc.ID, fc.Name, taskID, text, target, steps[0].ID, steps[1:])
+	lockedSendJSON(c, map[string]any{
+		"type":    "navigator.stepPlanned",
+		"taskId":  taskID,
+		"step":    steps[0],
+		"message": navigatorMessageForStep(steps[0]),
+	})
+
+	if metrics != nil {
+		metrics.RecordNavigatorTask(context.Background(), navigatorSurfaceFromNames(targetApp, ""), navigatorIntentExecuteNow)
+	}
+
+	sendTraceEvent(c, "navigator", traceID, "function_call_first_step_sent", rootAt, fmt.Sprintf("step_count=%d", len(steps)))
+}
+
+func sendToolErrorResponse(sess *live.Session, fc *genai.FunctionCall, errMsg string) {
+	if err := sess.SendToolResponse([]*genai.FunctionResponse{
+		{
+			ID:       fc.ID,
+			Name:     fc.Name,
+			Response: map[string]any{"error": errMsg},
+		},
+	}); err != nil {
+		slog.Warn("[GEMINI-RX] SendToolResponse (error) failed", "call_id", fc.ID, "error", err)
+	}
+}
+
+func resolveToolCallTargetApp(target string) string {
+	lowered := strings.ToLower(target)
+	switch {
+	case containsAny(lowered, []string{"chrome", "크롬", "browser", "브라우저", "youtube", "유튜브", "google", "구글"}):
+		return "Chrome"
+	case containsAny(lowered, []string{"terminal", "터미널", "iterm", "warp", "ghostty"}):
+		return "Terminal"
+	case containsAny(lowered, []string{"antigravity", "codex", "ide"}):
+		return "Antigravity"
+	default:
+		return ""
+	}
+}
+
+func resolveToolCallTargetLabel(target string) string {
+	lowered := strings.ToLower(target)
+	switch {
+	case containsAny(lowered, []string{"search", "검색"}):
+		return "search"
+	case containsAny(lowered, []string{"address", "주소", "url"}):
+		return "address"
+	case containsAny(lowered, []string{"prompt", "프롬프트"}):
+		return "prompt"
+	case containsAny(lowered, []string{"message", "메시지", "chat", "채팅"}):
+		return "message"
+	default:
+		return ""
+	}
+}
+
+func buildToolCallTextEntrySteps(text, targetApp, targetLabel string, submit bool) []navigatorStep {
+	descriptor := navigatorTargetDescriptor{
+		Role:    "textfield",
+		AppName: targetApp,
+	}
+	if targetLabel != "" {
+		descriptor.Label = targetLabel
+	}
+
+	verifyHint := text
+	if len(verifyHint) > 24 {
+		verifyHint = verifyHint[:24]
+	}
+
+	steps := []navigatorStep{{
+		ID:               "fc_paste_text_" + newConnID(),
+		ActionType:       "paste_text",
+		TargetApp:        targetApp,
+		TargetDescriptor: descriptor,
+		InputText:        text,
+		ExpectedOutcome:  "Text entered into the target field",
+		Confidence:       0.92,
+		IntentConfidence: 0.95,
+		RiskLevel:        "low",
+		ExecutionPolicy:  navigatorExecutionPolicyLow,
+		FallbackPolicy:   "guided_mode",
+		VerifyHint:       strings.ToLower(strings.TrimSpace(verifyHint)),
+		Surface:          navigatorSurfaceValue(targetApp),
+		MacroID:          "fc_paste_text",
+		Narration:        "Typing the requested text.",
+		VerifyContract: &navigatorVerifyContract{
+			ExpectedBundleID:          navigatorBundleIDForSurface(targetApp),
+			RequireFrontmostApp:       targetApp != "",
+			RequireWritableTarget:     true,
+			MinCaptureConfidenceAfter: 0.5,
+			ProofStrategy:             "text_entry",
+		},
+		MaxLocalRetries: 1,
+		TimeoutMs:       1200,
+		ProofLevel:      "strong",
+	}}
+
+	if submit {
+		steps = append(steps, navigatorStep{
+			ID:               "fc_submit_enter_" + newConnID(),
+			ActionType:       "hotkey",
+			TargetApp:        targetApp,
+			TargetDescriptor: descriptor,
+			Hotkey:           []string{"return"},
+			ExpectedOutcome:  "Submitted the entered text",
+			Confidence:       0.95,
+			IntentConfidence: 0.95,
+			RiskLevel:        "low",
+			ExecutionPolicy:  navigatorExecutionPolicyLow,
+			FallbackPolicy:   "guided_mode",
+			Surface:          navigatorSurfaceValue(targetApp),
+			MacroID:          "fc_submit_enter",
+			Narration:        "Pressing Enter to submit.",
+			TimeoutMs:        800,
+			ProofLevel:       "basic",
+		})
+	}
+
+	return steps
+}
+
+func extractFCKeys(raw any) []string {
+	slice, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+	keys := make([]string, 0, len(slice))
+	for _, k := range slice {
+		if ks, ok := k.(string); ok && strings.TrimSpace(ks) != "" {
+			keys = append(keys, strings.TrimSpace(ks))
+		}
+	}
+	return keys
+}
+
+func buildToolCallHotkeySteps(keys []string, targetApp string) []navigatorStep {
+	steps := make([]navigatorStep, 0, 2)
+	if targetApp != "" {
+		steps = append(steps, navigatorStep{
+			ID:               "fc_focus_" + newConnID(),
+			ActionType:       "focus_app",
+			TargetApp:        targetApp,
+			TargetDescriptor: navigatorTargetDescriptor{AppName: targetApp},
+			ExpectedOutcome:  targetApp + " is frontmost",
+			Confidence:       0.93,
+			IntentConfidence: 0.95,
+			RiskLevel:        "low",
+			ExecutionPolicy:  navigatorExecutionPolicyLow,
+			FallbackPolicy:   "guided_mode",
+			Surface:          navigatorSurfaceValue(targetApp),
+			MacroID:          "fc_focus_app",
+			Narration:        "Switching to " + targetApp + ".",
+			TimeoutMs:        900,
+			ProofLevel:       "strong",
+		})
+	}
+	steps = append(steps, navigatorStep{
+		ID:               "fc_hotkey_" + newConnID(),
+		ActionType:       "hotkey",
+		TargetApp:        targetApp,
+		TargetDescriptor: navigatorTargetDescriptor{AppName: targetApp},
+		Hotkey:           keys,
+		ExpectedOutcome:  "Hotkey sent: " + strings.Join(keys, "+"),
+		Confidence:       0.95,
+		IntentConfidence: 0.95,
+		RiskLevel:        "low",
+		ExecutionPolicy:  navigatorExecutionPolicyLow,
+		FallbackPolicy:   "guided_mode",
+		Surface:          navigatorSurfaceValue(targetApp),
+		MacroID:          "fc_hotkey",
+		Narration:        "Sending hotkey " + strings.Join(keys, "+") + ".",
+		TimeoutMs:        800,
+		ProofLevel:       "basic",
+	})
+	return steps
+}
+
+func buildToolCallFocusAppStep(appName string) navigatorStep {
+	return navigatorStep{
+		ID:               "fc_focus_" + newConnID(),
+		ActionType:       "focus_app",
+		TargetApp:        appName,
+		TargetDescriptor: navigatorTargetDescriptor{AppName: appName},
+		ExpectedOutcome:  appName + " is frontmost",
+		Confidence:       0.93,
+		IntentConfidence: 0.95,
+		RiskLevel:        "low",
+		ExecutionPolicy:  navigatorExecutionPolicyLow,
+		FallbackPolicy:   "guided_mode",
+		Surface:          navigatorSurfaceValue(appName),
+		MacroID:          "fc_focus_app",
+		Narration:        "Switching to " + appName + ".",
+		VerifyContract: &navigatorVerifyContract{
+			ExpectedBundleID:    navigatorBundleIDForSurface(appName),
+			RequireFrontmostApp: true,
+			ProofStrategy:       "frontmost_app",
+		},
+		TimeoutMs:  900,
+		ProofLevel: "strong",
+	}
+}
+
+func buildToolCallOpenURLStep(rawURL string) navigatorStep {
+	return navigatorStep{
+		ID:               "fc_open_url_" + newConnID(),
+		ActionType:       "open_url",
+		TargetApp:        "Chrome",
+		TargetDescriptor: navigatorTargetDescriptor{AppName: "Chrome"},
+		URL:              rawURL,
+		ExpectedOutcome:  "URL opened: " + truncateText(rawURL, 60),
+		Confidence:       0.93,
+		IntentConfidence: 0.95,
+		RiskLevel:        "low",
+		ExecutionPolicy:  navigatorExecutionPolicyLow,
+		FallbackPolicy:   "guided_mode",
+		Surface:          "chrome",
+		MacroID:          "fc_open_url",
+		Narration:        "Opening URL in browser.",
+		TimeoutMs:        1500,
+		ProofLevel:       "strong",
+	}
+}
+
+func sendFCToolResponse(sess *live.Session, fc *genai.FunctionCall, connID string, extra map[string]any) {
+	resp := map[string]any{"status": "initiated"}
+	for k, v := range extra {
+		resp[k] = v
+	}
+	if err := sess.SendToolResponse([]*genai.FunctionResponse{{
+		ID:       fc.ID,
+		Name:     fc.Name,
+		Response: resp,
+	}}); err != nil {
+		slog.Warn("[GEMINI-RX] SendToolResponse failed", "conn_id", connID, "call_id", fc.ID, "error", err)
+	}
+}
+
+func dispatchFCSteps(c *Conn, sess *live.Session, ls *liveSessionState, metrics *Metrics, runtime *sessionRuntime, fc *genai.FunctionCall, taskID, command, logKey string, steps []navigatorStep, extraResp map[string]any) {
+	traceID := newTraceID("fc_" + strings.ReplaceAll(fc.Name, "navigate_", ""))
+	rootAt := time.Now()
+	runtime.append(fmt.Sprintf("tool_call[%s]: %s", fc.Name, truncateText(command, 80)))
+	sendTraceEvent(c, "navigator", traceID, logKey, rootAt, command)
+
+	lockedSendJSON(c, map[string]any{
+		"type":             "navigator.commandAccepted",
+		"taskId":           taskID,
+		"command":          fmt.Sprintf("%s: %s", fc.Name, truncateText(command, 60)),
+		"intentClass":      "execute_now",
+		"intentConfidence": 0.95,
+		"source":           "function_call",
+	})
+
+	if len(steps) == 0 {
+		sendFCToolResponse(sess, fc, c.ID, extraResp)
+		return
+	}
+
+	ls.setPendingFC(fc.ID, fc.Name, taskID, command, "", steps[0].ID, steps[1:])
+	lockedSendJSON(c, map[string]any{
+		"type":    "navigator.stepPlanned",
+		"taskId":  taskID,
+		"step":    steps[0],
+		"message": navigatorMessageForStep(steps[0]),
+	})
+
+	if metrics != nil {
+		surface := ""
+		if len(steps) > 0 {
+			surface = navigatorSurfaceValue(steps[0].TargetApp)
+		}
+		metrics.RecordNavigatorTask(context.Background(), surface, navigatorIntentExecuteNow)
+	}
+	sendTraceEvent(c, "navigator", traceID, "function_call_first_step_sent", rootAt, fmt.Sprintf("step_count=%d", len(steps)))
+}
+
+func handleNavigateHotkeyToolCall(c *Conn, sess *live.Session, ls *liveSessionState, metrics *Metrics, runtime *sessionRuntime, fc *genai.FunctionCall) {
+	keys := extractFCKeys(fc.Args["keys"])
+	target, _ := fc.Args["target"].(string)
+	target = strings.TrimSpace(target)
+
+	if len(keys) == 0 {
+		slog.Warn("[GEMINI-RX] navigate_hotkey called with empty keys", "conn_id", c.ID, "call_id", fc.ID)
+		sendToolErrorResponse(sess, fc, "keys parameter is required")
+		return
+	}
+
+	targetApp := resolveToolCallTargetApp(target)
+	taskID := "fc_" + newConnID()
+	steps := buildToolCallHotkeySteps(keys, targetApp)
+	dispatchFCSteps(c, sess, ls, metrics, runtime, fc, taskID, strings.Join(keys, "+"), "function_call_hotkey", steps, map[string]any{"keys": keys, "target": target})
+}
+
+func handleNavigateFocusAppToolCall(c *Conn, sess *live.Session, ls *liveSessionState, metrics *Metrics, runtime *sessionRuntime, fc *genai.FunctionCall) {
+	app, _ := fc.Args["app"].(string)
+	app = strings.TrimSpace(app)
+	if app == "" {
+		slog.Warn("[GEMINI-RX] navigate_focus_app called with empty app", "conn_id", c.ID, "call_id", fc.ID)
+		sendToolErrorResponse(sess, fc, "app parameter is required")
+		return
+	}
+
+	taskID := "fc_" + newConnID()
+	step := buildToolCallFocusAppStep(app)
+	dispatchFCSteps(c, sess, ls, metrics, runtime, fc, taskID, app, "function_call_focus_app", []navigatorStep{step}, map[string]any{"app": app})
+}
+
+func handleNavigateOpenURLToolCall(c *Conn, sess *live.Session, ls *liveSessionState, metrics *Metrics, runtime *sessionRuntime, fc *genai.FunctionCall) {
+	rawURL, _ := fc.Args["url"].(string)
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		slog.Warn("[GEMINI-RX] navigate_open_url called with empty url", "conn_id", c.ID, "call_id", fc.ID)
+		sendToolErrorResponse(sess, fc, "url parameter is required")
+		return
+	}
+
+	if ctrl := ls.getCDPController(); ctrl != nil {
+		if err := ctrl.Navigate(rawURL); err == nil {
+			slog.Info("[CDP] navigate_open_url executed via CDP", "conn_id", c.ID, "url", truncateText(rawURL, 80))
+			runtime.append(fmt.Sprintf("tool_call[navigate_open_url via CDP]: %s", truncateText(rawURL, 80)))
+			taskID := "fc_" + newConnID()
+			lockedSendJSON(c, map[string]any{
+				"type":             "navigator.commandAccepted",
+				"taskId":           taskID,
+				"command":          fmt.Sprintf("navigate_open_url: %s", truncateText(rawURL, 60)),
+				"intentClass":      "execute_now",
+				"intentConfidence": 0.98,
+				"source":           "function_call_cdp",
+			})
+			lockedSendJSON(c, map[string]any{
+				"type":    "navigator.completed",
+				"taskId":  taskID,
+				"summary": "Navigated to " + truncateText(rawURL, 60) + " via CDP",
+			})
+			sendFCToolResponse(sess, fc, c.ID, map[string]any{"url": rawURL, "via": "cdp"})
+			return
+		} else {
+			slog.Warn("[CDP] navigate failed, falling back to AX steps", "conn_id", c.ID, "url", truncateText(rawURL, 80), "error", err)
+		}
+	}
+
+	taskID := "fc_" + newConnID()
+	step := buildToolCallOpenURLStep(rawURL)
+	dispatchFCSteps(c, sess, ls, metrics, runtime, fc, taskID, rawURL, "function_call_open_url", []navigatorStep{step}, map[string]any{"url": rawURL})
+}
+
+func handleNavigateTypeAndSubmitToolCall(c *Conn, sess *live.Session, ls *liveSessionState, metrics *Metrics, runtime *sessionRuntime, fc *genai.FunctionCall) {
+	text, _ := fc.Args["text"].(string)
+	text = strings.TrimSpace(text)
+	if text == "" {
+		slog.Warn("[GEMINI-RX] navigate_type_and_submit called with empty text", "conn_id", c.ID, "call_id", fc.ID)
+		sendToolErrorResponse(sess, fc, "text parameter is required")
+		return
+	}
+
+	submit := true
+	if raw, ok := fc.Args["submit"]; ok {
+		if b, ok := raw.(bool); ok {
+			submit = b
+		}
+	}
+
+	traceID := newTraceID("fc_type_submit")
+	rootAt := time.Now()
+	runtime.append(fmt.Sprintf("tool_call[navigate_type_and_submit]: text=%q submit=%v", truncateText(text, 80), submit))
+	taskID := "fc_" + newConnID()
+	sendTraceEvent(c, "navigator", traceID, "function_call_type_and_submit", rootAt, fmt.Sprintf("text_len=%d submit=%v", len(text), submit))
+
+	steps := buildToolCallTextEntrySteps(text, "", "", submit)
+	lockedSendJSON(c, map[string]any{
+		"type":             "navigator.commandAccepted",
+		"taskId":           taskID,
+		"command":          fmt.Sprintf("navigate_type_and_submit: %s", truncateText(text, 60)),
+		"intentClass":      "execute_now",
+		"intentConfidence": 0.95,
+		"source":           "function_call",
+	})
+
+	if len(steps) == 0 {
+		sendTraceEvent(c, "navigator", traceID, "function_call_first_step_sent", rootAt, "step_count=0")
+		if err := sess.SendToolResponse([]*genai.FunctionResponse{{
+			ID:       fc.ID,
+			Name:     fc.Name,
+			Response: map[string]any{"status": "no_steps", "text": text},
+		}}); err != nil {
+			slog.Warn("[GEMINI-RX] SendToolResponse failed", "conn_id", c.ID, "call_id", fc.ID, "error", err)
+		}
+		return
+	}
+
+	ls.setPendingFC(fc.ID, fc.Name, taskID, text, "", steps[0].ID, steps[1:])
+	lockedSendJSON(c, map[string]any{
+		"type":    "navigator.stepPlanned",
+		"taskId":  taskID,
+		"step":    steps[0],
+		"message": navigatorMessageForStep(steps[0]),
+	})
+
+	if metrics != nil {
+		metrics.RecordNavigatorTask(context.Background(), navigatorSurfaceFromNames("", ""), navigatorIntentExecuteNow)
+	}
+	sendTraceEvent(c, "navigator", traceID, "function_call_first_step_sent", rootAt, fmt.Sprintf("step_count=%d", len(steps)))
 }
 
 const minTranscriptionLen = 4

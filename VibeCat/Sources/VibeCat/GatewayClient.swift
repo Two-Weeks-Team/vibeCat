@@ -142,7 +142,6 @@ final class GatewayClient {
 
     func sendAudio(_ pcmData: Data) {
         guard case .connected = state else { return }
-        NSLog("[GW-OUT] sendAudio: %lu bytes", pcmData.count)
         webSocketTask?.send(.data(pcmData)) { _ in }
     }
 
@@ -181,6 +180,7 @@ final class GatewayClient {
         guard !trimmed.isEmpty else { return }
         let traceID = "nav_" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
         guard let contextObject = encodableJSONObject(context) as? [String: Any] else { return }
+        NSLog("[GW-OUT] sendNavigatorCommand: %@ app=%@ role=%@ visibleInputs=%d screenshot=%d", trimmed, context.appName, context.focusedRole, context.visibleInputCandidateCount, context.screenshot.isEmpty ? 0 : 1)
         sendJSON([
             "type": "navigator.command",
             "traceId": traceID,
@@ -215,19 +215,35 @@ final class GatewayClient {
         ])
     }
 
-    func sendNavigatorRefresh(taskId: String, command: String, step: NavigatorStep, status: String, observedOutcome: String, context: NavigatorContextPayload) {
+    func sendNavigatorRefresh(taskId: String, command: String, step: NavigatorStep, result: NavigatorExecutionResult, context: NavigatorContextPayload) {
         guard case .connected = state else { return }
         guard let contextObject = encodableJSONObject(context) as? [String: Any],
               let stepObject = encodableJSONObject(step) as? [String: Any] else { return }
-        sendJSON([
+        NSLog(
+            "[GW-OUT] navigator.refresh task=%@ step=%@ status=%@ phase=%@ failure=%@ display=%@ cached=%d age_ms=%d",
+            taskId,
+            step.id,
+            result.status,
+            result.phase.rawValue,
+            result.failureReason?.rawValue ?? "-",
+            context.activeDisplayID,
+            context.screenshotCached ? 1 : 0,
+            context.screenshotAgeMs
+        )
+        var payload: [String: Any] = [
             "type": "navigator.refreshContext",
             "taskId": taskId,
             "command": command,
             "step": stepObject,
-            "status": status,
-            "observedOutcome": observedOutcome,
+            "status": result.status,
+            "observedOutcome": result.observedOutcome,
             "context": contextObject
-        ])
+        ]
+        if let failureReason = result.failureReason {
+            payload["failureReason"] = failureReason.rawValue
+        }
+        payload["phase"] = result.phase.rawValue
+        sendJSON(payload)
     }
 
     func sendBargeIn() {
@@ -453,11 +469,9 @@ final class GatewayClient {
         updateHeartbeatReceipt()
         switch message {
         case .data(let data):
-            NSLog("[GW-IN] data: %lu bytes", data.count)
             let parsed = AudioMessageParser.parse(data)
             switch parsed {
             case .audio(let audioData):
-                NSLog("[GW-IN] message type=audio, size=%lu bytes", audioData.count)
                 onAudioData?(audioData)
             case .setupComplete(let sid):
                 NSLog("[GW-IN] message type=setupComplete, sessionId=%@", sid)

@@ -150,6 +150,7 @@ func (p *Processor) ProcessBackground(ctx context.Context, req models.NavigatorB
 			StartedAt:               req.StartedAt,
 			CompletedAt:             req.CompletedAt,
 			UpdatedAt:               time.Now().UTC(),
+			Attempts:                replayAttempts(req.Attempts),
 		}
 		if err := p.storeClient.StoreNavigatorReplay(ctx, replay); err != nil {
 			slog.Warn("navigator background: replay store failed", "trace_id", req.TraceID, "error", err)
@@ -174,9 +175,39 @@ func buildEscalationPrompt(req models.NavigatorEscalationRequest) string {
 	fmt.Fprintf(&b, "Last input descriptor: %s\n", strings.TrimSpace(req.LastInputFieldDescriptor))
 	fmt.Fprintf(&b, "Capture confidence: %.2f\n", req.CaptureConfidence)
 	fmt.Fprintf(&b, "Visible input candidates: %d\n", req.VisibleInputCandidateCount)
+	b.WriteString("If the user wants you to type text that must be copied from visible UI content, extract only the exact visible text to place into resolvedText.\n")
+	b.WriteString("If the requested text is not clearly visible, leave resolvedText empty.\n")
 	b.WriteString(`Return JSON using this schema:
-{"resolvedDescriptor":{"role":"","label":"","windowTitle":"","appName":"","relativeAnchor":"","regionHint":""},"confidence":0.0,"fallbackRecommendation":"guided_mode|ask_clarify|safe_immediate","reason":""}`)
+{"resolvedDescriptor":{"role":"","label":"","windowTitle":"","appName":"","relativeAnchor":"","regionHint":""},"resolvedText":"","confidence":0.0,"fallbackRecommendation":"guided_mode|ask_clarify|safe_immediate","reason":""}`)
 	return b.String()
+}
+
+func replayAttempts(attempts []models.NavigatorBackgroundAttempt) []store.NavigatorAttempt {
+	if len(attempts) == 0 {
+		return nil
+	}
+	out := make([]store.NavigatorAttempt, 0, len(attempts))
+	for _, attempt := range attempts {
+		out = append(out, store.NavigatorAttempt{
+			ID:               attempt.ID,
+			TaskID:           attempt.TaskID,
+			Command:          attempt.Command,
+			Surface:          attempt.Surface,
+			Route:            attempt.Route,
+			RouteReason:      attempt.RouteReason,
+			ContextHash:      attempt.ContextHash,
+			ScreenshotSource: attempt.ScreenshotSource,
+			ScreenshotCached: attempt.ScreenshotCached,
+			ScreenBasisID:    attempt.ScreenBasisID,
+			ActiveDisplayID:  attempt.ActiveDisplayID,
+			TargetDisplayID:  attempt.TargetDisplayID,
+			Outcome:          attempt.Outcome,
+			OutcomeDetail:    attempt.OutcomeDetail,
+			StartedAt:        attempt.StartedAt,
+			CompletedAt:      attempt.CompletedAt,
+		})
+	}
+	return out
 }
 
 func heuristicEscalation(req models.NavigatorEscalationRequest) *models.NavigatorEscalationResult {
@@ -225,9 +256,14 @@ func validEscalationResult(result models.NavigatorEscalationResult) bool {
 		return false
 	}
 	if result.ResolvedDescriptor == nil {
+		if strings.TrimSpace(result.ResolvedText) != "" {
+			return true
+		}
 		return strings.TrimSpace(result.FallbackRecommendation) != ""
 	}
-	return strings.TrimSpace(result.ResolvedDescriptor.Role) != "" || strings.TrimSpace(result.ResolvedDescriptor.Label) != ""
+	return strings.TrimSpace(result.ResolvedDescriptor.Role) != "" ||
+		strings.TrimSpace(result.ResolvedDescriptor.Label) != "" ||
+		strings.TrimSpace(result.ResolvedText) != ""
 }
 
 func (p *Processor) generateBackgroundSummary(ctx context.Context, req models.NavigatorBackgroundRequest) *models.NavigatorBackgroundResult {

@@ -687,6 +687,49 @@ public enum VibeCatL10n {
         pick(currentLanguage(language), ko: "결과 확인 중...", en: "Verifying result...", ja: "結果を確認中...")
     }
 
+    public static func navigatorActionLabel(actionType: NavigatorActionType, step: NavigatorStep, language: String? = nil) -> String {
+        let lang = currentLanguage(language)
+        switch actionType {
+        case .focusApp:
+            let app = step.targetApp.isEmpty ? "app" : step.targetApp
+            return pick(lang, ko: "\(app)(으)로 전환", en: "Switching to \(app)", ja: "\(app) に切り替え")
+        case .hotkey:
+            let combo = step.hotkey.joined(separator: "+")
+            return pick(lang, ko: "\(combo) 입력", en: "Pressing \(combo)", ja: "\(combo) を入力")
+        case .pasteText:
+            return pick(lang, ko: "텍스트 입력 중", en: "Typing text", ja: "テキスト入力中")
+        case .openURL:
+            let domain = step.url.flatMap { URL(string: $0)?.host } ?? "URL"
+            return pick(lang, ko: "\(domain) 열기", en: "Opening \(domain)", ja: "\(domain) を開く")
+        case .pressAX:
+            let label = step.targetDescriptor.label ?? "element"
+            return pick(lang, ko: "\(label) 클릭", en: "Clicking \(label)", ja: "\(label) をクリック")
+        case .copySelection:
+            return pick(lang, ko: "선택 항목 복사", en: "Copying selection", ja: "選択範囲をコピー")
+        case .systemAction:
+            let cmd = step.systemCommand ?? "action"
+            return pick(lang, ko: "시스템: \(cmd)", en: "System: \(cmd)", ja: "システム: \(cmd)")
+        case .waitFor:
+            return pick(lang, ko: "대기 중...", en: "Waiting...", ja: "待機中...")
+        }
+    }
+
+    public static func navigatorStepProgress(current: Int, total: Int, language: String? = nil) -> String {
+        pick(currentLanguage(language), ko: "단계 \(current)/\(total)", en: "Step \(current)/\(total)", ja: "ステップ \(current)/\(total)")
+    }
+
+    public static func navigatorStepSuccess(language: String? = nil) -> String {
+        pick(currentLanguage(language), ko: "\u{2713} 성공", en: "\u{2713} Success", ja: "\u{2713} 成功")
+    }
+
+    public static func navigatorStepRetry(language: String? = nil) -> String {
+        pick(currentLanguage(language), ko: "\u{21BB} 재시도", en: "\u{21BB} Retry", ja: "\u{21BB} リトライ")
+    }
+
+    public static func navigatorStepFailed(language: String? = nil) -> String {
+        pick(currentLanguage(language), ko: "\u{2717} 실패", en: "\u{2717} Failed", ja: "\u{2717} 失敗")
+    }
+
     public static func navigatorAccepted(intent: NavigatorIntentClass, confidence: Double, language: String? = nil) -> String {
         let lang = currentLanguage(language)
         let percent = Int((confidence * 100).rounded())
