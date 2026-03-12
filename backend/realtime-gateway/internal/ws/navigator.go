@@ -1358,6 +1358,33 @@ func extractTextEntryFieldLabel(command string, ctx navigatorContext) string {
 	}
 }
 
+func normalizeKoreanVerbSpacing(s string) string {
+	r := s
+	for _, pair := range [][2]string{
+		{"적어 줘", "적어줘"}, {"입력해 줘", "입력해줘"}, {"쳐 줘", "쳐줘"},
+		{"써 줘", "써줘"}, {"넣어 줘", "넣어줘"}, {"적어 주세요", "적어줘"},
+		{"입력해 주세요", "입력해줘"}, {"쳐 주세요", "쳐줘"}, {"써 주세요", "써줘"},
+		{"넣어 주세요", "넣어줘"},
+	} {
+		r = strings.ReplaceAll(r, pair[0], pair[1])
+	}
+	r = strings.TrimSuffix(r, "요")
+	r = strings.TrimSuffix(r, ".")
+	return r
+}
+
+func stripLocationPrefix(s string) string {
+	for _, particle := range []string{"에서 ", "에 "} {
+		if idx := strings.LastIndex(s, particle); idx >= 0 {
+			remainder := strings.TrimSpace(s[idx+len(particle):])
+			if remainder != "" {
+				return remainder
+			}
+		}
+	}
+	return s
+}
+
 func extractTextEntryPayload(command string) string {
 	if matches := commandLiteralPattern.FindStringSubmatch(command); len(matches) == 2 {
 		return cleanTopic(matches[1])
@@ -1386,6 +1413,7 @@ func extractTextEntryPayload(command string) string {
 	if payload := extractBareDirectTextPayload(command); payload != "" {
 		return payload
 	}
+	normalized := normalizeKoreanVerbSpacing(command)
 	for _, suffix := range []string{
 		"이라고 입력해줘", "이라고 입력해", "이라고 입력",
 		"라고 입력해줘", "라고 입력해", "라고 입력",
@@ -1394,10 +1422,10 @@ func extractTextEntryPayload(command string) string {
 		"이라고 넣어줘", "라고 넣어줘",
 		"이라고 적어줘", "라고 적어줘",
 	} {
-		if idx := strings.Index(strings.ToLower(command), suffix); idx > 0 {
-			candidate := strings.TrimSpace(command[:idx])
+		if idx := strings.Index(strings.ToLower(normalized), suffix); idx > 0 {
+			candidate := strings.TrimSpace(normalized[:idx])
 			if candidate != "" {
-				return candidate
+				return stripLocationPrefix(candidate)
 			}
 		}
 	}
