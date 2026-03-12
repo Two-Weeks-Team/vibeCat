@@ -1,8 +1,11 @@
 package search
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
+
+	"google.golang.org/genai"
 
 	"vibecat/adk-orchestrator/internal/models"
 )
@@ -105,5 +108,33 @@ func TestSearchNilClientFallback(t *testing.T) {
 	}
 	if !strings.Contains(got.Summary, "Search unavailable") {
 		t.Fatalf("Summary = %q, want unavailable message", got.Summary)
+	}
+}
+
+func TestSanitizeSearchJSON(t *testing.T) {
+	input := "JSON: {\"query\":\"q\",\"summary\":\"s\",\"sources\":[\"https://example.com\"]}"
+	cleaned := sanitizeSearchJSON(input)
+	var got models.SearchResult
+	if err := json.Unmarshal([]byte(cleaned), &got); err != nil {
+		t.Fatalf("expected cleaned JSON to decode: %v", err)
+	}
+	if got.Query != "q" || got.Summary != "s" || len(got.Sources) != 1 {
+		t.Fatalf("unexpected decoded result: %+v", got)
+	}
+}
+
+func TestExtractSearchSources(t *testing.T) {
+	candidate := &genai.Candidate{
+		GroundingMetadata: &genai.GroundingMetadata{
+			GroundingChunks: []*genai.GroundingChunk{
+				{Web: &genai.GroundingChunkWeb{URI: "https://example.com/a"}},
+				{Web: &genai.GroundingChunkWeb{URI: "https://example.com/a"}},
+				{Web: &genai.GroundingChunkWeb{URI: "https://example.com/b"}},
+			},
+		},
+	}
+	sources := extractSearchSources(candidate)
+	if len(sources) != 2 {
+		t.Fatalf("sources len = %d, want 2 (%v)", len(sources), sources)
 	}
 }
