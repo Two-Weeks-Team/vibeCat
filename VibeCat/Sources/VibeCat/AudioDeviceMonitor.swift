@@ -15,12 +15,28 @@ final class AudioDeviceMonitor {
         let inputDeviceName: String
         let outputDeviceID: AudioObjectID
         let outputDeviceName: String
+        let deviceInventoryIDs: [AudioObjectID]
 
-        func sameDevices(as other: Snapshot) -> Bool {
+        func sameRoute(as other: Snapshot) -> Bool {
             inputDeviceID == other.inputDeviceID &&
                 inputDeviceName == other.inputDeviceName &&
                 outputDeviceID == other.outputDeviceID &&
                 outputDeviceName == other.outputDeviceName
+        }
+
+        func sameInputRoute(as other: Snapshot) -> Bool {
+            inputDeviceID == other.inputDeviceID &&
+                inputDeviceName == other.inputDeviceName
+        }
+
+        func sameOutputRoute(as other: Snapshot) -> Bool {
+            outputDeviceID == other.outputDeviceID &&
+                outputDeviceName == other.outputDeviceName
+        }
+
+        func sameDevices(as other: Snapshot) -> Bool {
+            sameRoute(as: other) &&
+                deviceInventoryIDs == other.deviceInventoryIDs
         }
     }
 
@@ -89,7 +105,7 @@ final class AudioDeviceMonitor {
 
     private func emitChange(_ trigger: Trigger) {
         let snapshot = makeSnapshot(trigger: trigger)
-        if let lastSnapshot, trigger != .deviceListChanged, snapshot.sameDevices(as: lastSnapshot) {
+        if let lastSnapshot, snapshot.sameDevices(as: lastSnapshot) {
             NSLog("[AUDIO-DEVICE] duplicate change ignored trigger=%@", trigger.rawValue)
             return
         }
@@ -144,8 +160,37 @@ final class AudioDeviceMonitor {
             inputDeviceID: inputDeviceID,
             inputDeviceName: deviceName(for: inputDeviceID),
             outputDeviceID: outputDeviceID,
-            outputDeviceName: deviceName(for: outputDeviceID)
+            outputDeviceName: deviceName(for: outputDeviceID),
+            deviceInventoryIDs: deviceInventoryIDs()
         )
+    }
+
+    private func deviceInventoryIDs() -> [AudioObjectID] {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var size: UInt32 = 0
+        let sizeStatus = AudioObjectGetPropertyDataSize(systemObjectID, &address, 0, nil, &size)
+        if sizeStatus != noErr || size == 0 {
+            if sizeStatus != noErr {
+                NSLog("[AUDIO-DEVICE] failed to resolve inventory size status=%d", sizeStatus)
+            }
+            return []
+        }
+
+        let count = Int(size) / MemoryLayout<AudioObjectID>.size
+        var deviceIDs = Array(repeating: AudioObjectID(kAudioObjectUnknown), count: count)
+        let dataStatus = AudioObjectGetPropertyData(systemObjectID, &address, 0, nil, &size, &deviceIDs)
+        if dataStatus != noErr {
+            NSLog("[AUDIO-DEVICE] failed to resolve inventory list status=%d", dataStatus)
+            return []
+        }
+
+        return deviceIDs
+            .filter { $0 != AudioObjectID(kAudioObjectUnknown) }
+            .sorted()
     }
 
     private func defaultDeviceID(for selector: AudioObjectPropertySelector) -> AudioObjectID {
