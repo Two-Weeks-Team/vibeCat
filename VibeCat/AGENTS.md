@@ -26,6 +26,9 @@ VibeCat/
 | Gateway transport | `VibeCat/Sources/VibeCat/GatewayClient.swift` | `/ws/live` client and navigator messages |
 | Shared navigator models | `VibeCat/Sources/Core/NavigatorModels.swift` | cross-boundary payloads |
 | Voice routing heuristics | `VibeCat/Sources/Core/NavigatorVoiceCommandDetector.swift` | voice-to-navigator interception |
+| Navigator overlay UI | `VibeCat/Sources/VibeCat/NavigatorOverlayPanel.swift` | floating HUD: action label, grounding badge, progress, result |
+| Navigator models | `VibeCat/Sources/Core/NavigatorModels.swift` | GroundingSource, NavigatorActionType, ExecutionPhase enums |
+| Localization | `VibeCat/Sources/Core/Localization.swift` | navigator action labels, step progress, status strings |
 
 ## CONVENTIONS
 
@@ -33,6 +36,8 @@ VibeCat/
 - Put UI, AX, capture, playback, and app wiring under `Sources/VibeCat/`.
 - Keep model/API payload structs in Core when both client and tests need them.
 - Navigator mode is safety-first: verify targets, prefer guided mode over blind actions.
+- Navigator overlay shows grounding source (AX/CDP/Vision/Keyboard) for every action.
+- All navigator status strings go through Localization.swift for i18n readiness.
 
 ## ANTI-PATTERNS
 
@@ -40,6 +45,7 @@ VibeCat/
 - storing Gemini credentials or model calls in the client
 - bypassing `GatewayClient` for gateway protocol changes
 - adding unverified blind click or typing paths to `AccessibilityNavigator`
+- hardcoding UI strings outside Localization.swift
 
 ## COMMANDS
 
