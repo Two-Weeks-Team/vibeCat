@@ -30,7 +30,7 @@ The runtime components:
 
 ```mermaid
 flowchart TB
-    subgraph Client["macOS Client (Swift 6)"]
+    subgraph Client["macOS Client (Swift 6.2)"]
         UI["Overlay UI + Cat Character"]
         AX["Accessibility Navigator<br/>80+ key codes"]
         SC["Screen Capture"]
@@ -145,7 +145,7 @@ Responsibilities:
   - sends to ADK for visual confirmation of success
   - feeds verification result back into step pipeline
 - **Chrome DevTools Protocol (CDP)** integration:
-  - chromedp v0.11.3 for Go-native CDP client
+  - chromedp v0.14.2 for Go-native CDP client
   - Click, Type, Navigate, Scroll, Screenshot, Close operations
   - lazy connect with graceful fallback when Chrome unavailable
   - targets existing Chrome instance via DevTools Protocol

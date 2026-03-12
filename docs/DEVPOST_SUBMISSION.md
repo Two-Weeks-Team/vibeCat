@@ -21,9 +21,9 @@ Critically, VibeCat always waits for your confirmation before touching anything.
 
 ## How We Built It
 
-**macOS Client (Swift 6 + AppKit):** The native client handles screen capture, microphone input, voice playback, and local action execution. We mapped 80+ key codes in `AccessibilityNavigator.swift` for full keyboard control across apps. A floating `NavigatorOverlayPanel` HUD shows the current action, grounding source badge, and progress in real time — so users always know what VibeCat is doing and why.
+**macOS Client (Swift 6.2 + AppKit):** The native client handles screen capture, microphone input, voice playback, and local action execution. We mapped 80+ key codes in `AccessibilityNavigator.swift` for full keyboard control across apps. A floating `NavigatorOverlayPanel` HUD shows the current action, grounding source badge, and progress in real time — so users always know what VibeCat is doing and why.
 
-**Realtime Gateway (Go 1.24, Cloud Run):** A WebSocket server bridges the Swift client to Gemini Live API. The gateway hosts all 5 FC tool handlers and the `pendingFC` sequential execution mechanism — ensuring multi-step actions never race. A `chromedp`-based Chrome controller handles browser automation via CDP for elements invisible to the Accessibility tree (like canvas-rendered YouTube controls).
+**Realtime Gateway (Go 1.26.1, Cloud Run):** A WebSocket server bridges the Swift client to Gemini Live API. The gateway hosts all 5 FC tool handlers and the `pendingFC` sequential execution mechanism — ensuring multi-step actions never race. A `chromedp`-based Chrome controller handles browser automation via CDP for elements invisible to the Accessibility tree (like canvas-rendered YouTube controls).
 
 **Self-Healing + Vision Verification:** On failure, the gateway retries with an alternative grounding source (AX → CDP → vision coordinates). After each action, it calls the ADK Orchestrator to analyze a fresh screenshot and confirm success before proceeding. All model logic stays server-side; the client owns only UI, capture, transport, and local execution.
 
@@ -51,7 +51,7 @@ Critically, VibeCat always waits for your confirmation before touching anything.
 
 **Triple-source grounding eliminates blind clicking.** By combining Accessibility API, Chrome DevTools Protocol, and Gemini vision analysis, VibeCat always knows *why* it's targeting something — not just where. This makes actions reliable across apps that expose their UI very differently.
 
-**Native macOS integration.** VibeCat feels like a real desktop app — not a web wrapper or a Python script with a thin GUI. Swift 6 + AppKit gives it first-class system integration, proper permission handling, and a UI that respects macOS conventions.
+**Native macOS integration.** VibeCat feels like a real desktop app — not a web wrapper or a Python script with a thin GUI. Swift 6.2 + AppKit gives it first-class system integration, proper permission handling, and a UI that respects macOS conventions.
 
 ---
 
@@ -88,8 +88,8 @@ Proactive AI requires careful safety design. The confirm-before-acting model isn
 - **Google ADK (Agent Development Kit)** — Screenshot analysis and confidence escalation
 - **Google Firestore** — Session state and memory persistence
 - **Google Secret Manager** — Secure credential management
-- **Swift 6** — Native macOS client (AppKit, Accessibility API, AVFoundation)
-- **Go 1.24** — Realtime Gateway and ADK Orchestrator backends
+- **Swift 6.2** — Native macOS client (AppKit, Accessibility API, AVFoundation)
+- **Go 1.26.1** — Realtime Gateway and ADK Orchestrator backends
 - **chromedp** — Go-native Chrome DevTools Protocol client for browser automation
 - **WebSocket** — Low-latency bidirectional transport between client and gateway
 - **macOS Accessibility API** — Native UI element discovery and action execution
