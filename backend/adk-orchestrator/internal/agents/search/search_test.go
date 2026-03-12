@@ -138,3 +138,24 @@ func TestExtractSearchSources(t *testing.T) {
 		t.Fatalf("sources len = %d, want 2 (%v)", len(sources), sources)
 	}
 }
+
+func TestNormalizeSearchResultBackfillsSourcesAndQuery(t *testing.T) {
+	candidate := &genai.Candidate{
+		GroundingMetadata: &genai.GroundingMetadata{
+			GroundingChunks: []*genai.GroundingChunk{
+				{Web: &genai.GroundingChunkWeb{URI: "https://example.com/a"}},
+				{Web: &genai.GroundingChunkWeb{URI: "https://example.com/b"}},
+			},
+		},
+	}
+	result := &models.SearchResult{Summary: "grounded answer"}
+
+	normalized := normalizeSearchResult("fallback query", result, candidate)
+
+	if normalized.Query != "fallback query" {
+		t.Fatalf("Query = %q, want fallback query", normalized.Query)
+	}
+	if len(normalized.Sources) != 2 {
+		t.Fatalf("Sources len = %d, want 2 (%v)", len(normalized.Sources), normalized.Sources)
+	}
+}

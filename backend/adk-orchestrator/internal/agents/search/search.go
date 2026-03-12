@@ -191,10 +191,7 @@ func (a *Agent) search(ctx agent.InvocationContext, query string, result models.
 	// Try to parse as JSON first
 	var sr models.SearchResult
 	if err := json.Unmarshal([]byte(text), &sr); err == nil {
-		if sr.Query == "" {
-			sr.Query = query
-		}
-		return &sr
+		return normalizeSearchResult(query, &sr, resp.Candidates[0])
 	}
 
 	// Fallback: use raw text as summary
@@ -252,20 +249,27 @@ func (a *Agent) executeSearch(ctx context.Context, query, language string) *mode
 	cleaned := sanitizeSearchJSON(text)
 	var sr models.SearchResult
 	if err := json.Unmarshal([]byte(cleaned), &sr); err == nil {
-		if sr.Query == "" {
-			sr.Query = query
-		}
-		if len(sr.Sources) == 0 {
-			sr.Sources = extractSearchSources(candidate)
-		}
-		slog.Info("[SEARCH] result parsed", "query", sr.Query, "summary_len", len(sr.Summary))
-		return &sr
+		return normalizeSearchResult(query, &sr, candidate)
 	}
 
 	if len(text) > 500 {
 		text = text[:500] + "..."
 	}
 	return &models.SearchResult{Query: query, Summary: text, Sources: extractSearchSources(candidate)}
+}
+
+func normalizeSearchResult(query string, sr *models.SearchResult, candidate *genai.Candidate) *models.SearchResult {
+	if sr == nil {
+		return nil
+	}
+	if sr.Query == "" {
+		sr.Query = query
+	}
+	if len(sr.Sources) == 0 {
+		sr.Sources = extractSearchSources(candidate)
+	}
+	slog.Info("[SEARCH] result parsed", "query", sr.Query, "summary_len", len(sr.Summary), "source_count", len(sr.Sources))
+	return sr
 }
 
 func sanitizeSearchJSON(text string) string {
