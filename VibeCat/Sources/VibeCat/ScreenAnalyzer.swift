@@ -5,19 +5,13 @@ import VibeCatCore
 
 @MainActor
 final class ScreenAnalyzer {
-    private struct CachedDisplayContext {
-        let screenBasisID: String
-        let screenshotBase64: String
-        let activeDisplayID: String
-        let targetDisplayID: String
-        let capturedAt: Date
-        let source: String
-    }
-
     private let captureService: ScreenCaptureService
     private let gatewayClient: GatewayClient
     private let catVoice: CatVoice
     private let spriteAnimator: SpriteAnimator
+    private let encoder: ScreenAnalyzerEncoding
+    private let presetMetadataCache: ScreenAnalyzerPresetMetadataCache
+    private let commandContextCache: ScreenAnalyzerCommandContextCache
     private weak var audioPlayer: AudioPlayer?
 
     private var captureLoopTask: Task<Void, Never>?
@@ -37,8 +31,6 @@ final class ScreenAnalyzer {
     private let postSpeechCooldown: TimeInterval = 5.0
     private let maxCachedCommandContextAge: TimeInterval = 20.0
 
-    private var cachedDisplayContext: CachedDisplayContext?
-
     var onSpeechEvent: ((CompanionSpeechEvent) -> Void)?
     var onBackgroundSpeech: ((String) -> Void)?
     var onScreenBasisUpdate: ((String, String?) -> Void)?
@@ -51,12 +43,18 @@ final class ScreenAnalyzer {
         captureService: ScreenCaptureService,
         gatewayClient: GatewayClient,
         catVoice: CatVoice,
-        spriteAnimator: SpriteAnimator
+        spriteAnimator: SpriteAnimator,
+        encoder: ScreenAnalyzerEncoding = DefaultScreenAnalyzerEncoder(),
+        presetMetadataCache: ScreenAnalyzerPresetMetadataCache = ScreenAnalyzerPresetMetadataCache(),
+        commandContextCache: ScreenAnalyzerCommandContextCache? = nil
     ) {
         self.captureService = captureService
         self.gatewayClient = gatewayClient
         self.catVoice = catVoice
         self.spriteAnimator = spriteAnimator
+        self.encoder = encoder
+        self.presetMetadataCache = presetMetadataCache
+        self.commandContextCache = commandContextCache ?? ScreenAnalyzerCommandContextCache(maxAge: maxCachedCommandContextAge)
     }
 
     var activityMinutes: Int {
@@ -287,9 +285,10 @@ final class ScreenAnalyzer {
     private func sendFastPath(image: CGImage, traceID: String?) {
         let img = image
         let client = gatewayClient
+        let encoder = self.encoder
         DispatchQueue.global(qos: .userInitiated).async {
             let startedAt = Date()
-            guard let jpegData = ImageProcessor.toFastPathJPEG(img) else { return }
+            guard let jpegData = encoder.fastPathJPEG(img) else { return }
             NSLog("[CAPTURE] Fast Path: sending %d bytes JPEG to Live API", jpegData.count)
             if let traceID {
                 let elapsedMs = Int(Date().timeIntervalSince(startedAt) * 1000)
@@ -306,13 +305,16 @@ final class ScreenAnalyzer {
         guard gatewayClient.isConnected else { return }
 
         let character = AppSettings.shared.character
-        let soul = spriteAnimator.loadPreset(for: character).soul
+        let soul = presetMetadataCache.soul(for: character) { [spriteAnimator] character in
+            spriteAnimator.loadPreset(for: character)
+        }
 
         let img = snapshot.image
         let encodeStart = Date()
+        let encoder = self.encoder
         let base64: String? = await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                let result = ImageProcessor.toBase64JPEG(img)
+                let result = encoder.base64JPEG(img)
                 continuation.resume(returning: result)
             }
         }
@@ -373,36 +375,19 @@ final class ScreenAnalyzer {
     }
 
     func latestSharedScreenBasisContext(baseContext: NavigatorContextPayload, includeScreenshot: Bool) -> NavigatorContextPayload {
-        guard let cachedDisplayContext else {
-            return baseContext
-        }
-
-        let ageMs = max(0, Int(Date().timeIntervalSince(cachedDisplayContext.capturedAt) * 1000))
-        guard Double(ageMs) <= maxCachedCommandContextAge * 1000 else {
-            return baseContext
-        }
-
-        return baseContext.withScreenBasis(
-            screenBasisID: cachedDisplayContext.screenBasisID,
-            activeDisplayID: cachedDisplayContext.activeDisplayID,
-            targetDisplayID: cachedDisplayContext.targetDisplayID,
-            screenshotAgeMs: ageMs,
-            screenshotSource: cachedDisplayContext.source,
-            screenshotCached: true,
-            screenshot: includeScreenshot ? cachedDisplayContext.screenshotBase64 : nil
-        )
+        commandContextCache.latest(baseContext: baseContext, includeScreenshot: includeScreenshot)
     }
 
     func freshNavigatorCommandContext(baseContext: NavigatorContextPayload) async -> NavigatorContextPayload {
         let result = await captureService.forceCapture()
         guard case .captured(let snapshot) = result,
               snapshot.targetKind != .displayFallback,
-              let screenshotBase64 = ImageProcessor.toBase64JPEG(snapshot.image) else {
+              let screenshotBase64 = encoder.base64JPEG(snapshot.image) else {
             return latestNavigatorCommandContext(baseContext: baseContext)
         }
 
         let now = Date()
-        cachedDisplayContext = CachedDisplayContext(
+        commandContextCache.store(
             screenBasisID: snapshot.screenBasisID,
             screenshotBase64: screenshotBase64,
             activeDisplayID: snapshot.displayID,
@@ -426,14 +411,15 @@ final class ScreenAnalyzer {
         let image = snapshot.image
         let displayID = snapshot.displayID
         let capturedAt = snapshot.capturedAt
+        let encoder = self.encoder
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self,
-                  let screenshotBase64 = ImageProcessor.toBase64JPEG(image) else {
+                  let screenshotBase64 = encoder.base64JPEG(image) else {
                 return
             }
 
             DispatchQueue.main.async {
-                self.cachedDisplayContext = CachedDisplayContext(
+                self.commandContextCache.store(
                     screenBasisID: snapshot.screenBasisID,
                     screenshotBase64: screenshotBase64,
                     activeDisplayID: displayID,
