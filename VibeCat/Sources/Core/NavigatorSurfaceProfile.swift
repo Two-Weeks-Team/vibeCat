@@ -41,11 +41,15 @@ public struct NavigatorSurfaceProfile: Sendable, Equatable {
 
         if candidates.contains(where: { value in
             value.contains("terminal") || value == "com.apple.terminal"
+                || value.contains("iterm") || value == "com.googlecode.iterm2"
         }) {
+            let bundleID = candidates.contains(where: { $0.contains("iterm") || $0 == "com.googlecode.iterm2" })
+                ? "com.googlecode.iterm2"
+                : "com.apple.Terminal"
             return NavigatorSurfaceProfile(
                 kind: .terminal,
-                primaryBundleID: "com.apple.Terminal",
-                appAliases: ["terminal", "terminal.app"],
+                primaryBundleID: bundleID,
+                appAliases: ["terminal", "terminal.app", "iterm", "iterm2"],
                 preferredTextInputKeywords: ["prompt", "shell", "command"],
                 preparationHotkey: nil
             )
