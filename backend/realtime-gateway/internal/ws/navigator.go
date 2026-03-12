@@ -712,7 +712,10 @@ func keywordScore(text string, keywords []string) float64 {
 }
 
 func planRiskReason(command string, ctx navigatorContext, steps []navigatorStep) string {
-	inputs := []string{command, ctx.SelectedText}
+	// Only check the command text and the text being pasted/typed.
+	// Do NOT check ctx.SelectedText — it is ambient screen context, not an action payload.
+	// Including it causes false positives when variable names like "token" appear on screen.
+	inputs := []string{command}
 	for _, step := range steps {
 		inputs = append(inputs, step.InputText)
 	}
