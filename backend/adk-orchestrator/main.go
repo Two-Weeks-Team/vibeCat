@@ -93,6 +93,102 @@ func appendContextLogFields(fields []any, contextText string) []any {
 	)
 }
 
+func hasSearchSummary(result models.AnalysisResult) bool {
+	return result.Search != nil && strings.TrimSpace(result.Search.Summary) != ""
+}
+
+func needsAnalyzeSearchBackfill(result models.AnalysisResult, contextText string) bool {
+	if hasSearchSummary(result) {
+		return false
+	}
+	if result.Mood != nil {
+		switch result.Mood.Mood {
+		case models.MoodFrustrated, models.MoodStuck:
+			return true
+		}
+	}
+	if result.Vision != nil {
+		if result.Vision.ErrorDetected || strings.TrimSpace(result.Vision.ErrorMessage) != "" {
+			return true
+		}
+	}
+	lower := strings.ToLower(strings.TrimSpace(contextText))
+	if lower == "" {
+		return false
+	}
+	for _, cue := range []string{"error", "failed", "failure", "exception", "stuck", "401", "403", "404", "500", "bug", "not found"} {
+		if strings.Contains(lower, cue) {
+			return true
+		}
+	}
+	return false
+}
+
+func negativeContextCueCount(contextText string) int {
+	lower := strings.ToLower(strings.TrimSpace(contextText))
+	if lower == "" {
+		return 0
+	}
+	count := 0
+	for _, cue := range []string{"stuck", "failed", "failure", "error", "exception", "401", "403", "404", "500", "panic", "bug", "sighing", "frustrated", "can't", "cannot"} {
+		if strings.Contains(lower, cue) {
+			count++
+		}
+	}
+	return count
+}
+
+func backfillAnalyzeMoodFromContext(result *models.AnalysisResult, contextText string) {
+	if result == nil {
+		return
+	}
+	if result.Mood != nil && result.Mood.Mood != "" && result.Mood.Mood != models.MoodFocused {
+		return
+	}
+	if negativeContextCueCount(contextText) < 2 {
+		return
+	}
+	if result.Mood == nil {
+		result.Mood = &models.MoodState{}
+	}
+	result.Mood.Mood = models.MoodFrustrated
+	if result.Mood.Confidence < 0.7 {
+		result.Mood.Confidence = 0.7
+	}
+	result.Mood.SuggestedAction = "offer_help"
+	result.Mood.UpdatedAt = time.Now()
+}
+
+func positiveContextCueCount(contextText string) int {
+	lower := strings.ToLower(strings.TrimSpace(contextText))
+	if lower == "" {
+		return 0
+	}
+	count := 0
+	for _, cue := range []string{"all tests passing", "all tests passed", "build succeeded", "green test run", "tests passing", "tests passed", "fixed the", "shouted yes", "success", "resolved"} {
+		if strings.Contains(lower, cue) {
+			count++
+		}
+	}
+	return count
+}
+
+func backfillAnalyzeSuccessFromContext(result *models.AnalysisResult, contextText string) {
+	if result == nil {
+		return
+	}
+	if positiveContextCueCount(contextText) < 2 {
+		return
+	}
+	if result.Vision == nil {
+		result.Vision = &models.VisionAnalysis{}
+	}
+	result.Vision.SuccessDetected = true
+	if result.Vision.Significance < 9 {
+		result.Vision.Significance = 9
+	}
+}
+
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
@@ -467,6 +563,29 @@ func (o *orchestrator) analyzeHandler(w http.ResponseWriter, r *http.Request) {
 					slog.Warn("failed to parse analysis_result from session state", "error", unmarshalErr)
 				}
 			}
+		}
+	}
+
+	backfillAnalyzeMoodFromContext(&lastResult, req.Context)
+	backfillAnalyzeSuccessFromContext(&lastResult, req.Context)
+
+	if o.searchAgent != nil && needsAnalyzeSearchBackfill(lastResult, req.Context) {
+		if searchResult := o.searchAgent.DirectSearch(r.Context(), req.Context, req.Language); searchResult != nil && strings.TrimSpace(searchResult.Summary) != "" {
+			lastResult.Search = searchResult
+			if lastResult.Decision == nil {
+				lastResult.Decision = &models.MediatorDecision{}
+			}
+			lastResult.Decision.ShouldSpeak = true
+			lastResult.Decision.Reason = "search_result"
+			if strings.TrimSpace(lastResult.Decision.Urgency) == "" {
+				lastResult.Decision.Urgency = "medium"
+			}
+			lastResult.SpeechText = searchResult.Summary
+			slog.Info("analyze search backfill applied",
+				"trace_id", req.TraceID,
+				"summary_len", len(searchResult.Summary),
+				"source_count", len(searchResult.Sources),
+			)
 		}
 	}
 

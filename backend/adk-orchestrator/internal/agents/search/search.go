@@ -243,15 +243,20 @@ func (a *Agent) executeSearch(ctx context.Context, query, language string) *mode
 		return &models.SearchResult{Query: query, Summary: "No results found"}
 	}
 
+	candidate := resp.Candidates[0]
 	text := ""
-	for _, part := range resp.Candidates[0].Content.Parts {
+	for _, part := range candidate.Content.Parts {
 		text += part.Text
 	}
 
+	cleaned := sanitizeSearchJSON(text)
 	var sr models.SearchResult
-	if err := json.Unmarshal([]byte(text), &sr); err == nil {
+	if err := json.Unmarshal([]byte(cleaned), &sr); err == nil {
 		if sr.Query == "" {
 			sr.Query = query
+		}
+		if len(sr.Sources) == 0 {
+			sr.Sources = extractSearchSources(candidate)
 		}
 		slog.Info("[SEARCH] result parsed", "query", sr.Query, "summary_len", len(sr.Summary))
 		return &sr
@@ -260,7 +265,36 @@ func (a *Agent) executeSearch(ctx context.Context, query, language string) *mode
 	if len(text) > 500 {
 		text = text[:500] + "..."
 	}
-	return &models.SearchResult{Query: query, Summary: text}
+	return &models.SearchResult{Query: query, Summary: text, Sources: extractSearchSources(candidate)}
+}
+
+func sanitizeSearchJSON(text string) string {
+	trimmed := strings.TrimSpace(text)
+	trimmed = strings.TrimPrefix(trimmed, "```json")
+	trimmed = strings.TrimPrefix(trimmed, "```")
+	trimmed = strings.TrimSuffix(trimmed, "```")
+	trimmed = strings.TrimSpace(trimmed)
+	trimmed = strings.TrimPrefix(trimmed, "JSON:")
+	return strings.TrimSpace(trimmed)
+}
+
+func extractSearchSources(candidate *genai.Candidate) []string {
+	if candidate == nil || candidate.GroundingMetadata == nil {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	var sources []string
+	for _, chunk := range candidate.GroundingMetadata.GroundingChunks {
+		if chunk == nil || chunk.Web == nil || chunk.Web.URI == "" {
+			continue
+		}
+		if _, ok := seen[chunk.Web.URI]; ok {
+			continue
+		}
+		seen[chunk.Web.URI] = struct{}{}
+		sources = append(sources, chunk.Web.URI)
+	}
+	return sources
 }
 
 func buildSearchPrompt(language string) string {
