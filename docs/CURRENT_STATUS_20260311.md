@@ -28,6 +28,8 @@ The macOS client now provides:
 - AX-first local action worker
 - before-action context with screenshot + AX metadata
 - input-field-aware `focus -> paste` execution
+- screenshot-backed text extraction for screen-derived typing requests
+- deterministic macOS system actions for basic interactions like volume control
 - wrong-target-aware verification
 
 ### Gateway
@@ -39,6 +41,9 @@ The Realtime Gateway now provides:
 - reconnect-safe lease enforcement and stale-connection rejection
 - risk gating and clarification prompts
 - narrow confidence escalator invocation for low-confidence targets
+- separate planning lanes for UI target steps, screen-derived text entry, and macOS system actions
+- text-entry payload resolution for explicit text, assistant/self references, and visible screen-derived text
+- guardrail that prevents `focus-only` completion when an insertion request still lacks text to type
 - step history persistence and per-step outcome tracking
 - navigator metrics and replay fixtures
 - async background lane dispatch after task completion
@@ -48,6 +53,7 @@ The Realtime Gateway now provides:
 The ADK Orchestrator now provides:
 
 - multimodal confidence escalator at `/navigator/escalate`
+- visible-text extraction support for screenshot-derived typing commands
 - async task summary / replay labeling / memory write path at `/navigator/background`
 - retained search, tool, analyze, and session-memory endpoints
 - Firestore-backed replay persistence

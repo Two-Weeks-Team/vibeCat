@@ -14,6 +14,7 @@ The runtime is intentionally narrow:
 - one user-facing `Live PM` session through Gemini Live + VAD
 - one `single-task action worker` for executable desktop actions
 - one local `AX-first executor` on macOS
+- one local `system action executor` for deterministic macOS interactions like volume control
 - one narrow `confidence escalator` for low-confidence target resolution
 - one async `background intelligence lane` for summaries, memory writes, research enrichment, and replay labeling
 
@@ -49,7 +50,9 @@ Responsibilities:
 - Gemini Live voice/text session UI
 - screen capture and frontmost app/window discovery
 - AX snapshot capture and normalized before-action context
+- screenshot-backed visible-text extraction support for commands that must read from the current screen before typing
 - local single-task action execution
+- deterministic macOS system actions for basic desktop controls
 - post-step verification
 - guided-mode fallback when verification is unsafe
 
@@ -89,10 +92,13 @@ Responsibilities:
 - one active task max per session
 - action state persistence and reconnect-safe lease handling
 - intent classification, ambiguity handling, and risk gating
-- one-step planning, verification, and completion tracking
+- step planning, verification, and completion tracking
+- separate planning lanes for UI target actions, screen-derived text-entry actions, and macOS system actions
 - confidence escalator invocation when AX confidence is too low
 - async background work dispatch after task completion
 - per-step metrics and replay-fixture coverage
+- text-entry payload resolution split into `literal`, `intrinsic`, and `screen-derived` sources
+- insertion requests may not end as `focus-only` success when payload resolution is still missing
 
 State and evaluation features now include:
 
@@ -115,6 +121,7 @@ Location: `backend/adk-orchestrator/`
 Responsibilities in the navigator runtime:
 
 - narrow screenshot + AX `confidence escalator`
+- visible-text extraction for commands that must copy text from the current screen into a focused field
 - async post-task summary generation
 - async cross-session memory writes
 - docs research enrichment when a task implies follow-up lookup
@@ -144,8 +151,8 @@ The execution contract is now:
 4. ambiguous requests ask one clarification question
 5. active-task conflicts ask whether to replace the current task
 6. risky requests require explicit confirmation
-7. clear low-risk requests produce exactly one planned step
-8. low-confidence targets escalate through the narrow multimodal resolver instead of blind clicking
+7. clear low-risk requests are routed into one of three execution lanes: UI target action, screen-derived text entry, or macOS system action
+8. low-confidence targets or unresolved screen-derived text escalate through the narrow multimodal resolver instead of blind clicking or blind typing
 9. the macOS worker executes one step
 10. the macOS verifier confirms success, guided mode, or failure
 11. completed tasks enqueue async summary/replay/memory/research work off the hot path
