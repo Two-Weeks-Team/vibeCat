@@ -1134,3 +1134,98 @@ func TestHandlerRejectsStaleConnectionAfterReconnect(t *testing.T) {
 		t.Fatalf("reason = %q, want stale connection rejection", reason)
 	}
 }
+
+func TestNavigatorSessionStateStepRetryCount(t *testing.T) {
+	s := &navigatorSessionState{}
+	steps := []navigatorStep{{ID: "s1", ActionType: "focus_app"}}
+	s.startPlan("test command", steps)
+
+	if s.stepRetryCount != 0 {
+		t.Fatalf("stepRetryCount after startPlan = %d, want 0", s.stepRetryCount)
+	}
+
+	n := s.incrementStepRetry()
+	if n != 1 || s.stepRetryCount != 1 {
+		t.Fatalf("after first increment: n=%d retryCount=%d, want 1", n, s.stepRetryCount)
+	}
+
+	n = s.incrementStepRetry()
+	if n != 2 || s.stepRetryCount != 2 {
+		t.Fatalf("after second increment: n=%d retryCount=%d, want 2", n, s.stepRetryCount)
+	}
+
+	s.resetStepRetry()
+	if s.stepRetryCount != 0 {
+		t.Fatalf("after resetStepRetry: retryCount=%d, want 0", s.stepRetryCount)
+	}
+
+	s.clearPlan()
+	if s.stepRetryCount != 0 {
+		t.Fatalf("after clearPlan: retryCount=%d, want 0", s.stepRetryCount)
+	}
+}
+
+func TestHandlerNavigatorSelfHealingRetryOnStepFailure(t *testing.T) {
+	reg := NewRegistry()
+	server := httptest.NewServer(Handler(reg, nil, nil, nil, nil, NewInMemoryActionStateStore()))
+	defer server.Close()
+
+	conn := dialTestWebSocket(t, server.URL)
+	defer conn.Close()
+
+	if err := conn.WriteJSON(map[string]any{
+		"type":    "navigator.command",
+		"command": "공식 문서 쪽으로 가보자",
+		"context": map[string]any{
+			"appName":              "Antigravity IDE",
+			"windowTitle":          "AuthServiceTests.swift",
+			"selectedText":         "AuthServiceTests failing",
+			"accessibilityTrusted": true,
+		},
+	}); err != nil {
+		t.Fatalf("send navigator.command: %v", err)
+	}
+
+	accepted := readJSONMessageOfType(t, conn, "navigator.commandAccepted")
+	taskID, _ := accepted["taskId"].(string)
+	planned := readJSONMessageOfType(t, conn, "navigator.stepPlanned")
+	step, _ := planned["step"].(map[string]any)
+
+	for retryAttempt := 1; retryAttempt <= 2; retryAttempt++ {
+		if err := conn.WriteJSON(map[string]any{
+			"type":            "navigator.refreshContext",
+			"command":         "공식 문서 쪽으로 가보자",
+			"taskId":          taskID,
+			"step":            step,
+			"status":          "failed",
+			"observedOutcome": "focus_failed: Chrome did not come to front",
+			"context":         map[string]any{"appName": "Antigravity IDE", "accessibilityTrusted": true},
+		}); err != nil {
+			t.Fatalf("send refreshContext attempt %d: %v", retryAttempt, err)
+		}
+
+		retried := readJSONMessageOfType(t, conn, "navigator.stepPlanned")
+		retriedTaskID, _ := retried["taskId"].(string)
+		if retriedTaskID != taskID {
+			t.Fatalf("retry %d: taskId = %q, want %q", retryAttempt, retriedTaskID, taskID)
+		}
+	}
+
+	if err := conn.WriteJSON(map[string]any{
+		"type":            "navigator.refreshContext",
+		"command":         "공식 문서 쪽으로 가보자",
+		"taskId":          taskID,
+		"step":            step,
+		"status":          "failed",
+		"observedOutcome": "focus_failed: exhausted retries",
+		"context":         map[string]any{"appName": "Antigravity IDE", "accessibilityTrusted": true},
+	}); err != nil {
+		t.Fatalf("send refreshContext exhausted: %v", err)
+	}
+
+	failed := readJSONMessageOfType(t, conn, "navigator.failed")
+	failedTaskID, _ := failed["taskId"].(string)
+	if failedTaskID != taskID {
+		t.Fatalf("failed taskId = %q, want %q", failedTaskID, taskID)
+	}
+}

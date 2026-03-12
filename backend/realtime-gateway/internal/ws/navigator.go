@@ -171,6 +171,7 @@ type navigatorSessionState struct {
 	steps                       []navigatorStep
 	nextStepIndex               int
 	currentStepID               string
+	stepRetryCount              int
 	deviceID                    string
 	connectionID                string
 	initialContext              navigatorContextSnapshot
@@ -194,6 +195,7 @@ func (s *navigatorSessionState) startPlan(command string, steps []navigatorStep)
 	s.steps = steps
 	s.nextStepIndex = 0
 	s.currentStepID = ""
+	s.stepRetryCount = 0
 	s.initialContext = navigatorContextSnapshot{}
 	s.initialContextHash = ""
 	s.initialAppName = ""
@@ -217,6 +219,7 @@ func (s *navigatorSessionState) clearPlan() {
 	s.steps = nil
 	s.nextStepIndex = 0
 	s.currentStepID = ""
+	s.stepRetryCount = 0
 	s.initialContext = navigatorContextSnapshot{}
 	s.initialContextHash = ""
 	s.initialAppName = ""
@@ -227,6 +230,17 @@ func (s *navigatorSessionState) clearPlan() {
 	s.lastVerifiedContextHash = ""
 	s.createdAt = time.Time{}
 	s.updatedAt = time.Time{}
+}
+
+func (s *navigatorSessionState) incrementStepRetry() int {
+	s.stepRetryCount++
+	s.touch()
+	return s.stepRetryCount
+}
+
+func (s *navigatorSessionState) resetStepRetry() {
+	s.stepRetryCount = 0
+	s.touch()
 }
 
 func (s *navigatorSessionState) nextStep() (navigatorStep, bool) {
