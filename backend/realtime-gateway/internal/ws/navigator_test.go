@@ -26,7 +26,7 @@ func readJSONMessageOfType(t *testing.T, conn *websocket.Conn, wantType string) 
 		if err := json.Unmarshal(payload, &msg); err != nil {
 			t.Fatalf("unmarshal %s: %v", wantType, err)
 		}
-		if msg["type"] == "traceEvent" {
+		if msg["type"] == "traceEvent" || msg["type"] == "processingState" {
 			continue
 		}
 		if msg["type"] != wantType {

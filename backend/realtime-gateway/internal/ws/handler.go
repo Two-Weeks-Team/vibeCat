@@ -702,6 +702,34 @@ func currentWindowPreparingDetail(language string) string {
 	return localizedText(language, "현재 창 기준으로 정리 중", "Preparing response from current window", "現在のウィンドウを基準に整理中")
 }
 
+func navigatorAnalyzingLabel(language string) string {
+	return localizedText(language, "명령 분석 중...", "Analyzing command...", "コマンドを分析中...")
+}
+
+func navigatorPlanningLabel(language string) string {
+	return localizedText(language, "실행 계획 중...", "Planning steps...", "ステップを計画中...")
+}
+
+func navigatorExecutingLabel(language string) string {
+	return localizedText(language, "실행 중...", "Executing action...", "アクションを実行中...")
+}
+
+func navigatorVerifyingLabel(language string) string {
+	return localizedText(language, "결과 확인 중...", "Verifying result...", "結果を確認中...")
+}
+
+func navigatorRetryingLabel(language string) string {
+	return localizedText(language, "재시도 중...", "Retrying with alternative...", "代替手段で再試行中...")
+}
+
+func navigatorCompletingLabel(language string) string {
+	return localizedText(language, "작업 완료 중...", "Completing task...", "タスクを完了中...")
+}
+
+func navigatorObservingLabel(language string) string {
+	return localizedText(language, "화면 관찰 중...", "Observing screen...", "画面を観察中...")
+}
+
 type proactiveCaptureContext struct {
 	AppName     string
 	BundleID    string
@@ -1470,6 +1498,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 		ls := &liveSessionState{errChan: make(chan error, 1)}
 		runtime := newSessionRuntime("default", c.ID)
 		navState := &navigatorSessionState{connectionID: c.ID}
+		var navigatorActiveTraceID string
 		actionStateOwner := strings.TrimSpace(c.ID)
 
 		loadActionState := func(owner string) (navigatorSessionState, bool, error) {
@@ -1885,6 +1914,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 					recordAttemptLog("received", attemptID, navMsg.Command, "received", "")
 					rootAt := time.Now()
 					sendTraceEvent(c, "navigator", traceID, "command_received", rootAt, truncateText(navMsg.Command, 120))
+					sendProcessingState(c, "navigator", traceID, "analyzing_command", navigatorAnalyzingLabel(ls.getConfig().Language), "", "", 0, true)
 					plan := planNavigatorCommand(navMsg.Command, navMsg.Context, false)
 					plan = maybeEscalateNavigatorPlan(ctx, adkClient, metrics, ls.getConfig().Language, navMsg.Command, navMsg.Context, plan, traceID)
 					switch {
@@ -1970,6 +2000,9 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 						if metrics != nil {
 							metrics.RecordNavigatorTask(context.Background(), navigatorSurfaceFromState(*navState), plan.IntentClass)
 						}
+						navigatorActiveTraceID = traceID
+						sendProcessingState(c, "navigator", traceID, "analyzing_command", "", "", "", 0, false)
+						sendProcessingState(c, "navigator", traceID, "planning_steps", navigatorPlanningLabel(ls.getConfig().Language), "", "", len(plan.Steps), true)
 						lockedSendJSON(c, map[string]any{
 							"type":             "navigator.commandAccepted",
 							"taskId":           taskID,
@@ -1980,6 +2013,8 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 						if step, ok := navState.nextStep(); ok {
 							persistNavigatorState()
 							recordFirstActionMetric()
+							sendProcessingState(c, "navigator", traceID, "planning_steps", "", "", "", 0, false)
+							sendProcessingState(c, "navigator", traceID, "executing_step", navigatorExecutingLabel(ls.getConfig().Language), step.ActionType, "", 0, true)
 							lockedSendJSON(c, map[string]any{
 								"type":    "navigator.stepPlanned",
 								"taskId":  taskID,
@@ -2236,6 +2271,8 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 						slog.Warn("navigator refresh ignored", "conn_id", c.ID, "command", refreshMsg.Command, "task_id", refreshMsg.TaskID, "step_id", refreshMsg.Step.ID, "active_command", navState.activeCommand)
 						continue
 					}
+					sendProcessingState(c, "navigator", navigatorActiveTraceID, "executing_step", "", "", "", 0, false)
+					sendProcessingState(c, "navigator", navigatorActiveTraceID, "verifying_result", navigatorVerifyingLabel(ls.getConfig().Language), "", "", 0, true)
 					if isPendingFCRefresh {
 						switch refreshMsg.Status {
 						case "success":
@@ -2246,7 +2283,9 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 								"status":          "success",
 								"observedOutcome": refreshMsg.ObservedOutcome,
 							})
+							sendProcessingState(c, "navigator", navigatorActiveTraceID, "verifying_result", "", "", "", 0, false)
 							if nextStep, hasNext := ls.advancePendingFCStep(); hasNext {
+								sendProcessingState(c, "navigator", navigatorActiveTraceID, "executing_step", navigatorExecutingLabel(ls.getConfig().Language), nextStep.ActionType, "", 0, true)
 								lockedSendJSON(c, map[string]any{
 									"type":    "navigator.stepPlanned",
 									"taskId":  refreshMsg.TaskID,
@@ -2255,11 +2294,13 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 								})
 							} else {
 								fcID, fcName, fcText, fcTarget := ls.clearPendingFC()
+								sendProcessingState(c, "navigator", navigatorActiveTraceID, "completing", navigatorCompletingLabel(ls.getConfig().Language), "", "", 0, true)
 								lockedSendJSON(c, map[string]any{
 									"type":    "navigator.completed",
 									"taskId":  refreshMsg.TaskID,
 									"summary": refreshMsg.ObservedOutcome,
 								})
+								sendProcessingState(c, "navigator", navigatorActiveTraceID, "completing", "", "", "", 0, false)
 								if adkClient != nil {
 									pv := &pendingVisionVerification{
 										fcID:     fcID,
@@ -2271,6 +2312,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 										imgCh:    make(chan visionCapturePayload, 1),
 									}
 									ls.setPendingVision(pv)
+									sendProcessingState(c, "navigator", navigatorActiveTraceID, "observing_screen", navigatorObservingLabel(ls.getConfig().Language), "", "", 0, true)
 									lockedSendJSON(c, map[string]any{
 										"type":   "requestScreenCapture",
 										"reason": "post_action_verification",
@@ -2341,6 +2383,10 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 									}
 								}
 								slog.Info("navigator FC self-healing retry", "conn_id", c.ID, "step_id", retryStep.ID, "retry", retryCount, "status", refreshMsg.Status)
+								sendProcessingState(c, "navigator", navigatorActiveTraceID, "verifying_result", "", "", "", 0, false)
+								sendProcessingState(c, "navigator", navigatorActiveTraceID, "retrying_step", navigatorRetryingLabel(ls.getConfig().Language), "", "", 0, true)
+								sendProcessingState(c, "navigator", navigatorActiveTraceID, "retrying_step", "", "", "", 0, false)
+								sendProcessingState(c, "navigator", navigatorActiveTraceID, "executing_step", navigatorExecutingLabel(ls.getConfig().Language), retryStep.ActionType, "", 0, true)
 								lockedSendJSON(c, map[string]any{
 									"type":    "navigator.stepPlanned",
 									"taskId":  refreshMsg.TaskID,
@@ -2349,6 +2395,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 								})
 								continue
 							}
+							sendProcessingState(c, "navigator", navigatorActiveTraceID, "verifying_result", "", "", "", 0, false)
 							fcID, fcName, _, _ := ls.clearPendingFC()
 							lockedSendJSON(c, map[string]any{
 								"type":   "navigator.failed",
@@ -2382,8 +2429,10 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 							"status":          "success",
 							"observedOutcome": refreshMsg.ObservedOutcome,
 						})
+						sendProcessingState(c, "navigator", navigatorActiveTraceID, "verifying_result", "", "", "", 0, false)
 						if next, ok := navState.nextStep(); ok {
 							persistNavigatorState()
+							sendProcessingState(c, "navigator", navigatorActiveTraceID, "executing_step", navigatorExecutingLabel(ls.getConfig().Language), next.ActionType, "", 0, true)
 							lockedSendJSON(c, map[string]any{
 								"type":    "navigator.stepPlanned",
 								"taskId":  refreshMsg.TaskID,
@@ -2391,17 +2440,20 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 								"message": navigatorMessageForStep(next),
 							})
 						} else {
+							sendProcessingState(c, "navigator", navigatorActiveTraceID, "completing", navigatorCompletingLabel(ls.getConfig().Language), "", "", 0, true)
 							lockedSendJSON(c, map[string]any{
 								"type":    "navigator.completed",
 								"taskId":  refreshMsg.TaskID,
 								"summary": refreshMsg.ObservedOutcome,
 							})
+							sendProcessingState(c, "navigator", navigatorActiveTraceID, "completing", "", "", "", 0, false)
 							finalizeNavigatorTask("completed", refreshMsg.ObservedOutcome, "")
 						}
 					case "guided_mode":
 						navState.recordStepResult(refreshMsg.Step, refreshMsg.Status, refreshMsg.ObservedOutcome)
 						navState.resetStepRetry()
 						recordGuidedMetrics("verification_guided_mode", &refreshMsg.Step, refreshMsg.ObservedOutcome, navigatorSurfaceFromState(*navState))
+						sendProcessingState(c, "navigator", navigatorActiveTraceID, "verifying_result", "", "", "", 0, false)
 						lockedSendJSON(c, map[string]any{
 							"type":        "navigator.guidedMode",
 							"taskId":      refreshMsg.TaskID,
@@ -2422,6 +2474,10 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 							}
 							slog.Info("navigator self-healing retry", "conn_id", c.ID, "step_id", retryStep.ID, "retry", retryCount, "status", refreshMsg.Status)
 							persistNavigatorState()
+							sendProcessingState(c, "navigator", navigatorActiveTraceID, "verifying_result", "", "", "", 0, false)
+							sendProcessingState(c, "navigator", navigatorActiveTraceID, "retrying_step", navigatorRetryingLabel(ls.getConfig().Language), "", "", 0, true)
+							sendProcessingState(c, "navigator", navigatorActiveTraceID, "retrying_step", "", "", "", 0, false)
+							sendProcessingState(c, "navigator", navigatorActiveTraceID, "executing_step", navigatorExecutingLabel(ls.getConfig().Language), retryStep.ActionType, "", 0, true)
 							lockedSendJSON(c, map[string]any{
 								"type":    "navigator.stepPlanned",
 								"taskId":  refreshMsg.TaskID,
@@ -2431,6 +2487,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 							continue
 						}
 						navState.resetStepRetry()
+						sendProcessingState(c, "navigator", navigatorActiveTraceID, "verifying_result", "", "", "", 0, false)
 						recordFailureMetrics(refreshMsg.Step, refreshMsg.ObservedOutcome, navigatorSurfaceFromState(*navState))
 						lockedSendJSON(c, map[string]any{
 							"type":   "navigator.failed",
