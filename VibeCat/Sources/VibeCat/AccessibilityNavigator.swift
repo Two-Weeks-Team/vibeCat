@@ -7,6 +7,32 @@ import VibeCatCore
 struct NavigatorExecutionResult: Sendable {
     let status: String
     let observedOutcome: String
+    let failureReason: ExecutionFailureReason?
+    let phase: ExecutionPhase
+
+    init(
+        status: String,
+        observedOutcome: String,
+        failureReason: ExecutionFailureReason? = nil,
+        phase: ExecutionPhase
+    ) {
+        self.status = status
+        self.observedOutcome = observedOutcome
+        self.failureReason = failureReason
+        self.phase = phase
+    }
+
+    static func success(_ observedOutcome: String, phase: ExecutionPhase) -> NavigatorExecutionResult {
+        NavigatorExecutionResult(status: "success", observedOutcome: observedOutcome, phase: phase)
+    }
+
+    static func failed(_ observedOutcome: String, reason: ExecutionFailureReason, phase: ExecutionPhase) -> NavigatorExecutionResult {
+        NavigatorExecutionResult(status: "failed", observedOutcome: observedOutcome, failureReason: reason, phase: phase)
+    }
+
+    static func guided(_ observedOutcome: String, reason: ExecutionFailureReason, phase: ExecutionPhase) -> NavigatorExecutionResult {
+        NavigatorExecutionResult(status: "guided_mode", observedOutcome: observedOutcome, failureReason: reason, phase: phase)
+    }
 }
 
 private struct PasteboardSnapshotItem: Sendable {
@@ -131,51 +157,52 @@ final class AccessibilityNavigator {
                 try? await Task.sleep(nanoseconds: 300_000_000)
                 return verify(step: step, before: before, defaultOutcome: "Focused \(step.targetApp)")
             }
-            return NavigatorExecutionResult(status: "failed", observedOutcome: "Could not focus \(step.targetApp)")
+            return .failed("Could not focus \(step.targetApp)", reason: .targetNotFound, phase: .activateTarget)
 
         case .openURL:
             guard let rawURL = step.url, let url = URL(string: rawURL) else {
-                return NavigatorExecutionResult(status: "failed", observedOutcome: "Missing URL")
+                return .failed("Missing URL", reason: .targetNotFound, phase: .preflight)
             }
             if open(url: url, targetApp: step.targetApp) {
                 try? await Task.sleep(nanoseconds: 600_000_000)
                 return verify(step: step, before: before, defaultOutcome: "Opened \(url.absoluteString)")
             }
-            return NavigatorExecutionResult(status: "failed", observedOutcome: "Could not open URL")
+            return .failed("Could not open URL", reason: .targetNotFound, phase: .performAction)
 
         case .hotkey:
             guard AXIsProcessTrusted() else {
-                return NavigatorExecutionResult(status: "guided_mode", observedOutcome: "Accessibility permission is required for hotkeys")
+                return .guided("Accessibility permission is required for hotkeys", reason: .focusNotReady, phase: .preflight)
             }
             guard targetAppMatchesFrontmost(step.targetApp, descriptorAppName: step.targetDescriptor.appName) else {
-                return NavigatorExecutionResult(status: "guided_mode", observedOutcome: "The target app changed before I could send keys safely.")
+                return .guided("The target app changed before I could send keys safely.", reason: .wrongTarget, phase: .preflight)
             }
             if sendHotkey(step.hotkey) {
                 try? await Task.sleep(nanoseconds: 350_000_000)
                 return verify(step: step, before: before, defaultOutcome: "Sent hotkey \(step.hotkey.joined(separator: "+"))")
             }
-            return NavigatorExecutionResult(status: "failed", observedOutcome: "Could not send hotkey")
+            return .failed("Could not send hotkey", reason: .focusNotReady, phase: .performAction)
 
         case .pasteText:
+            await prepareSurfaceForAction(step)
             guard AXIsProcessTrusted() else {
-                return NavigatorExecutionResult(status: "guided_mode", observedOutcome: "Accessibility permission is required for text entry")
+                return .guided("Accessibility permission is required for text entry", reason: .focusNotReady, phase: .preflight)
             }
             guard targetAppMatchesFrontmost(step.targetApp, descriptorAppName: step.targetDescriptor.appName) else {
-                return NavigatorExecutionResult(status: "guided_mode", observedOutcome: "The target app changed before I could insert text safely.")
+                return .guided("The target app changed before I could insert text safely.", reason: .wrongTarget, phase: .preflight)
             }
             if descriptorNeedsDirectResolution(step.targetDescriptor) {
                 guard let element = resolveElement(for: step.targetDescriptor),
                       await activateTextEntryElement(element, descriptor: step.targetDescriptor, targetApp: step.targetApp) else {
-                    return NavigatorExecutionResult(status: "guided_mode", observedOutcome: "I could not safely focus the input field for text entry.")
+                    return .guided("I could not safely focus the input field for text entry.", reason: .targetNotWritable, phase: .activateTarget)
                 }
             } else if !looksLikeTextInputRole(currentContext().focusedRole) {
-                return NavigatorExecutionResult(status: "guided_mode", observedOutcome: "I could not confirm which input field should receive the text.")
+                return .guided("I could not confirm which input field should receive the text.", reason: .wrongTarget, phase: .resolveTarget)
             }
             guard let inputText = step.inputText, !inputText.isEmpty else {
-                return NavigatorExecutionResult(status: "failed", observedOutcome: "Missing input text")
+                return .failed("Missing input text", reason: .targetNotFound, phase: .preflight)
             }
             guard let snapshot = stagePasteboardText(inputText) else {
-                return NavigatorExecutionResult(status: "failed", observedOutcome: "Could not prepare the text safely")
+                return .failed("Could not prepare the text safely", reason: .pasteRejected, phase: .performAction)
             }
             defer {
                 restorePasteboardSnapshot(snapshot)
@@ -184,24 +211,25 @@ final class AccessibilityNavigator {
                 try? await Task.sleep(nanoseconds: 350_000_000)
                 return verify(step: step, before: before, defaultOutcome: "Inserted text")
             }
-            return NavigatorExecutionResult(status: "failed", observedOutcome: "Could not insert text")
+            return .failed("Could not insert text", reason: .pasteRejected, phase: .performAction)
 
         case .copySelection:
             guard AXIsProcessTrusted() else {
-                return NavigatorExecutionResult(status: "guided_mode", observedOutcome: "Accessibility permission is required for copy")
+                return .guided("Accessibility permission is required for copy", reason: .focusNotReady, phase: .preflight)
             }
             guard targetAppMatchesFrontmost(step.targetApp, descriptorAppName: step.targetDescriptor.appName) else {
-                return NavigatorExecutionResult(status: "guided_mode", observedOutcome: "The target app changed before I could copy safely.")
+                return .guided("The target app changed before I could copy safely.", reason: .wrongTarget, phase: .preflight)
             }
             if sendHotkey(["command", "c"]) {
                 try? await Task.sleep(nanoseconds: 250_000_000)
                 return verify(step: step, before: before, defaultOutcome: "Copied the current selection")
             }
-            return NavigatorExecutionResult(status: "failed", observedOutcome: "Could not copy the selection")
+            return .failed("Could not copy the selection", reason: .focusNotReady, phase: .performAction)
 
         case .pressAX:
+            await prepareSurfaceForAction(step)
             guard AXIsProcessTrusted() else {
-                return NavigatorExecutionResult(status: "guided_mode", observedOutcome: "Accessibility permission is required for UI actions")
+                return .guided("Accessibility permission is required for UI actions", reason: .focusNotReady, phase: .preflight)
             }
             if looksLikeTextInputRole(step.targetDescriptor.role),
                targetAppMatchesFrontmost(step.targetApp, descriptorAppName: step.targetDescriptor.appName),
@@ -214,7 +242,7 @@ final class AccessibilityNavigator {
                 return verify(step: step, before: before, defaultOutcome: "Focused the target input field")
             }
             guard let element = resolveElement(for: step.targetDescriptor) else {
-                return NavigatorExecutionResult(status: "guided_mode", observedOutcome: "I found the likely target, but I should not click blindly here.")
+                return .guided("I found the likely target, but I should not click blindly here.", reason: .targetNotFound, phase: .resolveTarget)
             }
             let didAct: Bool
             let defaultOutcome: String
@@ -229,7 +257,7 @@ final class AccessibilityNavigator {
                 try? await Task.sleep(nanoseconds: 350_000_000)
                 return verify(step: step, before: before, defaultOutcome: defaultOutcome)
             }
-            return NavigatorExecutionResult(status: "guided_mode", observedOutcome: "The target was visible, but it was not safely pressable.")
+            return .guided("The target was visible, but it was not safely pressable.", reason: .targetNotWritable, phase: .performAction)
 
         case .systemAction:
             return performSystemAction(step)
@@ -237,6 +265,18 @@ final class AccessibilityNavigator {
         case .waitFor:
             try? await Task.sleep(nanoseconds: 600_000_000)
             return verify(step: step, before: before, defaultOutcome: "Observed the next UI state")
+        }
+    }
+
+    func highlightRect(for step: NavigatorStep) -> CGRect? {
+        switch step.actionType {
+        case .pressAX, .pasteText:
+            guard let element = resolveElement(for: step.targetDescriptor) else {
+                return nil
+            }
+            return rectValue(for: element)
+        default:
+            return nil
         }
     }
 
@@ -254,15 +294,12 @@ final class AccessibilityNavigator {
                 after.axSnapshot
             ].joined(separator: "\n").lowercased()
             if haystack.contains(verifyHint.lowercased()) {
-                return NavigatorExecutionResult(status: "success", observedOutcome: defaultOutcome)
+                return .success(defaultOutcome, phase: .verifyOutcome)
             }
         }
 
         if targetLooksWrong(after: after, descriptor: step.targetDescriptor) {
-            return NavigatorExecutionResult(
-                status: "guided_mode",
-                observedOutcome: "The focus moved, but not to the intended target."
-            )
+            return .guided("The focus moved, but not to the intended target.", reason: .wrongTarget, phase: .verifyOutcome)
         }
 
         let contextChanged = after.windowTitle != before.windowTitle
@@ -273,25 +310,25 @@ final class AccessibilityNavigator {
             || after.axSnapshot != before.axSnapshot
 
         if appMatches && contextChanged {
-            return NavigatorExecutionResult(status: "success", observedOutcome: defaultOutcome)
+            return .success(defaultOutcome, phase: .verifyOutcome)
         }
 
         if appMatches && step.actionType == .focusApp && !targetApp.isEmpty {
-            return NavigatorExecutionResult(status: "success", observedOutcome: defaultOutcome)
+            return .success(defaultOutcome, phase: .verifyOutcome)
         }
 
         if appMatches,
            step.actionType == .pressAX,
            looksLikeTextInputRole(step.targetDescriptor.role),
            textInputFocusAlreadySafe(after, descriptor: step.targetDescriptor) {
-            return NavigatorExecutionResult(status: "success", observedOutcome: defaultOutcome)
+            return .success(defaultOutcome, phase: .verifyOutcome)
         }
 
         if step.actionType == .systemAction {
-            return NavigatorExecutionResult(status: "success", observedOutcome: defaultOutcome)
+            return .success(defaultOutcome, phase: .verifyOutcome)
         }
 
-        return NavigatorExecutionResult(status: "guided_mode", observedOutcome: "The action ran, but I could not verify the target state safely.")
+        return .guided("The action ran, but I could not verify the target state safely.", reason: .verificationInconclusive, phase: .verifyOutcome)
     }
 
     private func targetLooksWrong(after: NavigatorContextPayload, descriptor: NavigatorTargetDescriptor) -> Bool {
@@ -317,6 +354,22 @@ final class AccessibilityNavigator {
         return false
     }
 
+    private func prepareSurfaceForAction(_ step: NavigatorStep) async {
+        let profile = NavigatorSurfaceProfile.detect(
+            targetApp: step.targetApp,
+            descriptor: step.targetDescriptor,
+            appName: currentContext().appName,
+            bundleID: currentContext().bundleId
+        )
+        guard let hotkey = profile.preferredPreparationHotkey(for: step.actionType) else {
+            return
+        }
+        guard sendHotkey(hotkey) else {
+            return
+        }
+        try? await Task.sleep(nanoseconds: 180_000_000)
+    }
+
     private func focusApp(named targetApp: String) -> Bool {
         let trimmed = targetApp.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
@@ -339,7 +392,7 @@ final class AccessibilityNavigator {
     }
 
     private func open(url: URL, targetApp: String) -> Bool {
-        if let appURL = chromeURLIfPreferred(for: targetApp) {
+        if let appURL = preferredAppURL(for: targetApp) {
             let configuration = NSWorkspace.OpenConfiguration()
             NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: configuration) { _, _ in }
             return true
@@ -347,10 +400,10 @@ final class AccessibilityNavigator {
         return NSWorkspace.shared.open(url)
     }
 
-    private func chromeURLIfPreferred(for targetApp: String) -> URL? {
-        let lowered = targetApp.lowercased()
-        guard lowered.contains("chrome") || lowered.contains("browser") else { return nil }
-        return NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.google.Chrome")
+    private func preferredAppURL(for targetApp: String) -> URL? {
+        let profile = NavigatorSurfaceProfile.detect(targetApp: targetApp)
+        guard let bundleID = profile.primaryBundleID else { return nil }
+        return NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
     }
 
     private func explicitBundleIdentifier(for targetApp: String) -> String? {
@@ -358,20 +411,11 @@ final class AccessibilityNavigator {
         if trimmed.contains(".") {
             return trimmed
         }
-
-        switch trimmed.lowercased() {
-        case "chrome", "google chrome":
-            return "com.google.Chrome"
-        case "terminal", "terminal.app":
-            return "com.apple.Terminal"
-        case "safari":
-            return "com.apple.Safari"
-        default:
-            return nil
-        }
+        return NavigatorSurfaceProfile.detect(targetApp: trimmed).primaryBundleID
     }
 
     private func targetAppMatchesFrontmost(_ targetApp: String, descriptorAppName: String? = nil) -> Bool {
+        let profile = NavigatorSurfaceProfile.detect(targetApp: targetApp, descriptor: .init(appName: descriptorAppName))
         let expectedApp = normalizedMatchValue(targetApp) ?? normalizedMatchValue(descriptorAppName)
         guard let expectedApp else {
             return false
@@ -379,12 +423,14 @@ final class AccessibilityNavigator {
         guard let frontApp = NSWorkspace.shared.frontmostApplication else {
             return false
         }
-        if let expectedBundleID = explicitBundleIdentifier(for: expectedApp),
-           frontApp.bundleIdentifier == expectedBundleID {
+        if profile.matches(bundleID: frontApp.bundleIdentifier) {
             return true
         }
         guard let frontmostName = normalizedMatchValue(frontApp.localizedName) else {
             return false
+        }
+        if profile.matches(appName: frontmostName) {
+            return true
         }
         return frontmostName.contains(expectedApp) || expectedApp.contains(frontmostName)
     }
@@ -686,9 +732,10 @@ final class AccessibilityNavigator {
     }
 
     private func hitTestTextInputRole(at point: CGPoint) -> String {
+        let cgPoint = ScreenCaptureService.MouseWindowTargetingGeometry.appKitToCGPoint(point)
         let systemWide = AXUIElementCreateSystemWide()
         var hit: AXUIElement?
-        guard AXUIElementCopyElementAtPosition(systemWide, Float(point.x), Float(point.y), &hit) == .success,
+        guard AXUIElementCopyElementAtPosition(systemWide, Float(cgPoint.x), Float(cgPoint.y), &hit) == .success,
               let hit else {
             return ""
         }
@@ -735,14 +782,14 @@ final class AccessibilityNavigator {
         switch (command, value) {
         case ("volume", "mute"):
             guard runAppleScript(lines: ["set volume output muted true"]) != nil else {
-                return NavigatorExecutionResult(status: "failed", observedOutcome: "Could not mute system audio")
+                return .failed("Could not mute system audio", reason: .surfaceAdapterUnavailable, phase: .performAction)
             }
-            return NavigatorExecutionResult(status: "success", observedOutcome: "Muted system audio")
+            return .success("Muted system audio", phase: .performAction)
         case ("volume", "unmute"):
             guard runAppleScript(lines: ["set volume output muted false"]) != nil else {
-                return NavigatorExecutionResult(status: "failed", observedOutcome: "Could not unmute system audio")
+                return .failed("Could not unmute system audio", reason: .surfaceAdapterUnavailable, phase: .performAction)
             }
-            return NavigatorExecutionResult(status: "success", observedOutcome: "Unmuted system audio")
+            return .success("Unmuted system audio", phase: .performAction)
         case ("volume", "down"), ("volume", "up"):
             let amount = max(1, min(step.systemAmount, 100))
             let direction = value == "down" ? -amount : amount
@@ -757,12 +804,12 @@ final class AccessibilityNavigator {
                 "return newVolume"
             ]
             guard let output = runAppleScript(lines: script), !output.isEmpty else {
-                return NavigatorExecutionResult(status: "failed", observedOutcome: "Could not adjust system volume")
+                return .failed("Could not adjust system volume", reason: .surfaceAdapterUnavailable, phase: .performAction)
             }
             let directionLabel = value == "down" ? "lowered" : "raised"
-            return NavigatorExecutionResult(status: "success", observedOutcome: "System volume \(directionLabel) to \(output)")
+            return .success("System volume \(directionLabel) to \(output)", phase: .performAction)
         default:
-            return NavigatorExecutionResult(status: "guided_mode", observedOutcome: "I do not support that macOS system action safely yet.")
+            return .guided("I do not support that macOS system action safely yet.", reason: .surfaceAdapterUnavailable, phase: .preflight)
         }
     }
 
@@ -1211,6 +1258,7 @@ final class AccessibilityNavigator {
         desiredLabel: String?,
         appName: String
     ) -> Int {
+        let profile = NavigatorSurfaceProfile.detect(targetApp: appName, appName: appName)
         let role = normalizedMatchValue(candidate.role) ?? ""
         let label = normalizedMatchValue(candidate.label) ?? ""
         var score = 0
@@ -1243,11 +1291,19 @@ final class AccessibilityNavigator {
         if containsKeywordAny(label, "search", "검색", "address", "url") {
             score -= 6
         }
-        if appName.contains("codex") && role.contains("textarea") {
+        if profile.kind == .antigravity && role.contains("textarea") {
             score += 8
         }
-        if appName.contains("codex") && containsKeywordAny(label, "후속 변경", "follow-up", "부탁하세요") {
+        if profile.kind == .antigravity && containsKeywordAny(label, "후속 변경", "follow-up", "부탁하세요") {
             score += 12
+        }
+        if profile.kind == .chrome,
+           containsKeywordAny(label, "search", "검색", "address", "url") {
+            score += 8
+        }
+        if profile.kind == .terminal,
+           containsKeywordAny(label, "prompt", "shell", "command") {
+            score += 8
         }
         if let height = candidate.size?.height, height >= 36 {
             score += 2
@@ -1276,6 +1332,39 @@ final class AccessibilityNavigator {
             return nil
         }
         return point
+    }
+
+    private func currentDisplayID(window: AXUIElement?, focusedElement: AXUIElement?) -> String? {
+        if let rect = rectValue(for: window) ?? rectValue(for: focusedElement) {
+            return displayID(containing: rect)
+        }
+        return mouseDisplayID()
+    }
+
+    private func mouseDisplayID() -> String {
+        guard let screen = NSScreen.screens.first(where: { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }),
+              let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
+            return ""
+        }
+        return String(displayID)
+    }
+
+    private func rectValue(for element: AXUIElement?) -> CGRect? {
+        guard let element,
+              let position = pointValue(for: element, attribute: kAXPositionAttribute),
+              let size = sizeValue(for: element, attribute: kAXSizeAttribute) else {
+            return nil
+        }
+        return CGRect(origin: position, size: size)
+    }
+
+    private func displayID(containing rect: CGRect) -> String? {
+        let probe = CGPoint(x: rect.midX, y: rect.midY)
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(probe) }),
+              let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
+            return nil
+        }
+        return String(displayID)
     }
 
     private func sizeValue(for element: AXUIElement, attribute: String) -> CGSize? {

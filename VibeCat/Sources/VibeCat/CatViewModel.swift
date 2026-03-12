@@ -15,6 +15,19 @@ final class CatViewModel {
     var onScreenFrameUpdate: ((CGRect) -> Void)?
     var activeScreenFrame: CGRect { screenBounds }
 
+    nonisolated static func combinedScreenBounds(_ screens: [NSScreen]) -> CGRect {
+        combinedBounds(screens.map(\.frame))
+    }
+
+    nonisolated static func combinedBounds(_ frames: [CGRect]) -> CGRect {
+        guard let first = frames.first else {
+            return CGRect(x: 0, y: 0, width: 1440, height: 900)
+        }
+        return frames.dropFirst().reduce(first) { partial, frame in
+            partial.union(frame)
+        }
+    }
+
     init() {
         updateScreenBounds(for: NSEvent.mouseLocation)
         homePosition = CGPoint(x: screenBounds.maxX - 120, y: screenBounds.maxY - 120)

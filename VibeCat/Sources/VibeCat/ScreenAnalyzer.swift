@@ -5,6 +5,15 @@ import VibeCatCore
 
 @MainActor
 final class ScreenAnalyzer {
+    private struct CachedDisplayContext {
+        let screenBasisID: String
+        let screenshotBase64: String
+        let activeDisplayID: String
+        let targetDisplayID: String
+        let capturedAt: Date
+        let source: String
+    }
+
     private let captureService: ScreenCaptureService
     private let gatewayClient: GatewayClient
     private let catVoice: CatVoice
@@ -19,15 +28,20 @@ final class ScreenAnalyzer {
 
     private var workspaceObserver: NSObjectProtocol?
     private var appSwitchDebounceTimer: Timer?
+    private var windowProbeTask: Task<Void, Never>?
 
     private var lastFastPathSend: Date = .distantPast
     private var lastSmartPathSend: Date = .distantPast
     private let fastPathCooldown: TimeInterval = 1.0
     private let smartPathCooldown: TimeInterval = 15.0
     private let postSpeechCooldown: TimeInterval = 5.0
+    private let maxCachedCommandContextAge: TimeInterval = 20.0
+
+    private var cachedDisplayContext: CachedDisplayContext?
 
     var onSpeechEvent: ((CompanionSpeechEvent) -> Void)?
     var onBackgroundSpeech: ((String) -> Void)?
+    var onScreenBasisUpdate: ((String, String?) -> Void)?
 
     func setAudioPlayer(_ player: AudioPlayer) {
         self.audioPlayer = player
@@ -98,7 +112,7 @@ final class ScreenAnalyzer {
 
     private func handleAppSwitch() {
         appSwitchDebounceTimer?.invalidate()
-        appSwitchDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
+        appSwitchDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: false) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self, self.isRunning, !self.isAnalyzing else { return }
                 NSLog("[CAPTURE] App switched — triggering immediate capture")
@@ -119,13 +133,37 @@ final class ScreenAnalyzer {
         stopAutomaticCapture()
         guard isRunning, automaticCaptureEnabled else { return }
         startCaptureLoop()
+        startWindowProbeLoop()
         observeAppSwitches()
     }
 
     private func stopAutomaticCapture() {
         captureLoopTask?.cancel()
         captureLoopTask = nil
+        windowProbeTask?.cancel()
+        windowProbeTask = nil
         removeAppSwitchObserver()
+    }
+
+    private func startWindowProbeLoop() {
+        windowProbeTask?.cancel()
+        windowProbeTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            while self.isRunning && !Task.isCancelled {
+                await self.refreshWindowProbe()
+                try? await Task.sleep(nanoseconds: 120_000_000)
+            }
+        }
+    }
+
+    private func refreshWindowProbe() async {
+        guard isRunning else { return }
+        guard let snapshot = await captureService.probeWindowUnderCursor() else { return }
+        if snapshot.targetKind == .displayFallback {
+            onScreenBasisUpdate?("", nil)
+            return
+        }
+        onScreenBasisUpdate?(snapshot.appName, snapshot.windowTitle)
     }
 
     private func startCaptureLoop() {
@@ -150,7 +188,7 @@ final class ScreenAnalyzer {
     }
 
     private var effectiveCaptureInterval: TimeInterval {
-        max(1.0, AppSettings.shared.captureInterval)
+        max(0.3, AppSettings.shared.captureInterval)
     }
 
     private func newTraceID(prefix: String) -> String {
@@ -182,12 +220,18 @@ final class ScreenAnalyzer {
             NSLog("[CAPTURE] unavailable: %@", reason)
             return
         case .captured(let snapshot):
+            if snapshot.targetKind == .displayFallback {
+                NSLog("[CAPTURE] ignoring display fallback snapshot for proactive analysis app=%@ display=%@", snapshot.appName, snapshot.displayID)
+                return
+            }
             NSLog("[CAPTURE] captured: %dx%d target=%@ app=%@ window=%@",
                   snapshot.image.width,
                   snapshot.image.height,
                   snapshot.targetKind.rawValue,
                   snapshot.appName,
                   snapshot.windowTitle ?? "")
+
+            cacheSnapshotForCommandContext(snapshot)
 
             let now = Date()
             let speechActive = isSpeechActive
@@ -218,6 +262,11 @@ final class ScreenAnalyzer {
         guard gatewayClient.isConnected else { return }
         let result = await captureService.forceCapture()
         if case .captured(let snapshot) = result {
+            if snapshot.targetKind == .displayFallback {
+                NSLog("[CAPTURE] forceAnalysis skipped display fallback app=%@ display=%@", snapshot.appName, snapshot.displayID)
+                return
+            }
+            cacheSnapshotForCommandContext(snapshot)
             let traceID = newTraceID(prefix: "force")
             NSLog("[TRACE] flow=proactive trace=%@ phase=force_capture_ready target=%@ app=%@ window=%@",
                   traceID,
@@ -317,6 +366,84 @@ final class ScreenAnalyzer {
         NSLog("[CAPTURE] handleCompanionSpeechEmotion: emotion=%@", String(describing: emotion))
         let state = mapEmotion(emotion)
         spriteAnimator.setState(state)
+    }
+
+    func latestNavigatorCommandContext(baseContext: NavigatorContextPayload) -> NavigatorContextPayload {
+        latestSharedScreenBasisContext(baseContext: baseContext, includeScreenshot: true)
+    }
+
+    func latestSharedScreenBasisContext(baseContext: NavigatorContextPayload, includeScreenshot: Bool) -> NavigatorContextPayload {
+        guard let cachedDisplayContext else {
+            return baseContext
+        }
+
+        let ageMs = max(0, Int(Date().timeIntervalSince(cachedDisplayContext.capturedAt) * 1000))
+        guard Double(ageMs) <= maxCachedCommandContextAge * 1000 else {
+            return baseContext
+        }
+
+        return baseContext.withScreenBasis(
+            screenBasisID: cachedDisplayContext.screenBasisID,
+            activeDisplayID: cachedDisplayContext.activeDisplayID,
+            targetDisplayID: cachedDisplayContext.targetDisplayID,
+            screenshotAgeMs: ageMs,
+            screenshotSource: cachedDisplayContext.source,
+            screenshotCached: true,
+            screenshot: includeScreenshot ? cachedDisplayContext.screenshotBase64 : nil
+        )
+    }
+
+    func freshNavigatorCommandContext(baseContext: NavigatorContextPayload) async -> NavigatorContextPayload {
+        let result = await captureService.forceCapture()
+        guard case .captured(let snapshot) = result,
+              snapshot.targetKind != .displayFallback,
+              let screenshotBase64 = ImageProcessor.toBase64JPEG(snapshot.image) else {
+            return latestNavigatorCommandContext(baseContext: baseContext)
+        }
+
+        let now = Date()
+        cachedDisplayContext = CachedDisplayContext(
+            screenBasisID: snapshot.screenBasisID,
+            screenshotBase64: screenshotBase64,
+            activeDisplayID: snapshot.displayID,
+            targetDisplayID: snapshot.displayID,
+            capturedAt: now,
+            source: "command_force_capture"
+        )
+
+        return baseContext.withScreenBasis(
+            screenBasisID: snapshot.screenBasisID,
+            activeDisplayID: snapshot.displayID,
+            targetDisplayID: snapshot.displayID,
+            screenshotAgeMs: 0,
+            screenshotSource: "command_force_capture",
+            screenshotCached: false,
+            screenshot: screenshotBase64
+        )
+    }
+
+    private func cacheSnapshotForCommandContext(_ snapshot: ScreenCaptureService.CaptureSnapshot) {
+        let image = snapshot.image
+        let displayID = snapshot.displayID
+        let capturedAt = snapshot.capturedAt
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self,
+                  let screenshotBase64 = ImageProcessor.toBase64JPEG(image) else {
+                return
+            }
+
+            DispatchQueue.main.async {
+                self.cachedDisplayContext = CachedDisplayContext(
+                    screenBasisID: snapshot.screenBasisID,
+                    screenshotBase64: screenshotBase64,
+                    activeDisplayID: displayID,
+                    targetDisplayID: displayID,
+                    capturedAt: capturedAt,
+                    source: "display_context_cache"
+                )
+                self.onScreenBasisUpdate?(snapshot.appName, snapshot.windowTitle)
+            }
+        }
     }
 
     private func mapEmotion(_ emotion: CompanionEmotion) -> SpriteAnimator.AnimationState {
