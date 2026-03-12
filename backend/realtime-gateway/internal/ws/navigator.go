@@ -28,6 +28,12 @@ type navigatorContext struct {
 	VisibleInputCandidates  int     `json:"visibleInputCandidateCount"`
 	AccessibilityPermission string  `json:"accessibilityPermission"`
 	AccessibilityTrusted    bool    `json:"accessibilityTrusted"`
+	ActiveDisplayID         string  `json:"activeDisplayID,omitempty"`
+	TargetDisplayID         string  `json:"targetDisplayID,omitempty"`
+	ScreenshotAgeMs         int     `json:"screenshotAgeMs,omitempty"`
+	ScreenshotSource        string  `json:"screenshotSource,omitempty"`
+	ScreenshotCached        bool    `json:"screenshotCached,omitempty"`
+	ScreenBasisID           string  `json:"screenBasisId,omitempty"`
 }
 
 type navigatorContextSnapshot struct {
@@ -50,23 +56,45 @@ type navigatorTargetDescriptor struct {
 }
 
 type navigatorStep struct {
-	ID               string                    `json:"id"`
-	ActionType       string                    `json:"actionType"`
-	TargetApp        string                    `json:"targetApp"`
-	TargetDescriptor navigatorTargetDescriptor `json:"targetDescriptor"`
-	InputText        string                    `json:"inputText,omitempty"`
-	ExpectedOutcome  string                    `json:"expectedOutcome"`
-	Confidence       float64                   `json:"confidence"`
-	IntentConfidence float64                   `json:"intentConfidence"`
-	RiskLevel        string                    `json:"riskLevel"`
-	ExecutionPolicy  string                    `json:"executionPolicy"`
-	FallbackPolicy   string                    `json:"fallbackPolicy"`
-	URL              string                    `json:"url,omitempty"`
-	Hotkey           []string                  `json:"hotkey,omitempty"`
-	VerifyHint       string                    `json:"verifyHint,omitempty"`
-	SystemCommand    string                    `json:"systemCommand,omitempty"`
-	SystemValue      string                    `json:"systemValue,omitempty"`
-	SystemAmount     int                       `json:"systemAmount,omitempty"`
+	ID                 string                    `json:"id"`
+	ActionType         string                    `json:"actionType"`
+	TargetApp          string                    `json:"targetApp"`
+	TargetDescriptor   navigatorTargetDescriptor `json:"targetDescriptor"`
+	InputText          string                    `json:"inputText,omitempty"`
+	ExpectedOutcome    string                    `json:"expectedOutcome"`
+	Confidence         float64                   `json:"confidence"`
+	IntentConfidence   float64                   `json:"intentConfidence"`
+	RiskLevel          string                    `json:"riskLevel"`
+	ExecutionPolicy    string                    `json:"executionPolicy"`
+	FallbackPolicy     string                    `json:"fallbackPolicy"`
+	URL                string                    `json:"url,omitempty"`
+	Hotkey             []string                  `json:"hotkey,omitempty"`
+	VerifyHint         string                    `json:"verifyHint,omitempty"`
+	SystemCommand      string                    `json:"systemCommand,omitempty"`
+	SystemValue        string                    `json:"systemValue,omitempty"`
+	SystemAmount       int                       `json:"systemAmount,omitempty"`
+	Surface            string                    `json:"surface,omitempty"`
+	MacroID            string                    `json:"macroID,omitempty"`
+	Narration          string                    `json:"narration,omitempty"`
+	VerifyContract     *navigatorVerifyContract  `json:"verifyContract,omitempty"`
+	FallbackActionType string                    `json:"fallbackActionType,omitempty"`
+	FallbackHotkey     []string                  `json:"fallbackHotkey,omitempty"`
+	MaxLocalRetries    int                       `json:"maxLocalRetries,omitempty"`
+	TimeoutMs          int                       `json:"timeoutMs,omitempty"`
+	ProofLevel         string                    `json:"proofLevel,omitempty"`
+}
+
+type navigatorVerifyContract struct {
+	ExpectedBundleID          string  `json:"expectedBundleId,omitempty"`
+	ExpectedWindowContains    string  `json:"expectedWindowContains,omitempty"`
+	ExpectedFocusedRole       string  `json:"expectedFocusedRole,omitempty"`
+	ExpectedFocusedLabel      string  `json:"expectedFocusedLabel,omitempty"`
+	ExpectedAXContains        string  `json:"expectedAXContains,omitempty"`
+	ExpectedSelectedPrefix    string  `json:"expectedSelectedTextPrefix,omitempty"`
+	RequireWritableTarget     bool    `json:"requireWritableTarget,omitempty"`
+	RequireFrontmostApp       bool    `json:"requireFrontmostApp,omitempty"`
+	MinCaptureConfidenceAfter float64 `json:"minCaptureConfidenceAfter,omitempty"`
+	ProofStrategy             string  `json:"proofStrategy,omitempty"`
 }
 
 type navigatorIntentClass string
@@ -102,6 +130,25 @@ type navigatorStepTrace struct {
 	CompletedAt      time.Time                 `json:"completedAt,omitempty"`
 }
 
+type navigatorAttemptTrace struct {
+	ID               string    `json:"id"`
+	TaskID           string    `json:"taskId,omitempty"`
+	Command          string    `json:"command"`
+	Surface          string    `json:"surface,omitempty"`
+	Route            string    `json:"route"`
+	RouteReason      string    `json:"routeReason,omitempty"`
+	ContextHash      string    `json:"contextHash,omitempty"`
+	ScreenshotSource string    `json:"screenshotSource,omitempty"`
+	ScreenshotCached bool      `json:"screenshotCached,omitempty"`
+	ScreenBasisID    string    `json:"screenBasisId,omitempty"`
+	ActiveDisplayID  string    `json:"activeDisplayId,omitempty"`
+	TargetDisplayID  string    `json:"targetDisplayId,omitempty"`
+	Outcome          string    `json:"outcome,omitempty"`
+	OutcomeDetail    string    `json:"outcomeDetail,omitempty"`
+	StartedAt        time.Time `json:"startedAt,omitempty"`
+	CompletedAt      time.Time `json:"completedAt,omitempty"`
+}
+
 type navigatorPromptKind string
 
 type navigatorClarificationResponseMode string
@@ -131,6 +178,8 @@ type navigatorSessionState struct {
 	initialAppName              string
 	initialWindowTitle          string
 	stepHistory                 []navigatorStepTrace
+	attemptHistory              []navigatorAttemptTrace
+	currentAttemptID            string
 	lastVerifiedContextHash     string
 	createdAt                   time.Time
 	updatedAt                   time.Time
@@ -150,6 +199,8 @@ func (s *navigatorSessionState) startPlan(command string, steps []navigatorStep)
 	s.initialAppName = ""
 	s.initialWindowTitle = ""
 	s.stepHistory = nil
+	s.attemptHistory = nil
+	s.currentAttemptID = ""
 	s.lastVerifiedContextHash = ""
 	now := time.Now().UTC()
 	s.createdAt = now
@@ -171,6 +222,8 @@ func (s *navigatorSessionState) clearPlan() {
 	s.initialAppName = ""
 	s.initialWindowTitle = ""
 	s.stepHistory = nil
+	s.attemptHistory = nil
+	s.currentAttemptID = ""
 	s.lastVerifiedContextHash = ""
 	s.createdAt = time.Time{}
 	s.updatedAt = time.Time{}
@@ -330,6 +383,69 @@ func (s *navigatorSessionState) recordStepResult(step navigatorStep, status, obs
 	s.touch()
 }
 
+func (s *navigatorSessionState) beginAttempt(command string, ctx navigatorContext, route, routeReason string) string {
+	attemptID := newTraceID("attempt")
+	s.currentAttemptID = attemptID
+	s.attemptHistory = append(s.attemptHistory, navigatorAttemptTrace{
+		ID:               attemptID,
+		Command:          strings.TrimSpace(command),
+		Surface:          navigatorSurfaceFromContext(ctx),
+		Route:            strings.TrimSpace(route),
+		RouteReason:      strings.TrimSpace(routeReason),
+		ContextHash:      navigatorContextHash(ctx),
+		ScreenshotSource: strings.TrimSpace(ctx.ScreenshotSource),
+		ScreenshotCached: ctx.ScreenshotCached,
+		ScreenBasisID:    strings.TrimSpace(ctx.ScreenBasisID),
+		ActiveDisplayID:  strings.TrimSpace(ctx.ActiveDisplayID),
+		TargetDisplayID:  strings.TrimSpace(ctx.TargetDisplayID),
+		StartedAt:        time.Now().UTC(),
+	})
+	s.touch()
+	return attemptID
+}
+
+func (s *navigatorSessionState) attachAttemptTask(taskID string) {
+	if strings.TrimSpace(s.currentAttemptID) == "" {
+		return
+	}
+	for idx := len(s.attemptHistory) - 1; idx >= 0; idx-- {
+		if s.attemptHistory[idx].ID != s.currentAttemptID {
+			continue
+		}
+		s.attemptHistory[idx].TaskID = strings.TrimSpace(taskID)
+		s.touch()
+		return
+	}
+}
+
+func (s *navigatorSessionState) completeAttempt(outcome, detail string) {
+	if strings.TrimSpace(s.currentAttemptID) == "" {
+		return
+	}
+	for idx := len(s.attemptHistory) - 1; idx >= 0; idx-- {
+		if s.attemptHistory[idx].ID != s.currentAttemptID {
+			continue
+		}
+		s.attemptHistory[idx].Outcome = strings.TrimSpace(outcome)
+		if strings.TrimSpace(detail) != "" {
+			s.attemptHistory[idx].OutcomeDetail = strings.TrimSpace(detail)
+		}
+		s.attemptHistory[idx].CompletedAt = time.Now().UTC()
+		s.currentAttemptID = ""
+		s.touch()
+		return
+	}
+	currentAttemptID := s.currentAttemptID
+	s.attemptHistory = append(s.attemptHistory, navigatorAttemptTrace{
+		ID:            currentAttemptID,
+		Outcome:       strings.TrimSpace(outcome),
+		OutcomeDetail: strings.TrimSpace(detail),
+		CompletedAt:   time.Now().UTC(),
+	})
+	s.currentAttemptID = ""
+	s.touch()
+}
+
 func (s *navigatorSessionState) firstPlannedStep() (navigatorStepTrace, bool) {
 	if len(s.stepHistory) == 0 {
 		return navigatorStepTrace{}, false
@@ -352,6 +468,7 @@ type navigatorTaskSnapshot struct {
 	StartedAt               time.Time
 	CompletedAt             time.Time
 	Steps                   []navigatorStepTrace
+	Attempts                []navigatorAttemptTrace
 }
 
 func (s *navigatorSessionState) snapshotTask(completedAt time.Time) *navigatorTaskSnapshot {
@@ -359,6 +476,7 @@ func (s *navigatorSessionState) snapshotTask(completedAt time.Time) *navigatorTa
 		return nil
 	}
 	steps := append([]navigatorStepTrace(nil), s.stepHistory...)
+	attempts := append([]navigatorAttemptTrace(nil), s.attemptHistory...)
 	return &navigatorTaskSnapshot{
 		TaskID:                  strings.TrimSpace(s.activeTaskID),
 		Command:                 strings.TrimSpace(s.activeCommand),
@@ -370,6 +488,7 @@ func (s *navigatorSessionState) snapshotTask(completedAt time.Time) *navigatorTa
 		StartedAt:               s.createdAt,
 		CompletedAt:             completedAt.UTC(),
 		Steps:                   steps,
+		Attempts:                attempts,
 	}
 }
 
@@ -496,7 +615,7 @@ func classifyNavigatorIntent(command string) (navigatorIntentClass, float64, str
 		"apply", "do it", "run it", "rerun", "retry", "fix", "execute", "take care of",
 		"type", "enter", "paste", "fill", "write", "focus the input", "focus the field",
 		"volume", "mute", "unmute", "quieter", "louder",
-		"반영", "적용", "실행", "다시 돌려", "다시 실행", "수정", "해결", "처리해", "눌러", "입력", "붙여넣", "써", "볼륨", "음량", "음소거", "소리",
+		"반영", "적용", "실행", "다시 돌려", "다시 실행", "수정", "해결", "처리해", "눌러", "입력", "붙여넣", "써", "쳐", "볼륨", "음량", "음소거", "소리",
 	})
 	openScore := keywordScore(lowered, []string{
 		"open", "go to", "take me", "bring me", "jump", "navigate", "show me",
@@ -521,6 +640,9 @@ func classifyNavigatorIntent(command string) (navigatorIntentClass, float64, str
 		strings.Contains(lowered, "처리해") || strings.Contains(lowered, "수정해") || strings.Contains(lowered, "눌러줘") ||
 		strings.Contains(lowered, "다시 돌려") {
 		executeScore = maxFloat(executeScore, 0.76)
+	}
+	if containsKeywordAny(lowered, "입력해 주세요", "넣어주세요", "쳐줘", "쳐 줘", "입력하자", "넣어보자") {
+		executeScore = maxFloat(executeScore, 0.78)
 	}
 	if requestsTextInsertion(command) {
 		executeScore = maxFloat(executeScore, 0.88)
@@ -759,6 +881,9 @@ func buildSystemActionSteps(command string, intentConfidence float64) []navigato
 		SystemCommand:    systemCommand,
 		SystemValue:      systemValue,
 		SystemAmount:     amount,
+		Narration:        expectedOutcome,
+		TimeoutMs:        1200,
+		ProofLevel:       "basic",
 	}}
 }
 
@@ -815,6 +940,17 @@ func buildDocsLookupSteps(command string, ctx navigatorContext, intentConfidence
 			ExecutionPolicy:  navigatorExecutionPolicyLow,
 			FallbackPolicy:   "guided_mode",
 			VerifyHint:       "chrome",
+			Surface:          "chrome",
+			MacroID:          "focus_chrome",
+			Narration:        "Switching to Chrome first.",
+			VerifyContract: &navigatorVerifyContract{
+				ExpectedBundleID:       "com.google.Chrome",
+				ExpectedWindowContains: "Chrome",
+				RequireFrontmostApp:    true,
+				ProofStrategy:          "frontmost_app",
+			},
+			TimeoutMs:  900,
+			ProofLevel: "strong",
 		})
 	}
 
@@ -834,6 +970,20 @@ func buildDocsLookupSteps(command string, ctx navigatorContext, intentConfidence
 		FallbackPolicy:   "guided_mode",
 		URL:              "https://www.google.com/search?q=" + url.QueryEscape(query),
 		VerifyHint:       "google",
+		Surface:          "chrome",
+		MacroID:          "open_docs_search",
+		Narration:        "Opening the official docs in Chrome.",
+		VerifyContract: &navigatorVerifyContract{
+			ExpectedBundleID:       "com.google.Chrome",
+			ExpectedWindowContains: "Google",
+			RequireFrontmostApp:    true,
+			ProofStrategy:          "window_change",
+		},
+		FallbackActionType: "hotkey",
+		FallbackHotkey:     []string{"command", "l"},
+		MaxLocalRetries:    1,
+		TimeoutMs:          1500,
+		ProofLevel:         "strong",
 	})
 	return steps
 }
@@ -867,6 +1017,17 @@ func buildAntigravityInlineSteps(command string, ctx navigatorContext, intentCon
 			ExecutionPolicy:  navigatorExecutionPolicyLow,
 			FallbackPolicy:   "guided_mode",
 			VerifyHint:       "antigravity",
+			Surface:          "antigravity",
+			MacroID:          "focus_antigravity",
+			Narration:        "Switching back to Antigravity.",
+			VerifyContract: &navigatorVerifyContract{
+				ExpectedBundleID:       "com.openai.codex",
+				ExpectedWindowContains: "Codex",
+				RequireFrontmostApp:    true,
+				ProofStrategy:          "frontmost_app",
+			},
+			TimeoutMs:  900,
+			ProofLevel: "strong",
 		})
 	}
 
@@ -884,6 +1045,16 @@ func buildAntigravityInlineSteps(command string, ctx navigatorContext, intentCon
 			ExecutionPolicy:  navigatorExecutionPolicyLow,
 			FallbackPolicy:   "guided_mode",
 			Hotkey:           []string{"command", "i"},
+			Surface:          "antigravity",
+			MacroID:          "open_antigravity_inline_prompt",
+			Narration:        "Opening Antigravity inline prompt.",
+			VerifyContract: &navigatorVerifyContract{
+				ExpectedBundleID:    "com.openai.codex",
+				RequireFrontmostApp: true,
+				ProofStrategy:       "frontmost_app",
+			},
+			TimeoutMs:  900,
+			ProofLevel: "strong",
 		},
 		navigatorStep{
 			ID:               "paste_antigravity_instruction",
@@ -897,6 +1068,19 @@ func buildAntigravityInlineSteps(command string, ctx navigatorContext, intentCon
 			RiskLevel:        "low",
 			ExecutionPolicy:  navigatorExecutionPolicyLow,
 			FallbackPolicy:   "guided_mode",
+			Surface:          "antigravity",
+			MacroID:          "paste_antigravity_instruction",
+			Narration:        "Inserting the Antigravity instruction.",
+			VerifyContract: &navigatorVerifyContract{
+				ExpectedBundleID:          "com.openai.codex",
+				RequireFrontmostApp:       true,
+				RequireWritableTarget:     true,
+				MinCaptureConfidenceAfter: 0.6,
+				ProofStrategy:             "text_entry",
+			},
+			MaxLocalRetries: 1,
+			TimeoutMs:       1200,
+			ProofLevel:      "strict",
 		},
 		navigatorStep{
 			ID:               "submit_antigravity_instruction",
@@ -910,6 +1094,16 @@ func buildAntigravityInlineSteps(command string, ctx navigatorContext, intentCon
 			ExecutionPolicy:  navigatorExecutionPolicyLow,
 			FallbackPolicy:   "guided_mode",
 			Hotkey:           []string{"return"},
+			Surface:          "antigravity",
+			MacroID:          "submit_antigravity_instruction",
+			Narration:        "Submitting the Antigravity instruction.",
+			VerifyContract: &navigatorVerifyContract{
+				ExpectedBundleID:    "com.openai.codex",
+				RequireFrontmostApp: true,
+				ProofStrategy:       "post_submit",
+			},
+			TimeoutMs:  900,
+			ProofLevel: "strong",
 		},
 	)
 	return steps
@@ -953,6 +1147,17 @@ func buildTerminalCommandSteps(command string, ctx navigatorContext, intentConfi
 			ExecutionPolicy:  navigatorExecutionPolicyLow,
 			FallbackPolicy:   "guided_mode",
 			VerifyHint:       "terminal",
+			Surface:          "terminal",
+			MacroID:          "focus_terminal",
+			Narration:        "Switching to Terminal.",
+			VerifyContract: &navigatorVerifyContract{
+				ExpectedBundleID:       "com.apple.Terminal",
+				ExpectedWindowContains: "Terminal",
+				RequireFrontmostApp:    true,
+				ProofStrategy:          "frontmost_app",
+			},
+			TimeoutMs:  900,
+			ProofLevel: "strong",
 		})
 	}
 	steps = append(steps,
@@ -968,6 +1173,19 @@ func buildTerminalCommandSteps(command string, ctx navigatorContext, intentConfi
 			RiskLevel:        "low",
 			ExecutionPolicy:  navigatorExecutionPolicyLow,
 			FallbackPolicy:   "guided_mode",
+			Surface:          "terminal",
+			MacroID:          "paste_terminal_command",
+			Narration:        "Placing the command into Terminal.",
+			VerifyContract: &navigatorVerifyContract{
+				ExpectedBundleID:          "com.apple.Terminal",
+				RequireFrontmostApp:       true,
+				RequireWritableTarget:     true,
+				MinCaptureConfidenceAfter: 0.55,
+				ProofStrategy:             "terminal_prompt",
+			},
+			MaxLocalRetries: 1,
+			TimeoutMs:       1100,
+			ProofLevel:      "strict",
 		},
 		navigatorStep{
 			ID:               "submit_terminal_command",
@@ -982,6 +1200,16 @@ func buildTerminalCommandSteps(command string, ctx navigatorContext, intentConfi
 			FallbackPolicy:   "guided_mode",
 			Hotkey:           []string{"return"},
 			VerifyHint:       "terminal",
+			Surface:          "terminal",
+			MacroID:          "submit_terminal_command",
+			Narration:        "Running the command in Terminal.",
+			VerifyContract: &navigatorVerifyContract{
+				ExpectedBundleID:    "com.apple.Terminal",
+				RequireFrontmostApp: true,
+				ProofStrategy:       "post_submit",
+			},
+			TimeoutMs:  900,
+			ProofLevel: "strong",
 		},
 	)
 	return steps
@@ -1009,6 +1237,17 @@ func buildAXPressStep(command string, ctx navigatorContext, intentConfidence flo
 		ExecutionPolicy:  navigatorExecutionPolicyLow,
 		FallbackPolicy:   "guided_mode",
 		VerifyHint:       strings.ToLower(label),
+		Surface:          navigatorSurfaceValue(ctx.AppName),
+		MacroID:          "press_ax_target",
+		Narration:        "Focusing the target control.",
+		VerifyContract: &navigatorVerifyContract{
+			ExpectedWindowContains: ctx.WindowTitle,
+			ExpectedFocusedLabel:   label,
+			RequireFrontmostApp:    true,
+			ProofStrategy:          "target_focus",
+		},
+		TimeoutMs:  800,
+		ProofLevel: "strong",
 	}, true
 }
 
@@ -1143,6 +1382,21 @@ func extractTextEntryPayload(command string) string {
 	}
 	if payload := extractBareDirectTextPayload(command); payload != "" {
 		return payload
+	}
+	for _, suffix := range []string{
+		"이라고 입력해줘", "이라고 입력해", "이라고 입력",
+		"라고 입력해줘", "라고 입력해", "라고 입력",
+		"이라고 쳐줘", "라고 쳐줘",
+		"이라고 써줘", "라고 써줘",
+		"이라고 넣어줘", "라고 넣어줘",
+		"이라고 적어줘", "라고 적어줘",
+	} {
+		if idx := strings.Index(strings.ToLower(command), suffix); idx > 0 {
+			candidate := strings.TrimSpace(command[:idx])
+			if candidate != "" {
+				return candidate
+			}
+		}
 	}
 	return ""
 }
@@ -1409,7 +1663,7 @@ func normalizeRoleToken(role string) string {
 func hasTextInsertionCue(lowered string) bool {
 	return containsKeywordAny(lowered,
 		"type ", "enter ", "paste ", "fill ", "write ", "insert ",
-		"입력", "붙여넣", "써", "적어", "채워",
+		"입력", "붙여넣", "써", "적어", "채워", "쳐",
 	)
 }
 

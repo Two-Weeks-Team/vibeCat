@@ -113,6 +113,30 @@ func TestPlanNavigatorCommandBuildsDocsLookupSteps(t *testing.T) {
 	if last.ActionType != "open_url" {
 		t.Fatalf("last action = %q, want open_url", last.ActionType)
 	}
+	if last.Surface != "chrome" {
+		t.Fatalf("surface = %q, want chrome", last.Surface)
+	}
+	if last.MacroID != "open_docs_search" {
+		t.Fatalf("macroID = %q, want open_docs_search", last.MacroID)
+	}
+	if last.Narration == "" {
+		t.Fatal("expected narration")
+	}
+	if last.VerifyContract == nil || last.VerifyContract.ExpectedBundleID != "com.google.Chrome" {
+		t.Fatalf("verify contract = %#v, want Chrome bundle", last.VerifyContract)
+	}
+	if last.FallbackActionType != "hotkey" {
+		t.Fatalf("fallback action = %q, want hotkey", last.FallbackActionType)
+	}
+	if len(last.FallbackHotkey) != 2 || last.FallbackHotkey[0] != "command" || last.FallbackHotkey[1] != "l" {
+		t.Fatalf("fallback hotkey = %#v, want [command l]", last.FallbackHotkey)
+	}
+	if last.TimeoutMs != 1500 {
+		t.Fatalf("timeout = %d, want 1500", last.TimeoutMs)
+	}
+	if last.ProofLevel != "strong" {
+		t.Fatalf("proofLevel = %q, want strong", last.ProofLevel)
+	}
 	if !strings.Contains(last.URL, "google.com/search") {
 		t.Fatalf("url = %q, want google search", last.URL)
 	}
@@ -418,6 +442,61 @@ func TestPlanNavigatorCommandBuildsSystemActionStepForVolume(t *testing.T) {
 	}
 	if got := plan.Steps[0].SystemAmount; got != 15 {
 		t.Fatalf("system amount = %d, want 15", got)
+	}
+}
+
+func TestBuildTerminalCommandStepsEmitExecutionContract(t *testing.T) {
+	steps := buildTerminalCommandSteps("run `swift test`", navigatorContext{AppName: "Codex", WindowTitle: "Codex"}, 0.91)
+	if len(steps) != 3 {
+		t.Fatalf("steps = %d, want 3", len(steps))
+	}
+	paste := steps[1]
+	if paste.Surface != "terminal" {
+		t.Fatalf("surface = %q, want terminal", paste.Surface)
+	}
+	if paste.MacroID != "paste_terminal_command" {
+		t.Fatalf("macroID = %q, want paste_terminal_command", paste.MacroID)
+	}
+	if paste.VerifyContract == nil || paste.VerifyContract.ExpectedBundleID != "com.apple.Terminal" {
+		t.Fatalf("verify contract = %#v, want Terminal bundle", paste.VerifyContract)
+	}
+	if paste.MaxLocalRetries != 1 {
+		t.Fatalf("maxLocalRetries = %d, want 1", paste.MaxLocalRetries)
+	}
+	if paste.ProofLevel != "strict" {
+		t.Fatalf("proofLevel = %q, want strict", paste.ProofLevel)
+	}
+
+	submit := steps[2]
+	if submit.MacroID != "submit_terminal_command" {
+		t.Fatalf("submit macroID = %q, want submit_terminal_command", submit.MacroID)
+	}
+	if submit.TimeoutMs != 900 {
+		t.Fatalf("submit timeout = %d, want 900", submit.TimeoutMs)
+	}
+}
+
+func TestBuildAntigravityInlineStepsEmitExecutionContract(t *testing.T) {
+	steps := buildAntigravityInlineSteps("이 에러를 고쳐줘", navigatorContext{AppName: "Chrome", WindowTitle: "Codex"}, 0.9)
+	if len(steps) != 4 {
+		t.Fatalf("steps = %d, want 4", len(steps))
+	}
+	paste := steps[2]
+	if paste.Surface != "antigravity" {
+		t.Fatalf("surface = %q, want antigravity", paste.Surface)
+	}
+	if paste.MacroID != "paste_antigravity_instruction" {
+		t.Fatalf("macroID = %q, want paste_antigravity_instruction", paste.MacroID)
+	}
+	if paste.VerifyContract == nil || paste.VerifyContract.ExpectedBundleID != "com.openai.codex" {
+		t.Fatalf("verify contract = %#v, want Antigravity bundle", paste.VerifyContract)
+	}
+	if paste.ProofLevel != "strict" {
+		t.Fatalf("proofLevel = %q, want strict", paste.ProofLevel)
+	}
+	submit := steps[3]
+	if submit.MacroID != "submit_antigravity_instruction" {
+		t.Fatalf("submit macroID = %q, want submit_antigravity_instruction", submit.MacroID)
 	}
 }
 

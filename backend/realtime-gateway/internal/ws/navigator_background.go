@@ -33,6 +33,7 @@ func enqueueNavigatorBackground(ctx context.Context, adkClient adkService, runti
 		StartedAt:               snapshot.StartedAt,
 		CompletedAt:             snapshot.CompletedAt,
 		Steps:                   backgroundSteps(snapshot.Steps),
+		Attempts:                backgroundAttempts(snapshot.Attempts),
 		TraceID:                 traceID,
 	}
 
@@ -52,6 +53,16 @@ func enqueueNavigatorBackground(ctx context.Context, adkClient adkService, runti
 		}
 		if runtime != nil && strings.TrimSpace(result.ResearchSummary) != "" {
 			runtime.append(fmt.Sprintf("navigator_research[%s]: %s", snapshot.TaskID, truncateText(result.ResearchSummary, 240)))
+		}
+		if runtime != nil && len(snapshot.Attempts) > 0 {
+			last := snapshot.Attempts[len(snapshot.Attempts)-1]
+			runtime.append(fmt.Sprintf(
+				"navigator_attempt[%s]: route=%s outcome=%s detail=%s",
+				last.ID,
+				truncateText(last.Route, 40),
+				truncateText(last.Outcome, 40),
+				truncateText(last.OutcomeDetail, 180),
+			))
 		}
 	}()
 }
@@ -78,6 +89,34 @@ func backgroundSteps(steps []navigatorStepTrace) []adk.NavigatorBackgroundStep {
 			ObservedOutcome: step.ObservedOutcome,
 			PlannedAt:       step.PlannedAt,
 			CompletedAt:     step.CompletedAt,
+		})
+	}
+	return out
+}
+
+func backgroundAttempts(attempts []navigatorAttemptTrace) []adk.NavigatorBackgroundAttempt {
+	if len(attempts) == 0 {
+		return nil
+	}
+	out := make([]adk.NavigatorBackgroundAttempt, 0, len(attempts))
+	for _, attempt := range attempts {
+		out = append(out, adk.NavigatorBackgroundAttempt{
+			ID:               attempt.ID,
+			TaskID:           attempt.TaskID,
+			Command:          attempt.Command,
+			Surface:          attempt.Surface,
+			Route:            attempt.Route,
+			RouteReason:      attempt.RouteReason,
+			ContextHash:      attempt.ContextHash,
+			ScreenshotSource: attempt.ScreenshotSource,
+			ScreenshotCached: attempt.ScreenshotCached,
+			ScreenBasisID:    attempt.ScreenBasisID,
+			ActiveDisplayID:  attempt.ActiveDisplayID,
+			TargetDisplayID:  attempt.TargetDisplayID,
+			Outcome:          attempt.Outcome,
+			OutcomeDetail:    attempt.OutcomeDetail,
+			StartedAt:        attempt.StartedAt,
+			CompletedAt:      attempt.CompletedAt,
 		})
 	}
 	return out

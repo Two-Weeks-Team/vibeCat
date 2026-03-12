@@ -1437,7 +1437,27 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 			}
 		}
 
+		recordAttemptLog := func(event, attemptID, command, outcome, detail string) {
+			slog.Info("navigator attempt",
+				"conn_id", c.ID,
+				"event", event,
+				"attempt_id", strings.TrimSpace(attemptID),
+				"command", truncateText(strings.TrimSpace(command), 160),
+				"outcome", strings.TrimSpace(outcome),
+				"detail", truncateText(strings.TrimSpace(detail), 200),
+			)
+			runtime.append(fmt.Sprintf(
+				"navigator_attempt[%s]: event=%s outcome=%s detail=%s command=%s",
+				strings.TrimSpace(attemptID),
+				strings.TrimSpace(event),
+				strings.TrimSpace(outcome),
+				truncateText(strings.TrimSpace(detail), 180),
+				truncateText(strings.TrimSpace(command), 120),
+			))
+		}
+
 		finalizeNavigatorTask := func(outcome, outcomeDetail, traceID string) {
+			navState.completeAttempt(outcome, outcomeDetail)
 			snapshot := navState.snapshotTask(time.Now().UTC())
 			enqueueNavigatorBackground(context.Background(), adkClient, runtime, ls.getConfig(), snapshot, outcome, outcomeDetail, traceID)
 			navState.clearPlan()
@@ -1717,12 +1737,16 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 					if !syncNavigatorState() {
 						continue
 					}
+					attemptID := navState.beginAttempt(navMsg.Command, navMsg.Context, "navigator_command", "client_reroute")
+					recordAttemptLog("received", attemptID, navMsg.Command, "received", "")
 					rootAt := time.Now()
 					sendTraceEvent(c, "navigator", traceID, "command_received", rootAt, truncateText(navMsg.Command, 120))
 					plan := planNavigatorCommand(navMsg.Command, navMsg.Context, false)
 					plan = maybeEscalateNavigatorPlan(ctx, adkClient, metrics, ls.getConfig().Language, navMsg.Command, navMsg.Context, plan, traceID)
 					switch {
 					case plan.IntentClass == navigatorIntentAmbiguous:
+						navState.completeAttempt("clarification_needed", plan.ClarifyQuestion)
+						recordAttemptLog("clarification_needed", attemptID, navMsg.Command, "clarification_needed", plan.ClarifyQuestion)
 						clarifyKind := clarificationPromptKindForPlan(plan)
 						navState.stageClarification(clarifyKind, navMsg.Command)
 						persistNavigatorState()
@@ -1736,6 +1760,8 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 							"responseMode": clarificationResponseModeForPrompt(clarifyKind),
 						})
 					case plan.IntentClass == navigatorIntentAnalyzeOnly:
+						navState.completeAttempt("analyze_only", "routed to general live analysis")
+						recordAttemptLog("analyze_only", attemptID, navMsg.Command, "analyze_only", "routed to general live analysis")
 						lockedSendJSON(c, map[string]any{
 							"type":             "navigator.commandAccepted",
 							"taskId":           "",
@@ -1745,6 +1771,8 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 						})
 						handleUserTextQuery(ctx, c, ls, adkClient, ttsClient, metrics, runtime, navMsg.Command, traceID, rootAt)
 					case len(plan.Steps) == 0:
+						navState.completeAttempt("guided_mode", "no_supported_step")
+						recordAttemptLog("guided_mode", attemptID, navMsg.Command, "guided_mode", "no_supported_step")
 						recordGuidedMetrics("no_supported_step", nil, "", navigatorSurfaceFromContext(navMsg.Context))
 						lockedSendJSON(c, map[string]any{
 							"type":        "navigator.guidedMode",
@@ -1753,6 +1781,8 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 							"instruction": "I can see the request, but I need a more specific target or a supported surface.",
 						})
 					case navState.hasActiveTask():
+						navState.completeAttempt("clarification_needed", "active_task_exists")
+						recordAttemptLog("clarification_needed", attemptID, navMsg.Command, "clarification_needed", "active_task_exists")
 						activeTaskID, activeCommand, currentStepID, _ := navState.activeTaskSnapshot()
 						if strings.TrimSpace(navMsg.Command) == strings.TrimSpace(activeCommand) {
 							lockedSendJSON(c, map[string]any{
@@ -1777,6 +1807,8 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 							"responseMode": clarificationResponseModeForPrompt(navigatorPromptReplace),
 						})
 					case plan.RiskQuestion != "":
+						navState.completeAttempt("risk_confirmation_needed", plan.RiskReason)
+						recordAttemptLog("risk_confirmation_needed", attemptID, navMsg.Command, "risk_confirmation_needed", plan.RiskReason)
 						navState.pendingRiskyCommand = navMsg.Command
 						persistNavigatorState()
 						lockedSendJSON(c, map[string]any{
@@ -1787,6 +1819,8 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 						})
 					default:
 						taskID := navState.startPlan(navMsg.Command, plan.Steps)
+						navState.attachAttemptTask(taskID)
+						recordAttemptLog("accepted", attemptID, navMsg.Command, "accepted", taskID)
 						navState.rememberInitialContext(navMsg.Context)
 						persistNavigatorState()
 						if metrics != nil {

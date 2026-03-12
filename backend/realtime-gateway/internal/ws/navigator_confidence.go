@@ -169,6 +169,19 @@ func buildTextEntryStepsForDescriptor(command string, navCtx navigatorContext, i
 		ExecutionPolicy:  navigatorExecutionPolicyLow,
 		FallbackPolicy:   "guided_mode",
 		VerifyHint:       strings.ToLower(cleanTopic(fieldSummary)),
+		Surface:          navigatorSurfaceValue(targetApp),
+		MacroID:          "focus_input_field",
+		Narration:        "Focusing the input field first.",
+		VerifyContract: &navigatorVerifyContract{
+			ExpectedBundleID:       navigatorBundleIDForSurface(targetApp),
+			ExpectedWindowContains: descriptor.WindowTitle,
+			ExpectedFocusedRole:    descriptor.Role,
+			ExpectedFocusedLabel:   fieldSummary,
+			RequireFrontmostApp:    true,
+			ProofStrategy:          "target_focus",
+		},
+		TimeoutMs:  900,
+		ProofLevel: "strong",
 	}}
 
 	if payload := resolveTextEntryPayload(command, resolvedText); payload != "" {
@@ -189,6 +202,23 @@ func buildTextEntryStepsForDescriptor(command string, navCtx navigatorContext, i
 			ExecutionPolicy:  navigatorExecutionPolicyLow,
 			FallbackPolicy:   "guided_mode",
 			VerifyHint:       strings.ToLower(cleanTopic(verifyHint)),
+			Surface:          navigatorSurfaceValue(targetApp),
+			MacroID:          "paste_input_text",
+			Narration:        "Inserting the requested text.",
+			VerifyContract: &navigatorVerifyContract{
+				ExpectedBundleID:          navigatorBundleIDForSurface(targetApp),
+				ExpectedWindowContains:    descriptor.WindowTitle,
+				ExpectedFocusedRole:       descriptor.Role,
+				RequireFrontmostApp:       true,
+				RequireWritableTarget:     true,
+				ExpectedSelectedPrefix:    strings.ToLower(cleanTopic(verifyHint)),
+				MinCaptureConfidenceAfter: 0.55,
+				ProofStrategy:             "text_entry",
+			},
+			FallbackActionType: "press_ax",
+			MaxLocalRetries:    1,
+			TimeoutMs:          1200,
+			ProofLevel:         "strict",
 		})
 	} else if requestsTextInsertion(command) {
 		return nil
@@ -215,6 +245,23 @@ func navigatorSurfaceFromNames(appName, command string) string {
 		return "Antigravity"
 	default:
 		return "Other"
+	}
+}
+
+func navigatorSurfaceValue(appName string) string {
+	return strings.ToLower(strings.TrimSpace(navigatorSurfaceFromNames(appName, "")))
+}
+
+func navigatorBundleIDForSurface(appName string) string {
+	switch navigatorSurfaceValue(appName) {
+	case "chrome":
+		return "com.google.Chrome"
+	case "terminal":
+		return "com.apple.Terminal"
+	case "antigravity":
+		return "com.openai.codex"
+	default:
+		return ""
 	}
 }
 

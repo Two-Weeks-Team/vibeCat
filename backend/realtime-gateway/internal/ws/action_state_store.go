@@ -112,6 +112,9 @@ func cloneNavigatorSessionState(state navigatorSessionState) navigatorSessionSta
 	if len(state.stepHistory) > 0 {
 		cloned.stepHistory = append([]navigatorStepTrace(nil), state.stepHistory...)
 	}
+	if len(state.attemptHistory) > 0 {
+		cloned.attemptHistory = append([]navigatorAttemptTrace(nil), state.attemptHistory...)
+	}
 	return cloned
 }
 
@@ -137,6 +140,8 @@ type firestoreActionStateRecord struct {
 	InitialWindowTitle          string                   `firestore:"initialWindowTitle,omitempty"`
 	Steps                       []navigatorStep          `firestore:"steps,omitempty"`
 	StepHistory                 []navigatorStepTrace     `firestore:"stepHistory,omitempty"`
+	AttemptHistory              []navigatorAttemptTrace  `firestore:"attemptHistory,omitempty"`
+	CurrentAttemptID            string                   `firestore:"currentAttemptId,omitempty"`
 	NextStepIndex               int                      `firestore:"nextStepIndex,omitempty"`
 	CurrentStepID               string                   `firestore:"currentStepId,omitempty"`
 	StepIndex                   int                      `firestore:"stepIndex,omitempty"`
@@ -246,6 +251,8 @@ func newFirestoreActionStateRecord(owner string, state navigatorSessionState) fi
 		InitialWindowTitle:          strings.TrimSpace(state.initialWindowTitle),
 		Steps:                       append([]navigatorStep(nil), state.steps...),
 		StepHistory:                 append([]navigatorStepTrace(nil), state.stepHistory...),
+		AttemptHistory:              append([]navigatorAttemptTrace(nil), state.attemptHistory...),
+		CurrentAttemptID:            strings.TrimSpace(state.currentAttemptID),
 		NextStepIndex:               state.nextStepIndex,
 		CurrentStepID:               strings.TrimSpace(state.currentStepID),
 		LastVerifiedContextHash:     strings.TrimSpace(state.lastVerifiedContextHash),
@@ -278,6 +285,8 @@ func (r firestoreActionStateRecord) toNavigatorSessionState() navigatorSessionSt
 		initialWindowTitle:          strings.TrimSpace(r.InitialWindowTitle),
 		steps:                       append([]navigatorStep(nil), r.Steps...),
 		stepHistory:                 append([]navigatorStepTrace(nil), r.StepHistory...),
+		attemptHistory:              append([]navigatorAttemptTrace(nil), r.AttemptHistory...),
+		currentAttemptID:            strings.TrimSpace(r.CurrentAttemptID),
 		nextStepIndex:               r.NextStepIndex,
 		currentStepID:               strings.TrimSpace(r.CurrentStepID),
 		deviceID:                    strings.TrimSpace(r.DeviceID),
