@@ -2,6 +2,16 @@ import Foundation
 import Network
 import VibeCatCore
 
+protocol GatewayWebSocketSessionProviding {
+    func makeSession() -> URLSession
+}
+
+struct DefaultGatewayWebSocketSessionProvider: GatewayWebSocketSessionProviding {
+    func makeSession() -> URLSession {
+        URLSession(configuration: .default)
+    }
+}
+
 @MainActor
 final class GatewayClient {
     enum ConnectionState {
@@ -71,11 +81,13 @@ final class GatewayClient {
     private let rapidFailureWindow: TimeInterval = 5
 
     private let settings = AppSettings.shared
+    private let webSocketSessionProvider: GatewayWebSocketSessionProviding
 
     var isTTSSpeaking: Bool { isModelTurnActive }
     var lastSpeechEndTime: Date { lastModelTurnEndTime }
 
-    init() {
+    init(webSocketSessionProvider: GatewayWebSocketSessionProviding = DefaultGatewayWebSocketSessionProvider()) {
+        self.webSocketSessionProvider = webSocketSessionProvider
         pathMonitor.pathUpdateHandler = { [weak self] path in
             Task { @MainActor [weak self] in
                 self?.handleNetworkPath(path)
@@ -389,8 +401,7 @@ final class GatewayClient {
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
-        let session = URLSession(configuration: .default)
-        self.urlSession = session
+        let session = makeOrReuseWebSocketSession()
         let task = session.webSocketTask(with: request)
         self.webSocketTask = task
         task.resume()
@@ -398,6 +409,15 @@ final class GatewayClient {
         sendSetupPayload()
         startReceiveLoop()
         startHeartbeatTimer()
+    }
+
+    func makeOrReuseWebSocketSession() -> URLSession {
+        if let urlSession {
+            return urlSession
+        }
+        let session = webSocketSessionProvider.makeSession()
+        urlSession = session
+        return session
     }
 
     private func sendSetupPayload() {
@@ -755,14 +775,13 @@ final class GatewayClient {
         }
     }
 
-    private func closeConnection() {
+    func closeConnection() {
         turnStateCooldownTask?.cancel()
         turnStateCooldownTask = nil
         isModelTurnActive = false
         lastModelTurnEndTime = .distantPast
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
         webSocketTask = nil
-        urlSession = nil
     }
 
     private func updateHeartbeatReceipt() {
