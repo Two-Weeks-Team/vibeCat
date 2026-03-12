@@ -96,8 +96,8 @@ func TestBuildLiveConfig(t *testing.T) {
 					t.Fatal("expected automatic activity detection config")
 				}
 				ad := lc.RealtimeInputConfig.AutomaticActivityDetection
-				if ad.StartOfSpeechSensitivity != genai.StartSensitivityLow {
-					t.Fatalf("StartOfSpeechSensitivity = %v, want %v", ad.StartOfSpeechSensitivity, genai.StartSensitivityLow)
+				if ad.StartOfSpeechSensitivity != genai.StartSensitivityHigh {
+					t.Fatalf("StartOfSpeechSensitivity = %v, want %v", ad.StartOfSpeechSensitivity, genai.StartSensitivityHigh)
 				}
 				if ad.EndOfSpeechSensitivity != genai.EndSensitivityLow {
 					t.Fatalf("EndOfSpeechSensitivity = %v, want %v", ad.EndOfSpeechSensitivity, genai.EndSensitivityLow)
