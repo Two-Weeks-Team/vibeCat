@@ -120,9 +120,23 @@ enum CatMotionMath {
         if let matched = screenFrames.first(where: { $0.contains(mouseGlobal) }) {
             return matched
         }
-        if let first = screenFrames.first {
-            return first
+        // CGRect.contains() excludes maxX/maxY edges, so a cursor at the
+        // very top/right of a screen won't match any rect.  Fall back to the
+        // nearest screen by squared distance instead of blindly picking the
+        // first screen (which caused cross-monitor teleportation).
+        var bestFrame: CGRect?
+        var bestDist = CGFloat.greatestFiniteMagnitude
+        for frame in screenFrames {
+            let cx = max(frame.minX, min(frame.maxX, mouseGlobal.x))
+            let cy = max(frame.minY, min(frame.maxY, mouseGlobal.y))
+            let dist = (mouseGlobal.x - cx) * (mouseGlobal.x - cx)
+                     + (mouseGlobal.y - cy) * (mouseGlobal.y - cy)
+            if dist < bestDist {
+                bestDist = dist
+                bestFrame = frame
+            }
         }
+        if let best = bestFrame { return best }
         return CGRect(x: 0, y: 0, width: 1440, height: 900)
     }
 }
