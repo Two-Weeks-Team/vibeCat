@@ -214,6 +214,7 @@ type sessionRuntime struct {
 	conversationHistory  []string
 	executionHistory     []string
 	observabilityHistory []string
+	lastFCTargetApp      string // most recent target app from FC calls (focus_app, open_url, text_entry)
 }
 
 func newSessionRuntime(defaultUserID, defaultSessionID string) *sessionRuntime {
@@ -232,6 +233,20 @@ func (sr *sessionRuntime) setIdentity(userID, sessionID string) {
 	if strings.TrimSpace(sessionID) != "" {
 		sr.sessionID = sessionID
 	}
+}
+
+func (sr *sessionRuntime) setLastFCTargetApp(app string) {
+	sr.mu.Lock()
+	defer sr.mu.Unlock()
+	if app != "" {
+		sr.lastFCTargetApp = app
+	}
+}
+
+func (sr *sessionRuntime) getLastFCTargetApp() string {
+	sr.mu.Lock()
+	defer sr.mu.Unlock()
+	return sr.lastFCTargetApp
 }
 
 func (sr *sessionRuntime) appendConversation(event string) {
@@ -2422,7 +2437,12 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 							sendProcessingState(c, "navigator", navigatorActiveTraceID, "verifying_result", "", "", "", 0, false)
 							if nextStep, hasNext := ls.advancePendingFCStep(); hasNext {
 								sendProcessingState(c, "navigator", navigatorActiveTraceID, "observing_screen", navigatorObservingLabel(ls.getConfig().Language), "", "", 0, true)
-								time.Sleep(150 * time.Millisecond)
+								prevStepAction := refreshMsg.Step.ActionType
+								if nextStep.ActionType == "focus_app" || prevStepAction == "focus_app" {
+									time.Sleep(500 * time.Millisecond)
+								} else {
+									time.Sleep(150 * time.Millisecond)
+								}
 								sendProcessingState(c, "navigator", navigatorActiveTraceID, "observing_screen", "", "", "", 0, false)
 								sendProcessingState(c, "navigator", navigatorActiveTraceID, "executing_step", navigatorExecutingLabel(ls.getConfig().Language), nextStep.ActionType, "", 0, true)
 								lockedSendJSON(c, map[string]any{
@@ -3250,6 +3270,13 @@ func handleNavigateTextEntryToolCall(c *Conn, sess *live.Session, ls *liveSessio
 	sendTraceEvent(c, "navigator", traceID, "function_call_text_entry", rootAt, fmt.Sprintf("text_len=%d target=%q submit=%v", len(text), target, submit))
 
 	targetApp := resolveToolCallTargetApp(target)
+	if targetApp == "" {
+		if fallback := runtime.getLastFCTargetApp(); fallback != "" {
+			slog.Info("[GEMINI-RX] navigate_text_entry: no target, using lastFCTargetApp fallback", "conn_id", c.ID, "fallback", fallback)
+			targetApp = fallback
+		}
+	}
+	runtime.setLastFCTargetApp(targetApp)
 	targetLabel := resolveToolCallTargetLabel(target)
 
 	steps := buildToolCallTextEntrySteps(text, targetApp, targetLabel, submit)
@@ -3345,7 +3372,33 @@ func buildToolCallTextEntrySteps(text, targetApp, targetLabel string, submit boo
 		verifyHint = verifyHint[:24]
 	}
 
-	steps := []navigatorStep{{
+	var steps []navigatorStep
+	if targetApp != "" {
+		steps = append(steps, navigatorStep{
+			ID:               "fc_focus_before_text_" + newConnID(),
+			ActionType:       "focus_app",
+			TargetApp:        targetApp,
+			TargetDescriptor: navigatorTargetDescriptor{AppName: targetApp},
+			ExpectedOutcome:  "Switched to " + targetApp,
+			Confidence:       0.95,
+			IntentConfidence: 0.95,
+			RiskLevel:        "low",
+			ExecutionPolicy:  navigatorExecutionPolicyLow,
+			FallbackPolicy:   "guided_mode",
+			Surface:          navigatorSurfaceValue(targetApp),
+			MacroID:          "fc_focus_before_text",
+			Narration:        "Switching to " + targetApp + " before typing.",
+			VerifyContract: &navigatorVerifyContract{
+				ExpectedBundleID:    navigatorBundleIDForSurface(targetApp),
+				RequireFrontmostApp: true,
+				ProofStrategy:       "frontmost_app",
+			},
+			TimeoutMs:  900,
+			ProofLevel: "strong",
+		})
+	}
+
+	steps = append(steps, navigatorStep{
 		ID:               "fc_paste_text_" + newConnID(),
 		ActionType:       "paste_text",
 		TargetApp:        targetApp,
@@ -3371,7 +3424,7 @@ func buildToolCallTextEntrySteps(text, targetApp, targetLabel string, submit boo
 		MaxLocalRetries: 1,
 		TimeoutMs:       1200,
 		ProofLevel:      "strong",
-	}}
+	})
 
 	if submit {
 		steps = append(steps, navigatorStep{
@@ -3577,6 +3630,7 @@ func handleNavigateFocusAppToolCall(c *Conn, sess *live.Session, ls *liveSession
 		return
 	}
 
+	runtime.setLastFCTargetApp(app)
 	taskID := "fc_" + newConnID()
 	step := buildToolCallFocusAppStep(app)
 	dispatchFCSteps(c, sess, ls, metrics, runtime, fc, taskID, app, "function_call_focus_app", []navigatorStep{step}, map[string]any{"app": app})
@@ -3593,6 +3647,7 @@ func handleNavigateOpenURLToolCall(c *Conn, sess *live.Session, ls *liveSessionS
 
 	if ctrl := ls.getCDPController(); ctrl != nil {
 		if err := ctrl.Navigate(rawURL); err == nil {
+			runtime.setLastFCTargetApp("Chrome")
 			slog.Info("[CDP] navigate_open_url executed via CDP", "conn_id", c.ID, "url", truncateText(rawURL, 80))
 			runtime.appendExecution(fmt.Sprintf("tool_call[navigate_open_url via CDP]: %s", truncateText(rawURL, 80)))
 			taskID := "fc_" + newConnID()
@@ -3616,6 +3671,7 @@ func handleNavigateOpenURLToolCall(c *Conn, sess *live.Session, ls *liveSessionS
 		}
 	}
 
+	runtime.setLastFCTargetApp("Chrome")
 	taskID := "fc_" + newConnID()
 	step := buildToolCallOpenURLStep(rawURL)
 	dispatchFCSteps(c, sess, ls, metrics, runtime, fc, taskID, rawURL, "function_call_open_url", []navigatorStep{step}, map[string]any{"url": rawURL})
@@ -3647,6 +3703,13 @@ func handleNavigateTypeAndSubmitToolCall(c *Conn, sess *live.Session, ls *liveSe
 	sendTraceEvent(c, "navigator", traceID, "function_call_type_and_submit", rootAt, fmt.Sprintf("text_len=%d target=%q submit=%v", len(text), target, submit))
 
 	targetApp := resolveToolCallTargetApp(target)
+	if targetApp == "" {
+		if fallback := runtime.getLastFCTargetApp(); fallback != "" {
+			slog.Info("[GEMINI-RX] navigate_type_and_submit: no target, using lastFCTargetApp fallback", "conn_id", c.ID, "fallback", fallback)
+			targetApp = fallback
+		}
+	}
+	runtime.setLastFCTargetApp(targetApp)
 	targetLabel := resolveToolCallTargetLabel(target)
 	steps := buildToolCallTextEntrySteps(text, targetApp, targetLabel, submit)
 	lockedSendJSON(c, map[string]any{

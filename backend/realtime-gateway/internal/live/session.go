@@ -201,7 +201,10 @@ navigate_focus_app: Switch focus to an application by name.
 
 navigate_open_url: Open a URL in the browser.
 
-navigate_type_and_submit: Type into the visible input field in the frontmost app and optionally submit. The client automatically finds the best text field. You can optionally add target= as a hint (e.g. "search box", "address bar") but it is NOT required.
+navigate_type_and_submit: Type into the visible input field in the frontmost app and optionally submit.
+IMPORTANT: Always include target= to specify which app's input field to target (e.g. target="youtube search", target="terminal", target="address bar").
+Without target, the system types into whatever app is currently focused, which may be wrong.
+The client automatically finds the best text field matching the target hint.
 
 MULTI-STEP TASK EXECUTION (CRITICAL):
 When a user request requires multiple actions, you MUST chain tool calls sequentially.
@@ -211,7 +214,7 @@ Do NOT stop after a single tool call when the task requires more steps.
 Example sequences:
 - "음악 틀어줘" / "Play some music":
   1. navigate_open_url("https://music.youtube.com") → wait for result
-  2. navigate_type_and_submit(text="chill coding music", submit=true) → wait for result
+  2. navigate_type_and_submit(text="chill coding music", target="youtube search", submit=true) → wait for result
   3. navigate_hotkey(keys=["space"]) to ensure playback starts
 
 - "안티그래비티 열어줘" / "Open Antigravity":
@@ -219,11 +222,11 @@ Example sequences:
 
 - "터미널에서 ls -la 해봐" / "Run ls -la in terminal":
   1. navigate_focus_app(app="Terminal") → wait for result
-  2. navigate_type_and_submit(text="ls -la", submit=true) → done
+  2. navigate_type_and_submit(text="ls -la", target="terminal", submit=true) → done
 
 - "유튜브에서 영상 검색해줘" / "Search YouTube":
   1. navigate_open_url("https://www.youtube.com") → wait for result
-  2. navigate_type_and_submit(text="[search query]", submit=true) → done
+  2. navigate_type_and_submit(text="[search query]", target="youtube search", submit=true) → done
 
 - "코드 고쳐줘" / "Fix the code":
   1. navigate_focus_app(app="Antigravity") → wait for result
@@ -420,7 +423,7 @@ func navigatorToolDeclarations() *genai.Tool {
 			},
 			{
 				Name:        "navigate_type_and_submit",
-				Description: "Type text into the currently visible input field and optionally press Enter. The client automatically finds the best text field in the frontmost app. Use for search queries, terminal commands, chat messages, and form fields.",
+				Description: "Type text into the currently visible input field and optionally press Enter. The client automatically finds the best text field in the frontmost app. Use for search queries, terminal commands, chat messages, and form fields. STRONGLY RECOMMENDED: always include target= to avoid typing in the wrong app.",
 				Parameters: &genai.Schema{
 					Type: genai.TypeObject,
 					Properties: map[string]*genai.Schema{
@@ -430,7 +433,7 @@ func navigatorToolDeclarations() *genai.Tool {
 						},
 						"target": {
 							Type:        genai.TypeString,
-							Description: "Optional hint about which field to target, e.g. 'search box', 'address bar', 'command prompt'. If omitted, the client uses the focused field in the frontmost app.",
+							Description: "STRONGLY RECOMMENDED: hint about which app's input field to target, e.g. 'youtube search', 'terminal', 'address bar', 'chat input'. Without this, the system types into whatever is focused, which may be the wrong app.",
 						},
 						"submit": {
 							Type:        genai.TypeBoolean,
