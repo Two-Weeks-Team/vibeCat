@@ -3398,6 +3398,31 @@ func buildToolCallTextEntrySteps(text, targetApp, targetLabel string, submit boo
 		})
 	}
 
+	isBrowser := navigatorSurfaceValue(targetApp) == "chrome"
+	labelLower := strings.ToLower(targetLabel)
+	wantsSearchActivation := isBrowser && (strings.Contains(labelLower, "search") ||
+		strings.Contains(labelLower, "검색") ||
+		strings.Contains(labelLower, "youtube"))
+	if wantsSearchActivation {
+		steps = append(steps, navigatorStep{
+			ID:               "fc_search_activate_" + newConnID(),
+			ActionType:       "hotkey",
+			TargetApp:        targetApp,
+			Hotkey:           []string{"/"},
+			ExpectedOutcome:  "Search field activated via / shortcut",
+			Confidence:       0.90,
+			IntentConfidence: 0.95,
+			RiskLevel:        "low",
+			ExecutionPolicy:  navigatorExecutionPolicyLow,
+			FallbackPolicy:   "guided_mode",
+			Surface:          navigatorSurfaceValue(targetApp),
+			MacroID:          "fc_search_activate",
+			Narration:        "Activating search field.",
+			TimeoutMs:        800,
+			ProofLevel:       "basic",
+		})
+	}
+
 	steps = append(steps, navigatorStep{
 		ID:               "fc_paste_text_" + newConnID(),
 		ActionType:       "paste_text",
@@ -3421,7 +3446,19 @@ func buildToolCallTextEntrySteps(text, targetApp, targetLabel string, submit boo
 			MinCaptureConfidenceAfter: 0.5,
 			ProofStrategy:             "text_entry",
 		},
-		MaxLocalRetries: 1,
+		FallbackActionType: func() string {
+			if isBrowser {
+				return "hotkey"
+			}
+			return ""
+		}(),
+		FallbackHotkey: func() []string {
+			if isBrowser {
+				return []string{"/"}
+			}
+			return nil
+		}(),
+		MaxLocalRetries: 2,
 		TimeoutMs:       1200,
 		ProofLevel:      "strong",
 	})
