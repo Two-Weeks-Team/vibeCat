@@ -264,6 +264,10 @@ final class ScreenAnalyzer {
                 NSLog("[CAPTURE] forceAnalysis skipped display fallback app=%@ display=%@", snapshot.appName, snapshot.displayID)
                 return
             }
+            if isLikelyBlankImage(snapshot.image) {
+                NSLog("[CAPTURE] forceAnalysis skipped: likely blank screen (white or black)")
+                return
+            }
             cacheSnapshotForCommandContext(snapshot)
             let traceID = newTraceID(prefix: "force")
             NSLog("[TRACE] flow=proactive trace=%@ phase=force_capture_ready target=%@ app=%@ window=%@",
@@ -319,6 +323,10 @@ final class ScreenAnalyzer {
             }
         }
         guard let base64 else { return }
+        if isLikelyBlankImage(img) {
+            NSLog("[CAPTURE] Smart Path skipped: likely blank screen (white or black)")
+            return
+        }
         let encodeElapsedMs = Int(Date().timeIntervalSince(encodeStart) * 1000)
 
         NSLog("[CAPTURE] Smart Path: base64=%d bytes, character=%@, context=%@",
@@ -430,6 +438,56 @@ final class ScreenAnalyzer {
                 self.onScreenBasisUpdate?(snapshot.appName, snapshot.windowTitle)
             }
         }
+    }
+
+    private func isLikelyBlankImage(_ image: CGImage) -> Bool {
+        let width = image.width
+        let height = image.height
+        guard width > 0 && height > 0 else { return true }
+
+        let sampleSize = 8
+        guard let context = CGContext(
+            data: nil,
+            width: sampleSize,
+            height: sampleSize,
+            bitsPerComponent: 8,
+            bytesPerRow: sampleSize * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return false }
+
+        context.interpolationQuality = .low
+        context.draw(image, in: CGRect(x: 0, y: 0, width: sampleSize, height: sampleSize))
+
+        guard let data = context.data else { return false }
+        let ptr = data.bindMemory(to: UInt8.self, capacity: sampleSize * sampleSize * 4)
+
+        var totalR: Int = 0, totalG: Int = 0, totalB: Int = 0
+        var minR: UInt8 = 255, minG: UInt8 = 255, minB: UInt8 = 255
+        var maxR: UInt8 = 0, maxG: UInt8 = 0, maxB: UInt8 = 0
+        let pixelCount = sampleSize * sampleSize
+
+        for i in 0..<pixelCount {
+            let r = ptr[i * 4]
+            let g = ptr[i * 4 + 1]
+            let b = ptr[i * 4 + 2]
+            totalR += Int(r); totalG += Int(g); totalB += Int(b)
+            minR = min(minR, r); minG = min(minG, g); minB = min(minB, b)
+            maxR = max(maxR, r); maxG = max(maxG, g); maxB = max(maxB, b)
+        }
+
+        let rangeR = Int(maxR) - Int(minR)
+        let rangeG = Int(maxG) - Int(minG)
+        let rangeB = Int(maxB) - Int(minB)
+        let maxRange = max(rangeR, max(rangeG, rangeB))
+
+        let avgR = totalR / pixelCount
+        let avgG = totalG / pixelCount
+        let avgB = totalB / pixelCount
+        let isNearWhite = avgR > 240 && avgG > 240 && avgB > 240
+        let isNearBlack = avgR < 15 && avgG < 15 && avgB < 15
+
+        return maxRange < 10 && (isNearWhite || isNearBlack)
     }
 
     private func mapEmotion(_ emotion: CompanionEmotion) -> SpriteAnimator.AnimationState {
