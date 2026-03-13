@@ -3969,7 +3969,7 @@ func handleNavigateTypeAndSubmitToolCall(c *Conn, sess *live.Session, ls *liveSe
 		return
 	}
 
-	ls.setPendingFC(fc.ID, fc.Name, taskID, text, "", steps[0].ID, steps[1:])
+	ls.setPendingFC(fc.ID, fc.Name, taskID, text, target, steps[0].ID, steps[1:])
 	lockedSendJSON(c, map[string]any{
 		"type":    "navigator.stepPlanned",
 		"taskId":  taskID,
