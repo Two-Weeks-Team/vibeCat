@@ -3,7 +3,7 @@ import XCTest
 @testable import VibeCat
 
 final class CatBubbleLayoutTests: XCTestCase {
-    func testStatusPlacementPinsPanelBelowCat() {
+    func testStatusPlacementGoesAboveWhenNoSpeech() {
         let catFrame = NSRect(x: 120, y: 220, width: 100, height: 100)
         let bubbleSize = NSSize(width: 180, height: 64)
         let screenFrame = NSRect(x: 0, y: 0, width: 600, height: 500)
@@ -13,14 +13,33 @@ final class CatBubbleLayoutTests: XCTestCase {
             bubbleSize: bubbleSize,
             screenFrame: screenFrame,
             mode: .status,
-            reservedBottomMinY: nil
+            reservedBottomMinY: nil,
+            isSpeechVisible: false
+        )
+
+        XCTAssertEqual(placement.tailDirection, .bottom)
+        XCTAssertEqual(placement.frame.minY, catFrame.maxY + 8, accuracy: 0.01)
+    }
+
+    func testStatusPlacementPinsBelowCatWhenSpeechVisible() {
+        let catFrame = NSRect(x: 120, y: 220, width: 100, height: 100)
+        let bubbleSize = NSSize(width: 180, height: 64)
+        let screenFrame = NSRect(x: 0, y: 0, width: 600, height: 500)
+
+        let placement = CatBubbleLayout.placement(
+            catFrame: catFrame,
+            bubbleSize: bubbleSize,
+            screenFrame: screenFrame,
+            mode: .status,
+            reservedBottomMinY: nil,
+            isSpeechVisible: true
         )
 
         XCTAssertEqual(placement.tailDirection, .top)
         XCTAssertEqual(placement.frame.maxY, catFrame.minY - 8, accuracy: 0.01)
     }
 
-    func testStatusPlacementStacksBelowWindowBadgeWhenReserved() {
+    func testStatusPlacementStacksBelowWindowBadgeWhenSpeechVisible() {
         let catFrame = NSRect(x: 120, y: 260, width: 100, height: 100)
         let bubbleSize = NSSize(width: 180, height: 64)
         let screenFrame = NSRect(x: 0, y: 0, width: 600, height: 500)
@@ -30,7 +49,8 @@ final class CatBubbleLayoutTests: XCTestCase {
             bubbleSize: bubbleSize,
             screenFrame: screenFrame,
             mode: .status,
-            reservedBottomMinY: 210
+            reservedBottomMinY: 210,
+            isSpeechVisible: true
         )
 
         XCTAssertEqual(placement.tailDirection, .top)
@@ -101,7 +121,8 @@ final class CatBubbleLayoutTests: XCTestCase {
             bubbleSize: bubbleSize,
             screenFrame: localVisibleFrame,
             mode: .status,
-            reservedBottomMinY: nil
+            reservedBottomMinY: nil,
+            isSpeechVisible: true
         )
 
         XCTAssertGreaterThanOrEqual(placement.frame.minX, localVisibleFrame.minX + 8)

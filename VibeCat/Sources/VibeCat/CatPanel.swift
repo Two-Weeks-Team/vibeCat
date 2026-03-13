@@ -30,7 +30,8 @@ final class CatPanel: NSPanel {
 
     private let imageView = NSImageView()
     private let emotionIndicator = NSTextField(labelWithString: "")
-    private let bubbleView = ChatBubbleView()
+    private let speechBubbleView = ChatBubbleView()
+    private let statusBubbleView = ChatBubbleView()
     private let spinnerView = NSProgressIndicator()
     private let privacyBadgeView = NSVisualEffectView()
     private let privacyDotView = NSView()
@@ -45,14 +46,18 @@ final class CatPanel: NSPanel {
     private weak var audioPlayer: AudioPlayer?
     private weak var screenAnalyzer: ScreenAnalyzer?
     private var smartHideTimer: Timer?
-    private var hideCountdownTimer: Timer?
+    private var speechHideCountdownTimer: Timer?
+    private var statusHideCountdownTimer: Timer?
     private var privacyBadgeHideTimer: Timer?
-    private var bubbleDuration: TimeInterval = 2.0
-    private var currentBubbleText: String?
-    private var currentBubbleMeta: String?
-    private var bubbleShowsSpinner = false
+    private var speechBubbleDuration: TimeInterval = 2.0
+    private var statusBubbleDuration: TimeInterval = 2.0
+    private var currentSpeechText: String?
+    private var currentSpeechMeta: String?
+    private var currentStatusText: String?
+    private var currentStatusMeta: String?
     private var turnActive = false
-    private var bubbleShownAt: Date?
+    private var speechShownAt: Date?
+    private var statusShownAt: Date?
     private let maxBubbleDisplayTime: TimeInterval = 15.0
     private let privacyBadgeDisplayTime: TimeInterval = 3.0
 
@@ -147,8 +152,11 @@ final class CatPanel: NSPanel {
         emotionIndicator.frame = NSRect(x: 0, y: 0, width: 28, height: 24)
         contentView.addSubview(emotionIndicator)
 
-        bubbleView.frame = NSRect(x: 0, y: 0, width: 180, height: 50)
-        contentView.addSubview(bubbleView)
+        speechBubbleView.frame = NSRect(x: 0, y: 0, width: 180, height: 50)
+        contentView.addSubview(speechBubbleView)
+
+        statusBubbleView.frame = NSRect(x: 0, y: 0, width: 180, height: 50)
+        contentView.addSubview(statusBubbleView)
     }
 
     private func wireAnimator() {
@@ -176,65 +184,92 @@ final class CatPanel: NSPanel {
 
     func showSpeechBubble(text: String, meta: String?) {
         let displayText = text
-        let wasVisible = !bubbleView.isHidden && bubbleView.alphaValue > 0
+        let wasVisible = !speechBubbleView.isHidden && speechBubbleView.alphaValue > 0
         NSLog("[CAT-PANEL] showSpeechBubble len=%d metaLen=%d wasVisible=%d", text.count, (meta ?? "").count, wasVisible ? 1 : 0)
         if let traceContext = traceLogContextProvider?() {
             NSLog("[TRACE] %@ phase=%@ text_len=%d", traceContext, wasVisible ? "bubble_update" : "bubble_show", displayText.count)
         }
-        currentBubbleText = displayText
-        currentBubbleMeta = meta
-        bubbleShowsSpinner = false
-        bubbleShownAt = Date()
-        bubbleDuration = 2.0
-        hideCountdownTimer?.invalidate()
-        hideCountdownTimer = nil
-        updateBubbleFrame()
-        if wasVisible && !bubbleView.isShowingStatus {
-            bubbleView.updateSpeech(text: displayText, meta: meta)
+        currentSpeechText = displayText
+        currentSpeechMeta = meta
+        speechShownAt = Date()
+        speechBubbleDuration = 2.0
+        speechHideCountdownTimer?.invalidate()
+        speechHideCountdownTimer = nil
+        updateSpeechBubbleFrame()
+        if wasVisible && !speechBubbleView.isShowingStatus {
+            speechBubbleView.updateSpeech(text: displayText, meta: meta)
         } else {
-            bubbleView.showSpeech(text: displayText, meta: meta)
+            speechBubbleView.showSpeech(text: displayText, meta: meta)
         }
+        updateStatusBubbleFrame()
         ensureSmartHidePolling()
     }
 
     func showStatusBubble(text: String, detail: String?) {
         NSLog("[BUBBLE] status show: text=%@ detail=%@", text, detail ?? "")
-        currentBubbleText = text
-        currentBubbleMeta = detail
-        bubbleShowsSpinner = true
-        bubbleShownAt = Date()
-        bubbleDuration = 2.0
-        hideCountdownTimer?.invalidate()
-        hideCountdownTimer = nil
-        updateBubbleFrame()
+        currentStatusText = text
+        currentStatusMeta = detail
+        statusShownAt = Date()
+        statusBubbleDuration = 2.0
+        statusHideCountdownTimer?.invalidate()
+        statusHideCountdownTimer = nil
+        updateStatusBubbleFrame()
         if !spinnerView.isHidden {
             spinnerView.stopAnimation(nil)
             spinnerView.isHidden = true
         }
-        if bubbleView.isHidden || bubbleView.alphaValue == 0 || !bubbleView.isShowingStatus {
-            bubbleView.showStatus(text: text, detail: detail)
+        if statusBubbleView.isHidden || statusBubbleView.alphaValue == 0 || !statusBubbleView.isShowingStatus {
+            statusBubbleView.showStatus(text: text, detail: detail)
         } else {
-            bubbleView.updateStatus(text: text, detail: detail)
+            statusBubbleView.updateStatus(text: text, detail: detail)
         }
         ensureSmartHidePolling()
     }
 
     func hideStatusBubbleIfShowing() {
-        guard bubbleView.isShowingStatus else { return }
-        hideBubble()
+        guard statusBubbleView.isShowingStatus else { return }
+        hideStatusBubble()
+    }
+
+    func hideSpeechBubble() {
+        if let traceContext = traceLogContextProvider?() {
+            NSLog("[TRACE] %@ phase=speech_bubble_hide", traceContext)
+        }
+        speechBubbleView.hide()
+        currentSpeechText = nil
+        currentSpeechMeta = nil
+        speechShownAt = nil
+        speechHideCountdownTimer?.invalidate()
+        speechHideCountdownTimer = nil
+        updateStatusBubbleFrame()
+        onBubbleDidHide?()
+    }
+
+    func hideStatusBubble() {
+        statusBubbleView.hide()
+        currentStatusText = nil
+        currentStatusMeta = nil
+        statusShownAt = nil
+        statusHideCountdownTimer?.invalidate()
+        statusHideCountdownTimer = nil
     }
 
     func hideBubble() {
         if let traceContext = traceLogContextProvider?() {
             NSLog("[TRACE] %@ phase=bubble_hide", traceContext)
         }
-        bubbleView.hide()
-        currentBubbleText = nil
-        currentBubbleMeta = nil
-        bubbleShowsSpinner = false
-        bubbleShownAt = nil
-        hideCountdownTimer?.invalidate()
-        hideCountdownTimer = nil
+        speechBubbleView.hide()
+        statusBubbleView.hide()
+        currentSpeechText = nil
+        currentSpeechMeta = nil
+        currentStatusText = nil
+        currentStatusMeta = nil
+        speechShownAt = nil
+        statusShownAt = nil
+        speechHideCountdownTimer?.invalidate()
+        speechHideCountdownTimer = nil
+        statusHideCountdownTimer?.invalidate()
+        statusHideCountdownTimer = nil
         smartHideTimer?.invalidate()
         smartHideTimer = nil
         onBubbleDidHide?()
@@ -260,24 +295,44 @@ final class CatPanel: NSPanel {
 
     private func evaluateBubbleHide() {
         let audioActive = audioPlayer?.isPlaying ?? false
-        let exceededMax = bubbleShownAt.map { Date().timeIntervalSince($0) > maxBubbleDisplayTime } ?? false
 
-        if exceededMax {
-            NSLog("[BUBBLE] force-hide: exceeded %.0fs max", maxBubbleDisplayTime)
-            hideBubble()
+        let speechExceeded = speechShownAt.map { Date().timeIntervalSince($0) > maxBubbleDisplayTime } ?? false
+        if speechExceeded && currentSpeechText != nil {
+            NSLog("[BUBBLE] force-hide speech: exceeded %.0fs max", maxBubbleDisplayTime)
+            hideSpeechBubble()
+        }
+
+        let statusExceeded = statusShownAt.map { Date().timeIntervalSince($0) > maxBubbleDisplayTime } ?? false
+        if statusExceeded && currentStatusText != nil {
+            NSLog("[BUBBLE] force-hide status: exceeded %.0fs max", maxBubbleDisplayTime)
+            hideStatusBubble()
+        }
+
+        if currentSpeechText == nil && currentStatusText == nil {
+            smartHideTimer?.invalidate()
+            smartHideTimer = nil
             return
         }
 
         if turnActive || audioActive {
-            hideCountdownTimer?.invalidate()
-            hideCountdownTimer = nil
+            speechHideCountdownTimer?.invalidate()
+            speechHideCountdownTimer = nil
             return
         }
 
-        guard hideCountdownTimer == nil else { return }
-        hideCountdownTimer = Timer.scheduledTimer(withTimeInterval: bubbleDuration, repeats: false) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.hideBubble()
+        if currentSpeechText != nil && speechHideCountdownTimer == nil {
+            speechHideCountdownTimer = Timer.scheduledTimer(withTimeInterval: speechBubbleDuration, repeats: false) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.hideSpeechBubble()
+                }
+            }
+        }
+
+        if currentStatusText != nil && statusHideCountdownTimer == nil {
+            statusHideCountdownTimer = Timer.scheduledTimer(withTimeInterval: statusBubbleDuration, repeats: false) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.hideStatusBubble()
+                }
             }
         }
     }
@@ -450,8 +505,11 @@ final class CatPanel: NSPanel {
         if !windowTitleBadgeView.isHidden {
             layoutWindowTitleBadge()
         }
-        if !bubbleView.isHidden, currentBubbleText != nil {
-            updateBubbleFrame()
+        if currentSpeechText != nil {
+            updateSpeechBubbleFrame()
+        }
+        if currentStatusText != nil {
+            updateStatusBubbleFrame()
         }
         onCatMoved?(catPositionInScreenCoordinates(), frame)
     }
@@ -466,8 +524,11 @@ final class CatPanel: NSPanel {
         if !windowTitleBadgeView.isHidden {
             layoutWindowTitleBadge()
         }
-        if currentBubbleText != nil {
-            updateBubbleFrame()
+        if currentSpeechText != nil {
+            updateSpeechBubbleFrame()
+        }
+        if currentStatusText != nil {
+            updateStatusBubbleFrame()
         }
     }
 
@@ -573,12 +634,16 @@ final class CatPanel: NSPanel {
         )
     }
 
-    private func updateBubbleFrame() {
-        guard let text = currentBubbleText else { return }
+    private var isSpeechBubbleVisible: Bool {
+        !speechBubbleView.isHidden && speechBubbleView.alphaValue > 0 && currentSpeechText != nil
+    }
+
+    private func updateSpeechBubbleFrame() {
+        guard let text = currentSpeechText else { return }
         guard let screenFrame = visibleFrameContainingCat(),
               let _ = contentView else { return }
 
-        let size = bubbleView.preferredSize(primary: text, meta: currentBubbleMeta, showsSpinner: bubbleShowsSpinner)
+        let size = speechBubbleView.preferredSize(primary: text, meta: currentSpeechMeta, showsSpinner: false)
         let catFrame = imageView.frame
         let localScreenFrame = screenFrame.offsetBy(dx: -frame.minX, dy: -frame.minY)
 
@@ -587,14 +652,39 @@ final class CatPanel: NSPanel {
             catFrame: catFrame,
             bubbleSize: size,
             screenFrame: localScreenFrame,
-            mode: bubbleView.currentDisplayMode,
+            mode: .speech,
             reservedBottomMinY: reservedBottomMinY
         )
 
-        bubbleView.setTailPosition(placement.tailRatio)
-        bubbleView.setTailDirection(placement.tailDirection)
-        bubbleView.frame = placement.frame
-        bubbleView.layoutSubtreeIfNeeded()
+        speechBubbleView.setTailPosition(placement.tailRatio)
+        speechBubbleView.setTailDirection(placement.tailDirection)
+        speechBubbleView.frame = placement.frame
+        speechBubbleView.layoutSubtreeIfNeeded()
+    }
+
+    private func updateStatusBubbleFrame() {
+        guard let text = currentStatusText else { return }
+        guard let screenFrame = visibleFrameContainingCat(),
+              let _ = contentView else { return }
+
+        let size = statusBubbleView.preferredSize(primary: text, meta: currentStatusMeta, showsSpinner: true)
+        let catFrame = imageView.frame
+        let localScreenFrame = screenFrame.offsetBy(dx: -frame.minX, dy: -frame.minY)
+
+        let reservedBottomMinY = windowTitleBadgeView.isHidden ? nil : windowTitleBadgeView.frame.minY
+        let placement = CatBubbleLayout.placement(
+            catFrame: catFrame,
+            bubbleSize: size,
+            screenFrame: localScreenFrame,
+            mode: .status,
+            reservedBottomMinY: reservedBottomMinY,
+            isSpeechVisible: isSpeechBubbleVisible
+        )
+
+        statusBubbleView.setTailPosition(placement.tailRatio)
+        statusBubbleView.setTailDirection(placement.tailDirection)
+        statusBubbleView.frame = placement.frame
+        statusBubbleView.layoutSubtreeIfNeeded()
     }
 
     private func visibleFrameContainingCat() -> CGRect? {

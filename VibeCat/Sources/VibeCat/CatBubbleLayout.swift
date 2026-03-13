@@ -15,7 +15,8 @@ enum CatBubbleLayout {
         bubbleSize: NSSize,
         screenFrame: NSRect,
         mode: ChatBubbleView.DisplayMode,
-        reservedBottomMinY: CGFloat? = nil
+        reservedBottomMinY: CGFloat? = nil,
+        isSpeechVisible: Bool = false
     ) -> CatBubblePlacement {
         var bubbleX = catFrame.midX - bubbleSize.width / 2
         var bubbleY = catFrame.maxY + bubbleGap
@@ -23,9 +24,21 @@ enum CatBubbleLayout {
 
         switch mode {
         case .status:
-            let topAnchor = min(catFrame.minY - bubbleGap, (reservedBottomMinY ?? catFrame.minY) - bubbleGap)
-            bubbleY = max(screenFrame.minY + edgeInset, topAnchor - bubbleSize.height)
-            tailDirection = .top
+            if isSpeechVisible {
+                // Speech is showing above → Status goes BELOW the cat
+                let topAnchor = min(catFrame.minY - bubbleGap, (reservedBottomMinY ?? catFrame.minY) - bubbleGap)
+                bubbleY = max(screenFrame.minY + edgeInset, topAnchor - bubbleSize.height)
+                tailDirection = .top
+            } else {
+                // No speech → Status goes ABOVE the cat (same as speech position)
+                let projectedTop = bubbleY + bubbleSize.height
+                if projectedTop > screenFrame.maxY - edgeInset {
+                    // Flip below if off-screen
+                    let topAnchor = min(catFrame.minY - bubbleGap, (reservedBottomMinY ?? catFrame.minY) - bubbleGap)
+                    bubbleY = max(screenFrame.minY + edgeInset, topAnchor - bubbleSize.height)
+                    tailDirection = .top
+                }
+            }
         case .speech:
             let projectedTop = bubbleY + bubbleSize.height
             if projectedTop > screenFrame.maxY - edgeInset {
