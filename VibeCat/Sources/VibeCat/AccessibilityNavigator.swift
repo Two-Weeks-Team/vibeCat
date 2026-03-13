@@ -848,10 +848,22 @@ final class AccessibilityNavigator {
         if focusTextInputElementViaAX(element) {
             NSLog("[NAV-AX] text input focus via AX succeeded")
             try? await Task.sleep(nanoseconds: 140_000_000)
-            _ = setTextInsertionCaretToEnd(element)
+            let caretOK = setTextInsertionCaretToEnd(element)
             try? await Task.sleep(nanoseconds: 80_000_000)
             if textInputElementIsReady(element, descriptor: descriptor, targetApp: targetApp) {
                 return true
+            }
+            // Browser AX trees may report web content coordinates outside the viewport,
+            // causing textInputElementIsReady to fail even though focus+caret succeeded.
+            // Accept focus+caret success for known browsers.
+            if caretOK {
+                let app = targetApp.lowercased()
+                if app.contains("chrome") || app.contains("brave") || app.contains("edge")
+                    || app.contains("arc") || app.contains("safari") || app.contains("firefox")
+                {
+                    NSLog("[NAV-AX] browser text field: accepting focus+caret success despite readiness check failure")
+                    return true
+                }
             }
         } else {
             NSLog("[NAV-AX] text input focus via AX failed")

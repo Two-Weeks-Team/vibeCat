@@ -10,7 +10,7 @@ final class AutomationMCPClient: Sendable {
     private var sidecarProcess: Process?
     private var requestCounter = 0
 
-    private var baseURL: URL { URL(string: "http://localhost:\(port)/mcp")! }
+    private var baseURL: URL { URL(string: "http://localhost:\(port)/stream")! }
 
     // MARK: - Sidecar Lifecycle
 
