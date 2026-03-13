@@ -62,16 +62,22 @@ func (p *Processor) ResolveTarget(ctx context.Context, req models.NavigatorEscal
 			Parts: []*genai.Part{{
 				Text: `You are a narrow target resolver for a macOS desktop UI navigator.
 
-Resolve only one likely target for the user's command.
+Resolve only one likely target for the user's command based on the screenshot and AX context.
 
 Rules:
 - Use the screenshot as your PRIMARY source. AX evidence is secondary.
 - When you can visually identify the target element in the screenshot, return clickX and clickY as normalized coordinates (0.0-1.0) relative to the full screenshot dimensions. clickX=0.0 is left edge, clickX=1.0 is right edge. clickY=0.0 is top edge, clickY=1.0 is bottom edge.
-- For music/video player pages (YouTube Music, YouTube, Spotify), prioritize the first playable content item, shuffle button, or play button.
-- Return guided_mode when the target is not clear enough.
+- Surface-adaptive targeting:
+  - Chrome / YouTube Music / Spotify / media players: Find the most appropriate visible affordance that would initiate or control playback — this could be a song row, album art, a circular icon, a triangle shape, or any control that starts audio. Do NOT assume a fixed label like "Play" or "Shuffle". Describe what you actually see in the screenshot.
+  - Terminal / iTerm2 / OpenCode terminal: Find the input prompt or text entry area where commands are typed — typically the last line with a shell prompt character or blinking cursor.
+  - Antigravity IDE / inline AI editors: Find the inline prompt or code editing area — typically a highlighted text field or inline input overlay.
+  - All other surfaces: Identify the single UI element that best achieves the user's stated goal based on what is visible in the screenshot.
+- Return guided_mode when the target is not clear enough from the screenshot.
 - Never invent a label that is not supported by the screenshot or AX context.
 - Keep confidence between 0.0 and 1.0.
 - role must be one of textfield, textarea, button, link, tab, menuitem, or empty.
+- Infer the user's goal from the command and surface context; express it as a short, action-oriented phrase in the goal field.
+- In verificationCue, describe the observable screen change that would confirm the action succeeded (e.g., "playback indicator becomes active", "command output appears below prompt", "inline edit field closes and diff is visible").
 - Return JSON only.`,
 			}},
 		},
@@ -180,7 +186,7 @@ func buildEscalationPrompt(req models.NavigatorEscalationRequest) string {
 	b.WriteString("If the user wants you to type text that must be copied from visible UI content, extract only the exact visible text to place into resolvedText.\n")
 	b.WriteString("If the requested text is not clearly visible, leave resolvedText empty.\n")
 	b.WriteString(`Return JSON using this schema:
-{"resolvedDescriptor":{"role":"","label":"","windowTitle":"","appName":"","relativeAnchor":"","regionHint":"","clickX":0.0,"clickY":0.0},"resolvedText":"","confidence":0.0,"fallbackRecommendation":"guided_mode|ask_clarify|safe_immediate","reason":""}`)
+{"goal":"inferred user goal as a short action phrase","resolvedDescriptor":{"role":"","label":"","windowTitle":"","appName":"","relativeAnchor":"","regionHint":"","clickX":0.0,"clickY":0.0,"verificationCue":"observable screen change that confirms success"},"resolvedText":"","confidence":0.0,"fallbackRecommendation":"guided_mode|ask_clarify|safe_immediate","reason":"","verificationCue":"observable screen change that confirms success"}`)
 	return b.String()
 }
 

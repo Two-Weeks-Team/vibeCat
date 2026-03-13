@@ -47,14 +47,15 @@ type navigatorContextSnapshot struct {
 }
 
 type navigatorTargetDescriptor struct {
-	Role           string  `json:"role,omitempty"`
-	Label          string  `json:"label,omitempty"`
-	WindowTitle    string  `json:"windowTitle,omitempty"`
-	AppName        string  `json:"appName,omitempty"`
-	RelativeAnchor string  `json:"relativeAnchor,omitempty"`
-	RegionHint     string  `json:"regionHint,omitempty"`
-	ClickX         float64 `json:"clickX,omitempty"`
-	ClickY         float64 `json:"clickY,omitempty"`
+	Role            string  `json:"role,omitempty"`
+	Label           string  `json:"label,omitempty"`
+	WindowTitle     string  `json:"windowTitle,omitempty"`
+	AppName         string  `json:"appName,omitempty"`
+	RelativeAnchor  string  `json:"relativeAnchor,omitempty"`
+	RegionHint      string  `json:"regionHint,omitempty"`
+	ClickX          float64 `json:"clickX,omitempty"`
+	ClickY          float64 `json:"clickY,omitempty"`
+	VerificationCue string  `json:"verificationCue,omitempty"`
 }
 
 type navigatorStep struct {

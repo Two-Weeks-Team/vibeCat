@@ -2583,18 +2583,23 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 											if escErr == nil && escResult != nil && escResult.ResolvedDescriptor != nil && escResult.Confidence > 0.5 {
 												slog.Info("[HANDLER] checkpoint escalated play target", "conn_id", c.ID, "label", escResult.ResolvedDescriptor.Label, "role", escResult.ResolvedDescriptor.Role, "confidence", escResult.Confidence)
 												nextToSend.TargetDescriptor = navigatorTargetDescriptor{
-													Role:           escResult.ResolvedDescriptor.Role,
-													Label:          escResult.ResolvedDescriptor.Label,
-													AppName:        firstNonEmptyString(escResult.ResolvedDescriptor.AppName, nextToSend.TargetApp),
-													WindowTitle:    escResult.ResolvedDescriptor.WindowTitle,
-													RelativeAnchor: escResult.ResolvedDescriptor.RelativeAnchor,
-													RegionHint:     escResult.ResolvedDescriptor.RegionHint,
-													ClickX:         escResult.ResolvedDescriptor.ClickX,
-													ClickY:         escResult.ResolvedDescriptor.ClickY,
+													Role:            escResult.ResolvedDescriptor.Role,
+													Label:           escResult.ResolvedDescriptor.Label,
+													AppName:         firstNonEmptyString(escResult.ResolvedDescriptor.AppName, nextToSend.TargetApp),
+													WindowTitle:     escResult.ResolvedDescriptor.WindowTitle,
+													RelativeAnchor:  escResult.ResolvedDescriptor.RelativeAnchor,
+													RegionHint:      escResult.ResolvedDescriptor.RegionHint,
+													ClickX:          escResult.ResolvedDescriptor.ClickX,
+													ClickY:          escResult.ResolvedDescriptor.ClickY,
+													VerificationCue: escResult.ResolvedDescriptor.VerificationCue,
 												}
 												nextToSend.Confidence = escResult.Confidence
-												nextToSend.ExpectedOutcome = "Click " + escResult.ResolvedDescriptor.Label + " to start playback"
-												nextToSend.Narration = "Clicking " + escResult.ResolvedDescriptor.Label + " to play music."
+												goal := escResult.Goal
+												if goal == "" {
+													goal = "interact with " + escResult.ResolvedDescriptor.Label
+												}
+												nextToSend.ExpectedOutcome = goal
+												nextToSend.Narration = escResult.Reason
 											} else {
 												slog.Info("[HANDLER] checkpoint escalation failed or low confidence, using default play target", "conn_id", c.ID, "err", escErr)
 											}

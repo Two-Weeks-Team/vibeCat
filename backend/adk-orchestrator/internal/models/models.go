@@ -88,14 +88,15 @@ type ToolResult struct {
 }
 
 type NavigatorTargetDescriptor struct {
-	Role           string  `json:"role,omitempty"`
-	Label          string  `json:"label,omitempty"`
-	WindowTitle    string  `json:"windowTitle,omitempty"`
-	AppName        string  `json:"appName,omitempty"`
-	RelativeAnchor string  `json:"relativeAnchor,omitempty"`
-	RegionHint     string  `json:"regionHint,omitempty"`
-	ClickX         float64 `json:"clickX,omitempty"`
-	ClickY         float64 `json:"clickY,omitempty"`
+	Role            string  `json:"role,omitempty"`
+	Label           string  `json:"label,omitempty"`
+	WindowTitle     string  `json:"windowTitle,omitempty"`
+	AppName         string  `json:"appName,omitempty"`
+	RelativeAnchor  string  `json:"relativeAnchor,omitempty"`
+	RegionHint      string  `json:"regionHint,omitempty"`
+	ClickX          float64 `json:"clickX,omitempty"`
+	ClickY          float64 `json:"clickY,omitempty"`
+	VerificationCue string  `json:"verificationCue,omitempty"`
 }
 
 type NavigatorEscalationRequest struct {
@@ -122,6 +123,8 @@ type NavigatorEscalationResult struct {
 	Confidence             float64                    `json:"confidence"`
 	FallbackRecommendation string                     `json:"fallbackRecommendation,omitempty"`
 	Reason                 string                     `json:"reason,omitempty"`
+	Goal                   string                     `json:"goal,omitempty"`
+	VerificationCue        string                     `json:"verificationCue,omitempty"`
 }
 
 type NavigatorBackgroundStep struct {
