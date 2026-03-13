@@ -139,6 +139,30 @@ func TestLiveSessionStateSkipsDuplicateProactiveHintWithinCooldown(t *testing.T)
 	}
 }
 
+func TestProactiveContextHintTextReturnsEmptyForDisplayTarget(t *testing.T) {
+	got := proactiveContextHintText("ko", "[app= target=display bundle= window=]")
+	if got != "" {
+		t.Fatalf("display targetKind should return empty, got %q", got)
+	}
+}
+
+func TestShouldSkipProactiveHintBlocksABAPattern(t *testing.T) {
+	ls := &liveSessionState{}
+	now := time.Now()
+	hintA := "지금 Xcode에 열려 있어."
+	hintB := "지금 터미널이야."
+
+	if ls.shouldSkipProactiveHint(hintA, now) {
+		t.Fatal("first A should not be skipped")
+	}
+	if ls.shouldSkipProactiveHint(hintB, now.Add(5*time.Second)) {
+		t.Fatal("first B should not be skipped")
+	}
+	if !ls.shouldSkipProactiveHint(hintA, now.Add(10*time.Second)) {
+		t.Fatal("A repeated within cooldown should be skipped even after B intervened")
+	}
+}
+
 func TestMarkBargeInPendingDiscardsPendingOutputEvenBeforeModelSpeaking(t *testing.T) {
 	ls := &liveSessionState{}
 

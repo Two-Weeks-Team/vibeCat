@@ -169,8 +169,7 @@ type liveSessionState struct {
 	currentTurnTrace       string
 	currentTurnFlow        string
 	currentTurnRootAt      time.Time
-	lastProactiveHintText  string
-	lastProactiveHintAt    time.Time
+	recentProactiveHints   []proactiveHintEntry
 	proactiveAnalyzeActive bool
 
 	pendingFCMu             sync.Mutex
@@ -368,6 +367,13 @@ func (ls *liveSessionState) queueTurnTrace(traceID, flow string, rootAt time.Tim
 	ls.pendingTurnRootAt = rootAt
 }
 
+const maxRecentProactiveHints = 5
+
+type proactiveHintEntry struct {
+	text string
+	at   time.Time
+}
+
 func (ls *liveSessionState) shouldSkipProactiveHint(hintText string, now time.Time) bool {
 	normalized := strings.TrimSpace(hintText)
 	if normalized == "" {
@@ -377,14 +383,16 @@ func (ls *liveSessionState) shouldSkipProactiveHint(hintText string, now time.Ti
 	ls.mu.Lock()
 	defer ls.mu.Unlock()
 
-	if ls.lastProactiveHintText == normalized &&
-		!ls.lastProactiveHintAt.IsZero() &&
-		now.Sub(ls.lastProactiveHintAt) < proactiveContextHintCooldown {
-		return true
+	for _, entry := range ls.recentProactiveHints {
+		if entry.text == normalized && now.Sub(entry.at) < proactiveContextHintCooldown {
+			return true
+		}
 	}
 
-	ls.lastProactiveHintText = normalized
-	ls.lastProactiveHintAt = now
+	ls.recentProactiveHints = append(ls.recentProactiveHints, proactiveHintEntry{text: normalized, at: now})
+	if len(ls.recentProactiveHints) > maxRecentProactiveHints {
+		ls.recentProactiveHints = ls.recentProactiveHints[1:]
+	}
 	return false
 }
 
@@ -831,6 +839,9 @@ func proactiveContextHintText(language string, rawContext string) string {
 	if strings.Contains(appLower, "codex") || strings.Contains(bundleLower, "codex") {
 		return ""
 	}
+	if strings.Contains(targetLower, "display") {
+		return ""
+	}
 
 	switch uiLanguage(language) {
 	case "en":
@@ -845,8 +856,6 @@ func proactiveContextHintText(language string, rawContext string) string {
 			return fmt.Sprintf("%s is open in Codex. Start from the latest task result or one changed file before going wider.", subject)
 		case strings.Contains(appLower, "chrome") || strings.Contains(appLower, "safari") || strings.Contains(appLower, "arc") || strings.Contains(appLower, "firefox"):
 			return fmt.Sprintf("%s is open in the browser. Keep one source tab and one work tab, then verify the next step from there.", subject)
-		case strings.Contains(targetLower, "display"):
-			return "The whole display changed. Lock onto the one window that actually matters, then I can follow with a deeper read."
 		default:
 			return fmt.Sprintf("%s is in front. Check the last thing that changed there, then I will follow with a deeper suggestion.", subject)
 		}
@@ -862,8 +871,6 @@ func proactiveContextHintText(language string, rawContext string) string {
 			return fmt.Sprintf("いま %s は Codex です。最新のタスク結果か、直近で変えたファイル 1 つから先に確認しましょう。", subject)
 		case strings.Contains(appLower, "chrome") || strings.Contains(appLower, "safari") || strings.Contains(appLower, "arc") || strings.Contains(appLower, "firefox"):
 			return fmt.Sprintf("いま %s はブラウザです。参照タブを 1 つに絞って、次の確認点だけ先に押さえましょう。", subject)
-		case strings.Contains(targetLower, "display"):
-			return "画面全体が変わっています。まず今重要なウィンドウ 1 つに絞ると、そのあと深く追えます。"
 		default:
 			return fmt.Sprintf("いま %s を見ています。そこで最後に変わった箇所 1 つから先に確認しましょう。", subject)
 		}
@@ -879,8 +886,6 @@ func proactiveContextHintText(language string, rawContext string) string {
 			return fmt.Sprintf("지금 %s가 Codex에 열려 있어. 최근 작업 결과 하나나 방금 바뀐 파일 하나부터 먼저 보자.", subject)
 		case strings.Contains(appLower, "chrome") || strings.Contains(appLower, "safari") || strings.Contains(appLower, "arc") || strings.Contains(appLower, "firefox"):
 			return fmt.Sprintf("지금 %s가 브라우저에 열려 있어. 참고 탭 하나만 남기고 다음 확인 포인트부터 잡자.", subject)
-		case strings.Contains(targetLower, "display"):
-			return "지금은 화면 전체가 바뀌었어. 먼저 중요한 창 하나만 딱 고르면 내가 그다음 흐름을 더 깊게 이어갈게."
 		default:
 			return fmt.Sprintf("지금 %s 쪽이야. 거기서 마지막으로 바뀐 지점 하나부터 먼저 확인하자.", subject)
 		}
