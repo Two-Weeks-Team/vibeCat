@@ -372,22 +372,29 @@ final class AccessibilityNavigator {
 
     private func focusApp(named targetApp: String) -> Bool {
         let trimmed = targetApp.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return false }
+        guard !trimmed.isEmpty else {
+            NSLog("[NAV-FOCUS] empty targetApp")
+            return false
+        }
 
         if let running = NSWorkspace.shared.runningApplications.first(where: {
             ($0.localizedName ?? "").caseInsensitiveCompare(trimmed) == .orderedSame
         }) {
-            return running.activate(options: [.activateAllWindows])
+            let ok = running.activate(options: [.activateAllWindows])
+            NSLog("[NAV-FOCUS] activate '%@' pid=%d ok=%d", trimmed, running.processIdentifier, ok ? 1 : 0)
+            return ok
         }
 
         let bundleIdentifier = explicitBundleIdentifier(for: targetApp) ?? explicitBundleIdentifier(for: trimmed)
         if let bundleIdentifier,
            let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) {
+            NSLog("[NAV-FOCUS] launching '%@' via bundle=%@", trimmed, bundleIdentifier)
             let config = NSWorkspace.OpenConfiguration()
             NSWorkspace.shared.openApplication(at: appURL, configuration: config) { _, _ in }
             return true
         }
 
+        NSLog("[NAV-FOCUS] no match for '%@'", trimmed)
         return false
     }
 
@@ -474,6 +481,7 @@ final class AccessibilityNavigator {
     private func sendHotkey(_ tokens: [String]) -> Bool {
         guard let keyToken = tokens.last?.lowercased(),
               let keyCode = keyCode(for: keyToken) else {
+            NSLog("[NAV-KEY] unknown key token in %@", tokens.joined(separator: "+"))
             return false
         }
 
@@ -484,6 +492,7 @@ final class AccessibilityNavigator {
         guard let source = CGEventSource(stateID: .combinedSessionState),
               let keyDown = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true),
               let keyUp = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false) else {
+            NSLog("[NAV-KEY] CGEvent creation failed for %@", tokens.joined(separator: "+"))
             return false
         }
 

@@ -54,6 +54,7 @@ final class NavigatorActionWorker {
         onResult: @escaping @MainActor (NavigatorExecutionResult) -> Void
     ) {
         guard normalized(taskId) == activeTaskID, let command = activeCommand else {
+            NSLog("[NAV-EXEC] step dropped: taskId mismatch or no active command (given=%@ active=%@)", taskId, activeTaskID ?? "nil")
             return
         }
 
