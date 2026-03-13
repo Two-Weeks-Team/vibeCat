@@ -144,7 +144,10 @@ final class GatewayClient {
     private var lastAudioLogTime: Date = .distantPast
 
     func sendAudio(_ pcmData: Data) {
-        guard case .connected = state else { return }
+        guard case .connected = state else {
+            NSLog("[GW-OUT] sendAudio: DROPPED — not connected (%lu bytes)", pcmData.count)
+            return
+        }
         guard webSocketTask != nil else {
             NSLog("[GW-OUT] sendAudio: DROPPED — webSocketTask nil, %lu bytes", pcmData.count)
             return

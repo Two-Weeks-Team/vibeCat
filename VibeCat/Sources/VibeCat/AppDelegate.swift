@@ -103,7 +103,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var queuedVoiceNavigatorCommandTime: Date?
     private let voiceNavigatorQueueTimeout: TimeInterval = 25.0
     private var latestAudioDeviceSnapshot: AudioDeviceMonitor.Snapshot?
+    private var lastAppliedAudioRoute: AudioDeviceMonitor.Snapshot?
     private var audioDeviceChangeTask: Task<Void, Never>?
+    private var isApplyingAudioDeviceChange = false
     private var speechCaptureState: SpeechRecognizer.CaptureState = .stopped
     private let voiceNavigatorSuppressionWindow: TimeInterval = 25
 
@@ -471,6 +473,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func applyAudioDeviceChange(_ snapshot: AudioDeviceMonitor.Snapshot) {
         latestAudioDeviceSnapshot = snapshot
         refreshAudioInputStatusUI()
+
+        if let last = lastAppliedAudioRoute, snapshot.sameRoute(as: last) {
+            NSLog(
+                "[AUDIO-DEVICE] route unchanged, skipping engine rebuild trigger=%@ input=%@(%u)",
+                snapshot.trigger.rawValue,
+                snapshot.inputDeviceName,
+                snapshot.inputDeviceID
+            )
+            return
+        }
+        lastAppliedAudioRoute = snapshot
+
         NSLog(
             "[AUDIO-DEVICE] app handling change trigger=%@ input=%@(%u) output=%@(%u)",
             snapshot.trigger.rawValue,
@@ -488,9 +502,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshAudioInputStatusUI()
         audioDeviceChangeTask?.cancel()
         audioDeviceChangeTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
             guard let self, !Task.isCancelled else { return }
+            guard !self.isApplyingAudioDeviceChange else {
+                NSLog("[AUDIO-DEVICE] debounce: skipped (already applying)")
+                return
+            }
             self.audioDeviceChangeTask = nil
+            self.isApplyingAudioDeviceChange = true
             self.applyAudioDeviceChange(snapshot)
+            self.isApplyingAudioDeviceChange = false
         }
     }
 
@@ -1360,7 +1381,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
             self?.audioConversionQueue.async { [weak self] in
-                guard let data = Self.convertAudioBufferToPCM16k(buffer: buffer, converter: converter) else { return }
+                guard let data = Self.convertAudioBufferToPCM16k(buffer: buffer, converter: converter) else {
+                    NSLog("[AUDIO-PIPE] convertToPCM16k failed: srcFormat=%.0fHz/%dch", buffer.format.sampleRate, buffer.format.channelCount)
+                    return
+                }
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     let serverModelTurnActive = self.gatewayClient?.isModelTurnActive == true
@@ -1402,6 +1426,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     nonisolated private static func convertAudioBufferToPCM16k(buffer: AVAudioPCMBuffer, converter: AVAudioConverter) -> Data? {
         let frameCount = AVAudioFrameCount(Double(buffer.frameLength) * 16000.0 / buffer.format.sampleRate)
         guard let converted = AVAudioPCMBuffer(pcmFormat: converter.outputFormat, frameCapacity: max(frameCount, 1024)) else {
+            NSLog("[AUDIO-PIPE] PCM16k alloc failed: outFormat=%@ frames=%d", converter.outputFormat.description, frameCount)
             return nil
         }
 
@@ -1424,8 +1449,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return input
         }
 
-        guard status != .error, error == nil else { return nil }
-        guard let channels = converted.int16ChannelData else { return nil }
+        guard status != .error, error == nil else {
+            NSLog("[AUDIO-PIPE] converter error: status=%ld err=%@", status.rawValue, error?.localizedDescription ?? "nil")
+            return nil
+        }
+        guard let channels = converted.int16ChannelData else {
+            NSLog("[AUDIO-PIPE] int16ChannelData nil after conversion")
+            return nil
+        }
         let sampleCount = Int(converted.frameLength)
         let pointer = channels[0]
         return Data(bytes: pointer, count: sampleCount * MemoryLayout<Int16>.size)
