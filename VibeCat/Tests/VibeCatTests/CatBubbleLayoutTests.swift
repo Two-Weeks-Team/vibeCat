@@ -71,6 +71,24 @@ final class CatBubbleLayoutTests: XCTestCase {
         XCTAssertEqual(placement.frame.maxY, catFrame.minY - 8, accuracy: 0.01)
     }
 
+    func testSpeechPlacementStaysAboveWhenScreenHasNonZeroMinY() {
+        let catFrame = NSRect(x: 120, y: 300, width: 100, height: 100)
+        let bubbleSize = NSSize(width: 180, height: 64)
+        let screenFrame = NSRect(x: 0, y: 25, width: 600, height: 475)
+
+        let placement = CatBubbleLayout.placement(
+            catFrame: catFrame,
+            bubbleSize: bubbleSize,
+            screenFrame: screenFrame,
+            mode: .speech,
+            reservedBottomMinY: nil
+        )
+
+        XCTAssertEqual(placement.tailDirection, .bottom,
+                       "Bubble should stay above cat when there's room (non-zero screenFrame.minY)")
+        XCTAssertEqual(placement.frame.minY, catFrame.maxY + 8, accuracy: 0.01)
+    }
+
     func testPlacementRespectsNonZeroScreenOriginWhenUsingLocalCatFrame() {
         let catFrame = NSRect(x: 520, y: 220, width: 100, height: 100)
         let bubbleSize = NSSize(width: 180, height: 64)

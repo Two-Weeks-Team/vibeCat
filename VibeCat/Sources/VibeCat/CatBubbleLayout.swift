@@ -27,7 +27,7 @@ enum CatBubbleLayout {
             bubbleY = max(screenFrame.minY + edgeInset, topAnchor - bubbleSize.height)
             tailDirection = .top
         case .speech:
-            let projectedTop = screenFrame.minY + bubbleY + bubbleSize.height
+            let projectedTop = bubbleY + bubbleSize.height
             if projectedTop > screenFrame.maxY - edgeInset {
                 let topAnchor = min(catFrame.minY - bubbleGap, (reservedBottomMinY ?? catFrame.minY) - bubbleGap)
                 bubbleY = max(screenFrame.minY + edgeInset, topAnchor - bubbleSize.height)
