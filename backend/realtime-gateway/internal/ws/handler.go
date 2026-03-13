@@ -2438,7 +2438,9 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 							if nextStep, hasNext := ls.advancePendingFCStep(); hasNext {
 								sendProcessingState(c, "navigator", navigatorActiveTraceID, "observing_screen", navigatorObservingLabel(ls.getConfig().Language), "", "", 0, true)
 								prevStepAction := refreshMsg.Step.ActionType
-								if nextStep.ActionType == "focus_app" || prevStepAction == "focus_app" {
+								if prevStepAction == "open_url" {
+									time.Sleep(2500 * time.Millisecond)
+								} else if nextStep.ActionType == "focus_app" || prevStepAction == "focus_app" {
 									time.Sleep(500 * time.Millisecond)
 								} else {
 									time.Sleep(150 * time.Millisecond)
