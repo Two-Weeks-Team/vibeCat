@@ -37,12 +37,12 @@ final class NavigatorSurfaceProfileTests: XCTestCase {
         XCTAssertFalse(profile.matches(appName: "Chrome"))
     }
 
-    func testChromeSearchFieldPrefersAddressBarPreparation() {
+    func testChromeSearchFieldDoesNotTriggerAddressBarPreparation() {
         let profile = NavigatorSurfaceProfile.detect(
             targetApp: "Chrome",
             descriptor: NavigatorTargetDescriptor(label: "Search", appName: "Chrome")
         )
-        XCTAssertEqual(profile.preferredPreparationHotkey(for: .pasteText), ["command", "l"])
+        XCTAssertNil(profile.preferredPreparationHotkey(for: .pasteText))
     }
 
     func testChromeAddressFieldPrefersAddressBarPreparation() {

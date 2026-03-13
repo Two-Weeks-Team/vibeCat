@@ -30,7 +30,7 @@ public struct NavigatorSurfaceProfile: Sendable, Equatable {
             value.contains("chrome") || value == "com.google.chrome"
         }) {
             let wantsAddressBarPrep = candidates.contains(where: { value in
-                value.contains("address") || value.contains("search") || value.contains("url") || value.contains("browser")
+                value.contains("address") || value.contains("url") || value.contains("browser")
             })
             return NavigatorSurfaceProfile(
                 kind: .chrome,
