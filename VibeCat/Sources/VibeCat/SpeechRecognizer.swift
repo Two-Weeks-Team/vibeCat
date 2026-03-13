@@ -40,6 +40,7 @@ final class SpeechRecognizer {
         1_000_000_000,
         2_000_000_000,
     ]
+    private var tapHealthCheckTask: Task<Void, Never>?
 
     func requestPermissions() async -> Bool {
         await withCheckedContinuation { continuation in
@@ -158,6 +159,12 @@ final class SpeechRecognizer {
         let bargeInCallback = onBargeInDetected
         NSLog("[SPEECH] startListening: hasCallback=%d", callback != nil ? 1 : 0)
 
+        capture.onEngineConfigChange = { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.handleAudioDeviceChange(reason: "engine_config_change")
+            }
+        }
+
         do {
             try await Task.detached {
                 try capture.start(streamingCallback: callback, bargeInCallback: bargeInCallback)
@@ -167,6 +174,7 @@ final class SpeechRecognizer {
             isListening = true
             onRecordingFormatChanged?(currentAudioFormat)
             NSLog("[SPEECH] startListening: success, format=%@, isListening=%d", String(describing: currentAudioFormat), isListening ? 1 : 0)
+            startTapHealthCheck()
             return true
         } catch {
             NSLog("[SPEECH] startListening: FAILED error=%@", String(describing: error))
@@ -176,10 +184,32 @@ final class SpeechRecognizer {
     }
 
     private func teardownCapture() {
+        tapHealthCheckTask?.cancel()
+        tapHealthCheckTask = nil
         audioCapture.stop()
         currentAudioFormat = nil
         isListening = false
         onRecordingFormatChanged?(nil)
+    }
+
+    private func startTapHealthCheck() {
+        tapHealthCheckTask?.cancel()
+        tapHealthCheckTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled else { return }
+            var lastCount = self?.audioCapture.tapFireCount ?? 0
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                guard !Task.isCancelled, let self, self.isListening else { return }
+                let current = self.audioCapture.tapFireCount
+                if current == lastCount {
+                    NSLog("[SPEECH] tap health check FAILED: count=%llu unchanged for 5s", current)
+                    self.handleAudioDeviceChange(reason: "tap_health_check")
+                    return
+                }
+                lastCount = current
+            }
+        }
     }
 }
 
@@ -193,7 +223,7 @@ final class SpeechAudioCapture: @unchecked Sendable {
     private(set) var isVoiceProcessingActive = false
     private var streamingCallback: (@Sendable (AVAudioPCMBuffer, AudioForwardMode) -> Void)?
     private let lifecycleLock = NSLock()
-    private var tapFireCount: UInt64 = 0
+    private(set) var tapFireCount: UInt64 = 0
 
     private let bargeInThreshold: Float = 0.04
     private let _speakingLock = NSLock()
@@ -206,6 +236,8 @@ final class SpeechAudioCapture: @unchecked Sendable {
     private var consecutiveAboveCount: Int = 0
     private var bargeInNotified = false
     private var bargeInCallback: (@Sendable () -> Void)?
+    private var configChangeObserver: NSObjectProtocol?
+    var onEngineConfigChange: (@Sendable () -> Void)?
 
     func start(
         streamingCallback: (@Sendable (AVAudioPCMBuffer, AudioForwardMode) -> Void)? = nil,
@@ -255,11 +287,11 @@ final class SpeechAudioCapture: @unchecked Sendable {
         self.recordingFormat = monoFormat
 
         self.tapFireCount = 0
-        // Pass nil format so the tap receives buffers in the node's native
-        // output format.  This avoids silent tap failures when AVAudioEngine
-        // cannot perform automatic channel-count conversion — a known issue
-        // with Voice Processing + Bluetooth (WWDC 2019-510, WWDC 2023-10235).
-        inputNode.installTap(onBus: 0, bufferSize: 2048, format: nil) { [weak self] buffer, _ in
+        // Use explicit hwFormat for the tap — production evidence (WhisperKit,
+        // LiveKit) shows format:nil can silently fail to deliver buffers when
+        // Voice Processing + Bluetooth creates a VPIO aggregate device.
+        // hwFormat matches inputNode.outputFormat exactly, so no conversion needed.
+        inputNode.installTap(onBus: 0, bufferSize: 2048, format: hwFormat) { [weak self] buffer, _ in
             guard let self else { return }
             self.tapFireCount &+= 1
             if self.tapFireCount <= 3 || self.tapFireCount % 500 == 0 {
@@ -306,6 +338,19 @@ final class SpeechAudioCapture: @unchecked Sendable {
         NSLog("[SPEECH] engine started isRunning=%d vpEnabled=%d tapCount=%llu format=%.0fHz/%dch",
               engine.isRunning ? 1 : 0, inputNode.isVoiceProcessingEnabled ? 1 : 0,
               self.tapFireCount, hwFormat.sampleRate, hwFormat.channelCount)
+
+        configChangeObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: engine,
+            queue: nil
+        ) { [weak self] _ in
+            guard let self else { return }
+            let running = self.engine?.isRunning == true
+            NSLog("[SPEECH] AVAudioEngineConfigurationChange: isRunning=%d", running ? 1 : 0)
+            if !running {
+                self.onEngineConfigChange?()
+            }
+        }
     }
 
     func stop() {
@@ -315,6 +360,10 @@ final class SpeechAudioCapture: @unchecked Sendable {
     }
 
     private func stopInternal() {
+        if let observer = configChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
+            configChangeObserver = nil
+        }
         engine?.inputNode.removeTap(onBus: 0)
         engine?.stop()
         engine = nil
