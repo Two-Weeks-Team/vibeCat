@@ -2519,8 +2519,10 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 										defer ls.clearPendingCheckpoint()
 										var visionText string
 										var errorDetected bool
+										var capturedScreenshot string
 										select {
 										case cap := <-cp.imgCh:
+											capturedScreenshot = cap.image
 											analyzeCtx, analyzeCancel := context.WithTimeout(capturedCtx, 4*time.Second)
 											defer analyzeCancel()
 											result, err := adkClient.Analyze(analyzeCtx, adk.AnalysisRequest{
@@ -2567,21 +2569,52 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 										}
 
 										slog.Info("[HANDLER] checkpoint passed, advancing to next step", "conn_id", c.ID, "task_id", cp.taskID, "step", cp.nextStep.ActionType, "vision_len", len(visionText))
+
+										nextToSend := cp.nextStep
+										if nextToSend.ActionType == "press_ax" && nextToSend.MacroID == "fc_play_result" && capturedScreenshot != "" {
+											escCtx, escCancel := context.WithTimeout(capturedCtx, 4*time.Second)
+											escResult, escErr := adkClient.NavigatorEscalate(escCtx, adk.NavigatorEscalationRequest{
+												Command:    "Find the first playable music result or the Music Station button on this YouTube Music search results page. Return the element to click to start playback.",
+												AppName:    nextToSend.TargetApp,
+												Screenshot: capturedScreenshot,
+												TraceID:    cp.taskID,
+											})
+											escCancel()
+											if escErr == nil && escResult != nil && escResult.ResolvedDescriptor != nil && escResult.Confidence > 0.5 {
+												slog.Info("[HANDLER] checkpoint escalated play target", "conn_id", c.ID, "label", escResult.ResolvedDescriptor.Label, "role", escResult.ResolvedDescriptor.Role, "confidence", escResult.Confidence)
+												nextToSend.TargetDescriptor = navigatorTargetDescriptor{
+													Role:           escResult.ResolvedDescriptor.Role,
+													Label:          escResult.ResolvedDescriptor.Label,
+													AppName:        firstNonEmptyString(escResult.ResolvedDescriptor.AppName, nextToSend.TargetApp),
+													WindowTitle:    escResult.ResolvedDescriptor.WindowTitle,
+													RelativeAnchor: escResult.ResolvedDescriptor.RelativeAnchor,
+													RegionHint:     escResult.ResolvedDescriptor.RegionHint,
+												}
+												nextToSend.Confidence = escResult.Confidence
+												nextToSend.ExpectedOutcome = "Click " + escResult.ResolvedDescriptor.Label + " to start playback"
+												nextToSend.Narration = "Clicking " + escResult.ResolvedDescriptor.Label + " to play music."
+											} else {
+												slog.Info("[HANDLER] checkpoint escalation failed or low confidence, using default play target", "conn_id", c.ID, "err", escErr)
+											}
+										}
+
 										prevAction := cp.completedStep.ActionType
 										if prevAction == "open_url" {
 											time.Sleep(2500 * time.Millisecond)
-										} else if cp.nextStep.ActionType == "focus_app" || prevAction == "focus_app" {
+										} else if nextToSend.ActionType == "focus_app" || prevAction == "focus_app" {
 											time.Sleep(500 * time.Millisecond)
+										} else if prevAction == "hotkey" {
+											time.Sleep(2000 * time.Millisecond)
 										} else {
 											time.Sleep(150 * time.Millisecond)
 										}
 										sendProcessingState(c, "navigator", cpTraceID, "observing_screen", "", "", "", 0, false)
-										sendProcessingState(c, "navigator", cpTraceID, "executing_step", navigatorExecutingLabel(ls.getConfig().Language), cp.nextStep.ActionType, "", 0, true)
+										sendProcessingState(c, "navigator", cpTraceID, "executing_step", navigatorExecutingLabel(ls.getConfig().Language), nextToSend.ActionType, "", 0, true)
 										lockedSendJSON(c, map[string]any{
 											"type":    "navigator.stepPlanned",
 											"taskId":  cp.taskID,
-											"step":    cp.nextStep,
-											"message": navigatorMessageForStep(cp.nextStep),
+											"step":    nextToSend,
+											"message": navigatorMessageForStep(nextToSend),
 										})
 									}()
 								} else {
@@ -3679,6 +3712,31 @@ func buildToolCallTextEntrySteps(text, targetApp, targetLabel string, submit boo
 			MacroID:          "fc_submit_enter",
 			Narration:        "Pressing Enter to submit.",
 			TimeoutMs:        800,
+			ProofLevel:       "basic",
+		})
+	}
+
+	if submit && wantsSearchActivation {
+		steps = append(steps, navigatorStep{
+			ID:         "fc_play_result_" + newConnID(),
+			ActionType: "press_ax",
+			TargetApp:  targetApp,
+			TargetDescriptor: navigatorTargetDescriptor{
+				AppName:    targetApp,
+				Role:       "link",
+				Label:      "first music result",
+				RegionHint: "search_results",
+			},
+			ExpectedOutcome:  "Click the first search result to start playback",
+			Confidence:       0.60,
+			IntentConfidence: 0.90,
+			RiskLevel:        "low",
+			ExecutionPolicy:  navigatorExecutionPolicyLow,
+			FallbackPolicy:   "guided_mode",
+			Surface:          navigatorSurfaceValue(targetApp),
+			MacroID:          "fc_play_result",
+			Narration:        "Clicking the first result to play music.",
+			TimeoutMs:        2000,
 			ProofLevel:       "basic",
 		})
 	}
