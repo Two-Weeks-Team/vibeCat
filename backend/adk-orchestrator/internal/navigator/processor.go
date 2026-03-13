@@ -65,7 +65,9 @@ func (p *Processor) ResolveTarget(ctx context.Context, req models.NavigatorEscal
 Resolve only one likely target for the user's command.
 
 Rules:
-- Prefer AX evidence first, then use the screenshot only to disambiguate.
+- Use the screenshot as your PRIMARY source. AX evidence is secondary.
+- When you can visually identify the target element in the screenshot, return clickX and clickY as normalized coordinates (0.0-1.0) relative to the full screenshot dimensions. clickX=0.0 is left edge, clickX=1.0 is right edge. clickY=0.0 is top edge, clickY=1.0 is bottom edge.
+- For music/video player pages (YouTube Music, YouTube, Spotify), prioritize the first playable content item, shuffle button, or play button.
 - Return guided_mode when the target is not clear enough.
 - Never invent a label that is not supported by the screenshot or AX context.
 - Keep confidence between 0.0 and 1.0.
@@ -178,7 +180,7 @@ func buildEscalationPrompt(req models.NavigatorEscalationRequest) string {
 	b.WriteString("If the user wants you to type text that must be copied from visible UI content, extract only the exact visible text to place into resolvedText.\n")
 	b.WriteString("If the requested text is not clearly visible, leave resolvedText empty.\n")
 	b.WriteString(`Return JSON using this schema:
-{"resolvedDescriptor":{"role":"","label":"","windowTitle":"","appName":"","relativeAnchor":"","regionHint":""},"resolvedText":"","confidence":0.0,"fallbackRecommendation":"guided_mode|ask_clarify|safe_immediate","reason":""}`)
+{"resolvedDescriptor":{"role":"","label":"","windowTitle":"","appName":"","relativeAnchor":"","regionHint":"","clickX":0.0,"clickY":0.0},"resolvedText":"","confidence":0.0,"fallbackRecommendation":"guided_mode|ask_clarify|safe_immediate","reason":""}`)
 	return b.String()
 }
 

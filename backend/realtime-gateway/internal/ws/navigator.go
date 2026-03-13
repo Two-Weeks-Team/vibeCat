@@ -47,12 +47,14 @@ type navigatorContextSnapshot struct {
 }
 
 type navigatorTargetDescriptor struct {
-	Role           string `json:"role,omitempty"`
-	Label          string `json:"label,omitempty"`
-	WindowTitle    string `json:"windowTitle,omitempty"`
-	AppName        string `json:"appName,omitempty"`
-	RelativeAnchor string `json:"relativeAnchor,omitempty"`
-	RegionHint     string `json:"regionHint,omitempty"`
+	Role           string  `json:"role,omitempty"`
+	Label          string  `json:"label,omitempty"`
+	WindowTitle    string  `json:"windowTitle,omitempty"`
+	AppName        string  `json:"appName,omitempty"`
+	RelativeAnchor string  `json:"relativeAnchor,omitempty"`
+	RegionHint     string  `json:"regionHint,omitempty"`
+	ClickX         float64 `json:"clickX,omitempty"`
+	ClickY         float64 `json:"clickY,omitempty"`
 }
 
 type navigatorStep struct {
@@ -889,7 +891,7 @@ func buildNextActionHint(toolName, text, target string) string {
 		textLower := strings.ToLower(text)
 		if strings.Contains(targetLower, "youtube") || strings.Contains(targetLower, "music") ||
 			strings.Contains(textLower, "music") || strings.Contains(textLower, "음악") {
-			return "Search submitted on YouTube Music. Results should now be visible. CRITICAL: call navigate_hotkey(keys=[\"space\"]) to start playback immediately. Do NOT call navigate_type_and_submit again — the search is already complete."
+			return "Search submitted on YouTube Music. The system is automatically clicking the first playable result to start music. Do NOT send any additional tool calls — wait for playback confirmation."
 		}
 		return "Text was typed and submitted. If the task requires more steps (e.g., clicking play), call navigate_hotkey next."
 	case "navigate_text_entry":

@@ -2589,6 +2589,8 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 													WindowTitle:    escResult.ResolvedDescriptor.WindowTitle,
 													RelativeAnchor: escResult.ResolvedDescriptor.RelativeAnchor,
 													RegionHint:     escResult.ResolvedDescriptor.RegionHint,
+													ClickX:         escResult.ResolvedDescriptor.ClickX,
+													ClickY:         escResult.ResolvedDescriptor.ClickY,
 												}
 												nextToSend.Confidence = escResult.Confidence
 												nextToSend.ExpectedOutcome = "Click " + escResult.ResolvedDescriptor.Label + " to start playback"
@@ -3565,7 +3567,7 @@ func resolveToolCallTargetApp(target string) string {
 func resolveToolCallTargetLabel(target string) string {
 	lowered := strings.ToLower(target)
 	switch {
-	case containsAny(lowered, []string{"search", "검색"}):
+	case containsAny(lowered, []string{"search", "검색", "youtube", "music", "유튜브", "뮤직", "음악"}):
 		return "search"
 	case containsAny(lowered, []string{"address", "주소", "url"}):
 		return "address"
@@ -3620,9 +3622,13 @@ func buildToolCallTextEntrySteps(text, targetApp, targetLabel string, submit boo
 
 	isBrowser := navigatorSurfaceValue(targetApp) == "chrome"
 	labelLower := strings.ToLower(targetLabel)
+	textLower := strings.ToLower(text)
 	wantsSearchActivation := isBrowser && (strings.Contains(labelLower, "search") ||
 		strings.Contains(labelLower, "검색") ||
-		strings.Contains(labelLower, "youtube"))
+		strings.Contains(labelLower, "youtube") ||
+		strings.Contains(textLower, "music") ||
+		strings.Contains(textLower, "음악") ||
+		strings.Contains(textLower, "뮤직"))
 	if wantsSearchActivation {
 		steps = append(steps, navigatorStep{
 			ID:               "fc_search_activate_" + newConnID(),

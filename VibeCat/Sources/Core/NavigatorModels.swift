@@ -65,6 +65,8 @@ public struct NavigatorTargetDescriptor: Sendable, Codable, Equatable {
     public let appName: String?
     public let relativeAnchor: String?
     public let regionHint: String?
+    public let clickX: Double?
+    public let clickY: Double?
 
     public init(
         role: String? = nil,
@@ -72,7 +74,9 @@ public struct NavigatorTargetDescriptor: Sendable, Codable, Equatable {
         windowTitle: String? = nil,
         appName: String? = nil,
         relativeAnchor: String? = nil,
-        regionHint: String? = nil
+        regionHint: String? = nil,
+        clickX: Double? = nil,
+        clickY: Double? = nil
     ) {
         self.role = role
         self.label = label
@@ -80,6 +84,8 @@ public struct NavigatorTargetDescriptor: Sendable, Codable, Equatable {
         self.appName = appName
         self.relativeAnchor = relativeAnchor
         self.regionHint = regionHint
+        self.clickX = clickX
+        self.clickY = clickY
     }
 }
 

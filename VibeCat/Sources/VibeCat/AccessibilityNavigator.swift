@@ -307,6 +307,27 @@ final class AccessibilityNavigator {
                 return verify(step: step, before: before, defaultOutcome: "Focused the target input field")
             }
             guard let element = resolveElement(for: step.targetDescriptor) else {
+                if let cx = step.targetDescriptor.clickX, let cy = step.targetDescriptor.clickY, cx > 0, cy > 0 {
+                    if let screen = NSScreen.main {
+                        let screenWidth = screen.frame.width
+                        let screenHeight = screen.frame.height
+                        // macOS CGEvent uses top-left origin coordinate system
+                        let pixelX = Int(cx * screenWidth)
+                        let pixelY = Int(cy * screenHeight)
+                        NSLog("[NAV-VISION] attempting vision-based click at (%d, %d) from normalized (%.3f, %.3f)", pixelX, pixelY, cx, cy)
+                        animateCursorTo(CGPoint(x: CGFloat(pixelX), y: CGFloat(pixelY)))
+                        let mcp = AutomationMCPClient.shared
+                        if mcp.isRunning {
+                            let clicked = await mcp.mouseClick(x: pixelX, y: pixelY)
+                            if clicked {
+                                NSLog("[NAV-VISION] vision-based click succeeded at (%d, %d)", pixelX, pixelY)
+                                try? await Task.sleep(nanoseconds: 350_000_000)
+                                return verify(step: step, before: before, defaultOutcome: "Pressed target via vision coordinates")
+                            }
+                        }
+                        NSLog("[NAV-VISION] vision-based MCP click failed, falling back to guided mode")
+                    }
+                }
                 return .guided("I found the likely target, but I should not click blindly here.", reason: .targetNotFound, phase: .resolveTarget)
             }
             let didAct: Bool

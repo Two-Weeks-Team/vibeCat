@@ -111,12 +111,14 @@ type ToolResult struct {
 }
 
 type NavigatorTargetDescriptor struct {
-	Role           string `json:"role,omitempty"`
-	Label          string `json:"label,omitempty"`
-	WindowTitle    string `json:"windowTitle,omitempty"`
-	AppName        string `json:"appName,omitempty"`
-	RelativeAnchor string `json:"relativeAnchor,omitempty"`
-	RegionHint     string `json:"regionHint,omitempty"`
+	Role           string  `json:"role,omitempty"`
+	Label          string  `json:"label,omitempty"`
+	WindowTitle    string  `json:"windowTitle,omitempty"`
+	AppName        string  `json:"appName,omitempty"`
+	RelativeAnchor string  `json:"relativeAnchor,omitempty"`
+	RegionHint     string  `json:"regionHint,omitempty"`
+	ClickX         float64 `json:"clickX,omitempty"`
+	ClickY         float64 `json:"clickY,omitempty"`
 }
 
 type NavigatorEscalationRequest struct {
