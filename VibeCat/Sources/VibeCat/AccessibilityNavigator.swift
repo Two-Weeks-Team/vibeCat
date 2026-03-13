@@ -49,6 +49,8 @@ private struct TextInputCandidate {
 
 @MainActor
 final class AccessibilityNavigator {
+    nonisolated(unsafe) var onAppActivated: ((_ appName: String) -> Void)?
+
     private var lastFocusSignature = ""
     private var focusStableSince = Date()
     private var lastInputFieldHint = ""
@@ -150,12 +152,16 @@ final class AccessibilityNavigator {
 
     func execute(step: NavigatorStep) async -> NavigatorExecutionResult {
         let before = currentContext()
+        if let frontApp = NSWorkspace.shared.frontmostApplication {
+            enableEnhancedUIIfNeeded(for: frontApp)
+        }
 
         switch step.actionType {
         case .focusApp:
             let profile = NavigatorSurfaceProfile.detect(targetApp: step.targetApp)
             if await focusApp(named: step.targetApp) {
                 try? await Task.sleep(nanoseconds: profile.activationDelayNs)
+                onAppActivated?(step.targetApp)
                 return verify(step: step, before: before, defaultOutcome: "Focused \(step.targetApp)")
             }
             return .failed("Could not focus \(step.targetApp)", reason: .targetNotFound, phase: .activateTarget)
@@ -165,7 +171,23 @@ final class AccessibilityNavigator {
                 return .failed("Missing URL", reason: .targetNotFound, phase: .preflight)
             }
             if open(url: url, targetApp: step.targetApp) {
-                try? await Task.sleep(nanoseconds: 600_000_000)
+                let waitStart = Date()
+                let maxWait: TimeInterval = 3.0
+                var settled = false
+                while Date().timeIntervalSince(waitStart) < maxWait {
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                    let ctx = currentContext()
+                    if ctx.focusedRole != before.focusedRole ||
+                       ctx.windowTitle != before.windowTitle ||
+                       ctx.visibleInputCandidateCount > 0 {
+                        try? await Task.sleep(nanoseconds: 200_000_000)
+                        settled = true
+                        break
+                    }
+                }
+                if !settled {
+                    try? await Task.sleep(nanoseconds: 600_000_000)
+                }
                 return verify(step: step, before: before, defaultOutcome: "Opened \(url.absoluteString)")
             }
             return .failed("Could not open URL", reason: .targetNotFound, phase: .performAction)
@@ -216,6 +238,7 @@ final class AccessibilityNavigator {
             }
             if descriptorNeedsDirectResolution(step.targetDescriptor) {
                 guard let element = resolveElement(for: step.targetDescriptor),
+                      isElementValid(element),
                       await activateTextEntryElement(element, descriptor: step.targetDescriptor, targetApp: step.targetApp) else {
                     return .guided("I could not safely focus the input field for text entry.", reason: .targetNotWritable, phase: .activateTarget)
                 }
@@ -417,8 +440,10 @@ final class AccessibilityNavigator {
             let ok = running.activate(options: [.activateAllWindows])
             NSLog("[NAV-FOCUS] activate '%@' pid=%d ok=%d", trimmed, running.processIdentifier, ok ? 1 : 0)
             let confirmed = await pollFrontmostApp(targetApp: trimmed, profile: focusProfile)
-            if confirmed { return true }
-            // Dock-click equivalent: openApplication brings running app to front reliably
+            if confirmed {
+                enableEnhancedUIIfNeeded(for: running)
+                return true
+            }
             if let bid = running.bundleIdentifier,
                let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bid) {
                 NSLog("[NAV-FOCUS] dock-click fallback via openApplication for '%@'", trimmed)
@@ -561,7 +586,7 @@ final class AccessibilityNavigator {
             partial.union(eventFlag(for: token.lowercased()))
         }
 
-        guard let source = CGEventSource(stateID: .combinedSessionState),
+        guard let source = CGEventSource(stateID: .hidSystemState),
               let keyDown = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true),
               let keyUp = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false) else {
             NSLog("[NAV-KEY] CGEvent creation failed for %@", tokens.joined(separator: "+"))
@@ -772,11 +797,21 @@ final class AccessibilityNavigator {
         return AXUIElementPerformAction(element, kAXPressAction as CFString) == .success
     }
 
+    private func isElementValid(_ element: AXUIElement) -> Bool {
+        var role: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role)
+        return result == .success
+    }
+
     private func activateTextEntryElement(
         _ element: AXUIElement,
         descriptor: NavigatorTargetDescriptor,
         targetApp: String
     ) async -> Bool {
+        guard isElementValid(element) else {
+            NSLog("[NAV-STALE] Element became invalid before activation")
+            return false
+        }
         if textInputElementIsReady(element, descriptor: descriptor, targetApp: targetApp) {
             return true
         }
@@ -861,28 +896,56 @@ final class AccessibilityNavigator {
     }
 
     private func clickTextInput(at axPoint: CGPoint) -> Bool {
-        guard let down = CGEvent(
-            mouseEventSource: nil,
-            mouseType: .leftMouseDown,
-            mouseCursorPosition: axPoint,
-            mouseButton: .left
-        ),
-        let up = CGEvent(
-            mouseEventSource: nil,
-            mouseType: .leftMouseUp,
-            mouseCursorPosition: axPoint,
-            mouseButton: .left
-        ) else {
+        // Step 1: Create proper event source (Vimac/robotgo pattern)
+        guard let source = CGEventSource(stateID: .hidSystemState) else {
+            NSLog("[NAV-CLICK] Failed to create CGEventSource")
             return false
         }
 
+        // Step 2: Move mouse to target position (Hammerspoon pattern)
+        CGWarpMouseCursorPosition(axPoint)
+        CGAssociateMouseAndMouseCursorPosition(1)
+        // Post a mouseMoved event so the app registers the cursor (Vimac pattern)
+        if let moveEvent = CGEvent(mouseEventSource: source, mouseType: .mouseMoved,
+                                    mouseCursorPosition: axPoint, mouseButton: .left) {
+            moveEvent.post(tap: .cghidEventTap)
+        }
+        usleep(15_000) // 15ms settle time
+
+        // Step 3: Hit-test verification — confirm target is at cursor position
+        let role = hitTestTextInputRole(at: axPoint)
+        if !role.isEmpty {
+            NSLog("[NAV-CLICK] Hit-test confirmed: role=%@ at (%.0f,%.0f)", role, axPoint.x, axPoint.y)
+        } else {
+            NSLog("[NAV-CLICK] Hit-test warning: no text input at (%.0f,%.0f), proceeding anyway", axPoint.x, axPoint.y)
+        }
+
+        // Step 4: Click with proper flags (Vimac pattern)
+        guard let down = CGEvent(mouseEventSource: source, mouseType: .leftMouseDown,
+                                 mouseCursorPosition: axPoint, mouseButton: .left),
+              let up = CGEvent(mouseEventSource: source, mouseType: .leftMouseUp,
+                               mouseCursorPosition: axPoint, mouseButton: .left) else { return false }
+
+        // Set click state so apps recognize this as a real click (Vimac SO reference)
+        down.setIntegerValueField(.mouseEventClickState, value: 1)
+        up.setIntegerValueField(.mouseEventClickState, value: 1)
+        // Clear modifier flags to prevent interference
+        down.flags = CGEventFlags(rawValue: 0)
+        up.flags = CGEventFlags(rawValue: 0)
+
         down.post(tap: .cghidEventTap)
+        usleep(15_000) // 15ms between down/up (cliclick pattern)
         up.post(tap: .cghidEventTap)
         return true
     }
 
+    private func setAXTimeout(for element: AXUIElement, seconds: Float = 3.0) {
+        AXUIElementSetMessagingTimeout(element, seconds)
+    }
+
     private func hitTestTextInputRole(at axPoint: CGPoint) -> String {
         let systemWide = AXUIElementCreateSystemWide()
+        setAXTimeout(for: systemWide, seconds: 3.0)
         var hit: AXUIElement?
         guard AXUIElementCopyElementAtPosition(systemWide, Float(axPoint.x), Float(axPoint.y), &hit) == .success,
               let hit else {
@@ -1378,6 +1441,28 @@ final class AccessibilityNavigator {
     }
 
     private func textInputCandidates(from roots: [AXUIElement], maxDepth: Int, maxNodes: Int) -> [TextInputCandidate] {
+        if let frontApp = NSWorkspace.shared.frontmostApplication {
+            let bundleID = frontApp.bundleIdentifier ?? ""
+            if bundleID.hasPrefix("com.google.Chrome") || bundleID.hasPrefix("com.brave.Browser") ||
+               bundleID.hasPrefix("com.microsoft.edgemac") || bundleID.hasPrefix("org.chromium") ||
+               bundleID.hasPrefix("com.arc.Arc") {
+                let predicateElements = searchPredicateElements(in: frontApp, role: "AXTextField")
+                if !predicateElements.isEmpty {
+                    NSLog("[NAV-AX] Using SearchPredicate fast path: %d candidates", predicateElements.count)
+                    var candidates: [TextInputCandidate] = []
+                    for element in predicateElements {
+                        guard let role = stringValue(for: element, attribute: kAXRoleAttribute) else { continue }
+                        let label = stringValue(for: element, attribute: kAXDescriptionAttribute)
+                            ?? stringValue(for: element, attribute: kAXTitleAttribute) ?? ""
+                        let position = pointValue(for: element, attribute: kAXPositionAttribute)
+                        let size = sizeValue(for: element, attribute: kAXSizeAttribute)
+                        candidates.append(TextInputCandidate(element: element, role: role, label: label, position: position, size: size))
+                    }
+                    if !candidates.isEmpty { return candidates }
+                }
+            }
+        }
+
         var candidates: [TextInputCandidate] = []
         var seen = Set<String>()
 
@@ -1494,8 +1579,24 @@ final class AccessibilityNavigator {
         if let width = candidate.size?.width, width >= 240 {
             score += 2
         }
-        if let y = candidate.position?.y {
-            score += Int(y / 200)
+        // Prefer elements on the same screen as the mouse cursor (multi-monitor awareness)
+        if let pos = candidate.position {
+            let mouseLocation = NSEvent.mouseLocation
+            let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+            let mouseCG = CGPoint(x: mouseLocation.x, y: primaryHeight - mouseLocation.y)
+            // Same screen bonus: if element and mouse are on the same screen, +4
+            for screen in NSScreen.screens {
+                let screenCG = CGRect(
+                    x: screen.frame.origin.x,
+                    y: primaryHeight - screen.frame.origin.y - screen.frame.height,
+                    width: screen.frame.width,
+                    height: screen.frame.height
+                )
+                if screenCG.contains(pos) && screenCG.contains(mouseCG) {
+                    score += 4
+                    break
+                }
+            }
         }
 
         return score
@@ -1542,8 +1643,10 @@ final class AccessibilityNavigator {
     }
 
     private func displayID(containing rect: CGRect) -> String? {
-        let probe = CGPoint(x: rect.midX, y: rect.midY)
-        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(probe) }),
+        let cgProbe = CGPoint(x: rect.midX, y: rect.midY)
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+        let appKitProbe = CGPoint(x: cgProbe.x, y: primaryHeight - cgProbe.y)
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(appKitProbe) }),
               let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
             return nil
         }
@@ -1564,5 +1667,56 @@ final class AccessibilityNavigator {
             return nil
         }
         return size
+    }
+
+    private func enableEnhancedUIIfNeeded(for app: NSRunningApplication) {
+        let bundleID = app.bundleIdentifier ?? ""
+        let chromiumBundles = [
+            "com.google.Chrome", "com.google.Chrome.canary",
+            "com.brave.Browser", "com.microsoft.edgemac",
+            "com.vivaldi.Vivaldi", "com.operasoftware.Opera",
+            "org.chromium.Chromium", "com.arc.Arc"
+        ]
+        guard chromiumBundles.contains(where: { bundleID.hasPrefix($0) }) else { return }
+
+        let appElement = AXUIElementCreateApplication(app.processIdentifier)
+        let result = AXUIElementSetAttributeValue(appElement, "AXEnhancedUserInterface" as CFString, true as AnyObject)
+        NSLog("[NAV-AX] AXEnhancedUserInterface set for %@ (pid=%d): %d", bundleID, app.processIdentifier, result.rawValue)
+    }
+
+    private func searchPredicateElements(in app: NSRunningApplication, role: String?) -> [AXUIElement] {
+        let appElement = AXUIElementCreateApplication(app.processIdentifier)
+
+        var paramAttrs: CFArray?
+        guard AXUIElementCopyParameterizedAttributeNames(appElement, &paramAttrs) == .success,
+              let attrNames = paramAttrs as? [String],
+              attrNames.contains("AXUIElementsForSearchPredicate") else {
+            return []
+        }
+
+        var criteria: [String: Any] = [
+            "AXSearchKey": "AXTextFieldSearchKey",
+            "AXDirection": "AXDirectionNext",
+            "AXResultsLimit": 10 as CFNumber
+        ]
+        if let role = role {
+            criteria["AXSearchKey"] = role == "AXTextField" ? "AXTextFieldSearchKey" : "AXAnyTypeSearchKey"
+        }
+
+        var result: CFTypeRef?
+        let status = AXUIElementCopyParameterizedAttributeValue(
+            appElement,
+            "AXUIElementsForSearchPredicate" as CFString,
+            criteria as CFTypeRef,
+            &result
+        )
+
+        guard status == .success, let elements = result as? [AXUIElement] else {
+            NSLog("[NAV-AX] SearchPredicate failed or empty for pid=%d: %d", app.processIdentifier, status.rawValue)
+            return []
+        }
+
+        NSLog("[NAV-AX] SearchPredicate found %d elements for pid=%d", elements.count, app.processIdentifier)
+        return elements
     }
 }

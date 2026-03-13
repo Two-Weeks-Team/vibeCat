@@ -626,6 +626,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.accessibilityNavigator = accessibilityNavigator
         self.targetHighlightOverlay = targetHighlightOverlay
         self.navigatorOverlayPanel = NavigatorOverlayPanel()
+        accessibilityNavigator.onAppActivated = { [weak self] appName in
+            guard let self else { return }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let captureResult = await self.captureService?.forceCapture()
+                if case .captured(let snapshot) = captureResult {
+                    let bitmapRep = NSBitmapImageRep(cgImage: snapshot.image)
+                    if let jpegData = bitmapRep.representation(using: .jpeg, properties: [.compressionFactor: 0.7]) {
+                        self.gatewayClient?.sendVideoFrame(jpegData)
+                        NSLog("[NAV-VISION] Post-focusApp screenshot: %@ → %d bytes", appName, jpegData.count)
+                    }
+                }
+            }
+        }
         self.navigatorActionWorker = NavigatorActionWorker(
             gatewayClient: gateway,
             navigator: accessibilityNavigator,
@@ -1614,6 +1628,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 overlayResult = .failed
             }
             self.navigatorOverlayPanel?.showResult(overlayResult)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let captureResult = await self.captureService?.forceCapture()
+                if case .captured(let snapshot) = captureResult {
+                    let bitmapRep = NSBitmapImageRep(cgImage: snapshot.image)
+                    if let jpegData = bitmapRep.representation(using: .jpeg, properties: [.compressionFactor: 0.7]) {
+                        self.gatewayClient?.sendVideoFrame(jpegData)
+                        NSLog("[NAV-VISION] Post-step screenshot sent: %d bytes, app=%@", jpegData.count, snapshot.appName)
+                    }
+                }
+            }
         }
     }
 }
