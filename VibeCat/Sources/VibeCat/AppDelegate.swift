@@ -807,6 +807,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             sbc?.setLastErrorDescription(message)
         }
 
+        AutomationMCPClient.shared.startSidecar()
+
         gateway.connect()
         analyzer.start()
         sbc.updatePauseState(isPaused)
@@ -814,6 +816,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        AutomationMCPClient.shared.stopSidecar()
         screenAnalyzer?.pause()
         gatewayClient?.disconnect()
         speechRecognizer?.stopListening()
@@ -1034,6 +1037,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.activeNavigatorCommand = command
                 self.navigatorStepCount = 0
                 self.navigatorPromptState = nil
+                // Pause proactive screen analysis during navigator action execution
+                self.screenAnalyzer?.pause()
+                NSLog("[NAV-PAUSE] paused proactive screen analysis for navigator action")
                 if let taskId {
                     self.navigatorActionWorker?.beginTask(taskId: taskId, command: command)
                 }
@@ -1097,6 +1103,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if let taskId {
                     self.navigatorActionWorker?.clearTask(taskId: taskId)
                 }
+                self.screenAnalyzer?.resume()
+                NSLog("[NAV-RESUME] resumed proactive screen analysis after guided mode")
                 chatPanel?.updateLastAssistantMessage(instruction)
                 self.showStatusBubbleIfAllowed(
                     panel: panel,
@@ -1109,6 +1117,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.activeNavigatorCommand = nil
                 self.navigatorStepCount = 0
                 self.navigatorActionWorker?.clearTask(taskId: taskId)
+                self.screenAnalyzer?.resume()
+                NSLog("[NAV-RESUME] resumed proactive screen analysis after navigator completed")
                 chatPanel?.updateLastAssistantMessage(summary)
                 self.showStatusBubbleIfAllowed(
                     panel: panel,
@@ -1124,6 +1134,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if let taskId {
                     self.navigatorActionWorker?.clearTask(taskId: taskId)
                 }
+                self.screenAnalyzer?.resume()
+                NSLog("[NAV-RESUME] resumed proactive screen analysis after navigator failed")
                 chatPanel?.updateLastAssistantMessage(reason)
                 self.showStatusBubbleIfAllowed(
                     panel: panel,

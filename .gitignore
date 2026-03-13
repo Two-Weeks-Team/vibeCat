@@ -42,3 +42,6 @@ docs/ideas/
 .taskmasterconfig
 tasks/
 scripts/task-complexity-report.json
+
+# Tools (cloned and installed locally, not tracked)
+tools/automation-mcp/

@@ -248,10 +248,17 @@ final class AccessibilityNavigator {
                 return .guided("The target app changed before I could insert text safely.", reason: .wrongTarget, phase: .preflight)
             }
             if descriptorNeedsDirectResolution(step.targetDescriptor) {
-                guard let element = resolveElement(for: step.targetDescriptor),
-                      isElementValid(element),
-                      await activateTextEntryElement(element, descriptor: step.targetDescriptor, targetApp: step.targetApp) else {
-                    return .guided("I could not safely focus the input field for text entry.", reason: .targetNotWritable, phase: .activateTarget)
+                var axActivated = false
+                if let element = resolveElement(for: step.targetDescriptor),
+                   isElementValid(element) {
+                    axActivated = await activateTextEntryElement(element, descriptor: step.targetDescriptor, targetApp: step.targetApp)
+                }
+                if !axActivated {
+                    let mcpFallback = await attemptMCPTextFieldActivation(step: step)
+                    if !mcpFallback {
+                        return .guided("I could not safely focus the input field for text entry.", reason: .targetNotWritable, phase: .activateTarget)
+                    }
+                    NSLog("[NAV-MCP] text field activated via automation-mcp fallback")
                 }
             } else if !looksLikeTextInputRole(currentContext().focusedRole) {
                 return .guided("I could not confirm which input field should receive the text.", reason: .wrongTarget, phase: .resolveTarget)
@@ -316,6 +323,12 @@ final class AccessibilityNavigator {
                 defaultOutcome = "Pressed the target control"
             }
             if didAct {
+                try? await Task.sleep(nanoseconds: 350_000_000)
+                return verify(step: step, before: before, defaultOutcome: defaultOutcome)
+            }
+            let mcpFallback = await attemptMCPClickFallback(step: step)
+            if mcpFallback {
+                NSLog("[NAV-MCP] pressAX activated via automation-mcp fallback")
                 try? await Task.sleep(nanoseconds: 350_000_000)
                 return verify(step: step, before: before, defaultOutcome: defaultOutcome)
             }
@@ -1774,5 +1787,39 @@ final class AccessibilityNavigator {
 
         NSLog("[NAV-AX] SearchPredicate found %d elements for pid=%d", elements.count, app.processIdentifier)
         return elements
+    }
+
+    // MARK: - automation-mcp Fallback
+
+    private func attemptMCPTextFieldActivation(step: NavigatorStep) async -> Bool {
+        let mcp = AutomationMCPClient.shared
+        guard mcp.isRunning else { return false }
+
+        if let element = resolveElement(for: step.targetDescriptor),
+           let rect = rectValue(for: element) {
+            let x = Int(rect.midX)
+            let y = Int(rect.midY)
+            NSLog("[NAV-MCP] attempting text field click at (%d, %d) via automation-mcp", x, y)
+            return await mcp.mouseClick(x: x, y: y)
+        }
+
+        NSLog("[NAV-MCP] no AX element rect available for MCP text field fallback")
+        return false
+    }
+
+    private func attemptMCPClickFallback(step: NavigatorStep) async -> Bool {
+        let mcp = AutomationMCPClient.shared
+        guard mcp.isRunning else { return false }
+
+        if let element = resolveElement(for: step.targetDescriptor),
+           let rect = rectValue(for: element) {
+            let x = Int(rect.midX)
+            let y = Int(rect.midY)
+            NSLog("[NAV-MCP] attempting pressAX click at (%d, %d) via automation-mcp", x, y)
+            return await mcp.mouseClick(x: x, y: y)
+        }
+
+        NSLog("[NAV-MCP] no AX element rect available for MCP click fallback")
+        return false
     }
 }
