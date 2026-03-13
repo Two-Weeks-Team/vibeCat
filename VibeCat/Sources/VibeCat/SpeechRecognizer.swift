@@ -31,6 +31,8 @@ final class SpeechRecognizer {
         }
     }
     private var desiredListening = false
+    private var isRestarting = false
+    private var pendingRestartReason: String?
     private var restartSequence: UInt64 = 0
     private let recoveryDelays: [UInt64] = [
         0,
@@ -82,6 +84,11 @@ final class SpeechRecognizer {
             NSLog("[SPEECH] audio device change ignored: recognizer intentionally stopped")
             return
         }
+        if isRestarting {
+            NSLog("[SPEECH] restart already in progress, queuing reason=%@", reason)
+            pendingRestartReason = reason
+            return
+        }
         Task { @MainActor [weak self] in
             await self?.ensureListening(reason: reason, forceRestart: true)
         }
@@ -93,17 +100,24 @@ final class SpeechRecognizer {
             return
         }
 
+        guard !isRestarting else {
+            NSLog("[SPEECH] ensureListening skipped: restart already in progress")
+            pendingRestartReason = reason
+            return
+        }
+        isRestarting = true
+
         restartSequence &+= 1
         let sequence = restartSequence
 
         for (attemptIndex, delay) in recoveryDelays.enumerated() {
-            guard desiredListening, sequence == restartSequence else { return }
+            guard desiredListening, sequence == restartSequence else { break }
 
             if delay > 0 {
                 captureState = .recovering(attempt: attemptIndex + 1)
                 NSLog("[SPEECH] listening recovery scheduled reason=%@ attempt=%d delay_ms=%llu", reason, attemptIndex+1, delay / 1_000_000)
                 try? await Task.sleep(nanoseconds: delay)
-                guard desiredListening, sequence == restartSequence else { return }
+                guard desiredListening, sequence == restartSequence else { break }
             } else {
                 captureState = .starting
             }
@@ -114,12 +128,28 @@ final class SpeechRecognizer {
 
             if await attemptStartCapture() {
                 captureState = .listening
+                // setVoiceProcessingEnabled emits device_list_changed which
+                // queues a pendingRestartReason during startup.  Re-processing
+                // it would tear down the engine we just started, causing the
+                // tap to go silent.  Clear without re-dispatching.
+                isRestarting = false
+                pendingRestartReason = nil
                 return
             }
         }
 
-        guard desiredListening, sequence == restartSequence else { return }
-        captureState = .failed
+        if desiredListening, sequence == restartSequence {
+            captureState = .failed
+        }
+        drainPendingRestart()
+    }
+
+    private func drainPendingRestart() {
+        isRestarting = false
+        if let reason = pendingRestartReason {
+            pendingRestartReason = nil
+            handleAudioDeviceChange(reason: reason)
+        }
     }
 
     private func attemptStartCapture() async -> Bool {
@@ -162,6 +192,8 @@ final class SpeechAudioCapture: @unchecked Sendable {
     private(set) var recordingFormat: AVAudioFormat?
     private(set) var isVoiceProcessingActive = false
     private var streamingCallback: (@Sendable (AVAudioPCMBuffer, AudioForwardMode) -> Void)?
+    private let lifecycleLock = NSLock()
+    private var tapFireCount: UInt64 = 0
 
     private let bargeInThreshold: Float = 0.04
     private let _speakingLock = NSLock()
@@ -179,6 +211,13 @@ final class SpeechAudioCapture: @unchecked Sendable {
         streamingCallback: (@Sendable (AVAudioPCMBuffer, AudioForwardMode) -> Void)? = nil,
         bargeInCallback: (@Sendable () -> Void)? = nil
     ) throws {
+        lifecycleLock.lock()
+        defer { lifecycleLock.unlock() }
+
+        // Tear down existing engine before creating a new one to prevent
+        // concurrent AVAudioEngine instances fighting over the audio hardware.
+        stopInternal()
+
         self.streamingCallback = streamingCallback
         self.bargeInCallback = bargeInCallback
 
@@ -196,11 +235,15 @@ final class SpeechAudioCapture: @unchecked Sendable {
         }
 
         let hwFormat = inputNode.outputFormat(forBus: 0)
-        guard hwFormat.sampleRate > 0 else {
+        NSLog("[SPEECH] inputNode outputFormat: sampleRate=%.0f channels=%d", hwFormat.sampleRate, hwFormat.channelCount)
+        guard hwFormat.sampleRate > 0, hwFormat.channelCount > 0 else {
             throw SpeechRecognizerError.audioFormatCreationFailed
         }
 
-        guard let recordingFormat = AVAudioFormat(
+        // Create 1-channel recording format for downstream consumers.
+        // VP outputs 3 channels (ch0=processed voice, ch1=ambient, ch2=reserved);
+        // we extract ch0 in the tap and forward mono buffers.
+        guard let monoFormat = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
             sampleRate: hwFormat.sampleRate,
             channels: 1,
@@ -209,11 +252,25 @@ final class SpeechAudioCapture: @unchecked Sendable {
             throw SpeechRecognizerError.audioFormatCreationFailed
         }
 
-        self.recordingFormat = recordingFormat
+        self.recordingFormat = monoFormat
 
-        inputNode.installTap(onBus: 0, bufferSize: 2048, format: recordingFormat) { [weak self] buffer, _ in
+        self.tapFireCount = 0
+        // Pass nil format so the tap receives buffers in the node's native
+        // output format.  This avoids silent tap failures when AVAudioEngine
+        // cannot perform automatic channel-count conversion — a known issue
+        // with Voice Processing + Bluetooth (WWDC 2019-510, WWDC 2023-10235).
+        inputNode.installTap(onBus: 0, bufferSize: 2048, format: nil) { [weak self] buffer, _ in
             guard let self else { return }
-            guard let channelData = buffer.floatChannelData else { return }
+            self.tapFireCount &+= 1
+            if self.tapFireCount <= 3 || self.tapFireCount % 500 == 0 {
+                NSLog("[SPEECH-TAP] fired count=%llu frames=%d ch=%d rateHz=%.0f",
+                      self.tapFireCount, buffer.frameLength,
+                      buffer.format.channelCount, buffer.format.sampleRate)
+            }
+            guard let channelData = buffer.floatChannelData else {
+                NSLog("[SPEECH-TAP] dropped: nil floatChannelData")
+                return
+            }
 
             let frames = Int(buffer.frameLength)
             let samples = channelData[0]
@@ -232,21 +289,32 @@ final class SpeechAudioCapture: @unchecked Sendable {
                 return
             }
 
-            guard let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) else { return }
+            guard let monoFmt = self.recordingFormat,
+                  let copy = AVAudioPCMBuffer(pcmFormat: monoFmt, frameCapacity: buffer.frameLength) else {
+                NSLog("[SPEECH-TAP] dropped: mono format nil or buffer alloc failed")
+                return
+            }
             copy.frameLength = buffer.frameLength
-            if let src = buffer.floatChannelData, let dst = copy.floatChannelData {
-                for channel in 0..<Int(buffer.format.channelCount) {
-                    dst[channel].update(from: src[channel], count: Int(buffer.frameLength))
-                }
+            if let dst = copy.floatChannelData {
+                dst[0].update(from: samples, count: frames)
             }
             self.streamingCallback?(copy, gate.forwardMode)
         }
 
         engine.prepare()
         try engine.start()
+        NSLog("[SPEECH] engine started isRunning=%d vpEnabled=%d tapCount=%llu format=%.0fHz/%dch",
+              engine.isRunning ? 1 : 0, inputNode.isVoiceProcessingEnabled ? 1 : 0,
+              self.tapFireCount, hwFormat.sampleRate, hwFormat.channelCount)
     }
 
     func stop() {
+        lifecycleLock.lock()
+        defer { lifecycleLock.unlock() }
+        stopInternal()
+    }
+
+    private func stopInternal() {
         engine?.inputNode.removeTap(onBus: 0)
         engine?.stop()
         engine = nil
