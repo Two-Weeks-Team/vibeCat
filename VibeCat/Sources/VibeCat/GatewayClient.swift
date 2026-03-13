@@ -152,8 +152,21 @@ final class GatewayClient {
         sendSetupPayload()
     }
 
+    private var audioBytesSent: UInt64 = 0
+    private var lastAudioLogTime: Date = .distantPast
+
     func sendAudio(_ pcmData: Data) {
         guard case .connected = state else { return }
+        guard webSocketTask != nil else {
+            NSLog("[GW-OUT] sendAudio: DROPPED — webSocketTask nil, %lu bytes", pcmData.count)
+            return
+        }
+        audioBytesSent += UInt64(pcmData.count)
+        let now = Date()
+        if now.timeIntervalSince(lastAudioLogTime) >= 10 {
+            NSLog("[GW-OUT] sendAudio: cumulative %llu bytes sent", audioBytesSent)
+            lastAudioLogTime = now
+        }
         webSocketTask?.send(.data(pcmData)) { _ in }
     }
 
