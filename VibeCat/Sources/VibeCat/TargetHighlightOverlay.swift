@@ -31,8 +31,15 @@ final class TargetHighlightOverlay: NSPanel {
     }
 
     func show(targetRect: CGRect) {
-        let frame = TargetHighlightGeometry.overlayFrame(for: targetRect)
-        setFrame(frame, display: true)
+        let padded = TargetHighlightGeometry.overlayFrame(for: targetRect)
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+        let appKitFrame = NSRect(
+            x: padded.origin.x,
+            y: primaryHeight - padded.origin.y - padded.height,
+            width: padded.width,
+            height: padded.height
+        )
+        setFrame(appKitFrame, display: true)
         orderFront(nil)
     }
 

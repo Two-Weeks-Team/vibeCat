@@ -860,18 +860,17 @@ final class AccessibilityNavigator {
         return CGPoint(x: position.x + insetX, y: position.y + insetY)
     }
 
-    private func clickTextInput(at point: CGPoint) -> Bool {
-        let cgPoint = ScreenCaptureService.MouseWindowTargetingGeometry.appKitToCGPoint(point)
+    private func clickTextInput(at axPoint: CGPoint) -> Bool {
         guard let down = CGEvent(
             mouseEventSource: nil,
             mouseType: .leftMouseDown,
-            mouseCursorPosition: cgPoint,
+            mouseCursorPosition: axPoint,
             mouseButton: .left
         ),
         let up = CGEvent(
             mouseEventSource: nil,
             mouseType: .leftMouseUp,
-            mouseCursorPosition: cgPoint,
+            mouseCursorPosition: axPoint,
             mouseButton: .left
         ) else {
             return false
@@ -882,11 +881,10 @@ final class AccessibilityNavigator {
         return true
     }
 
-    private func hitTestTextInputRole(at point: CGPoint) -> String {
-        let cgPoint = ScreenCaptureService.MouseWindowTargetingGeometry.appKitToCGPoint(point)
+    private func hitTestTextInputRole(at axPoint: CGPoint) -> String {
         let systemWide = AXUIElementCreateSystemWide()
         var hit: AXUIElement?
-        guard AXUIElementCopyElementAtPosition(systemWide, Float(cgPoint.x), Float(cgPoint.y), &hit) == .success,
+        guard AXUIElementCopyElementAtPosition(systemWide, Float(axPoint.x), Float(axPoint.y), &hit) == .success,
               let hit else {
             return ""
         }
