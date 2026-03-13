@@ -6,6 +6,8 @@ public struct NavigatorSurfaceProfile: Sendable, Equatable {
     public let appAliases: [String]
     public let preferredTextInputKeywords: [String]
     public let preparationHotkey: [String]?
+    public let activationDelayNs: UInt64
+    public let applescriptAppName: String?
 
     public static func detect(
         targetApp: String,
@@ -35,7 +37,9 @@ public struct NavigatorSurfaceProfile: Sendable, Equatable {
                 primaryBundleID: "com.google.Chrome",
                 appAliases: ["chrome", "google chrome", "browser"],
                 preferredTextInputKeywords: ["address", "search", "검색", "url"],
-                preparationHotkey: wantsAddressBarPrep ? ["command", "l"] : nil
+                preparationHotkey: wantsAddressBarPrep ? ["command", "l"] : nil,
+                activationDelayNs: 400_000_000,
+                applescriptAppName: "Google Chrome"
             )
         }
 
@@ -51,7 +55,9 @@ public struct NavigatorSurfaceProfile: Sendable, Equatable {
                 primaryBundleID: bundleID,
                 appAliases: ["terminal", "terminal.app", "iterm", "iterm2"],
                 preferredTextInputKeywords: ["prompt", "shell", "command"],
-                preparationHotkey: nil
+                preparationHotkey: nil,
+                activationDelayNs: 250_000_000,
+                applescriptAppName: bundleID == "com.googlecode.iterm2" ? "iTerm" : "Terminal"
             )
         }
 
@@ -63,7 +69,9 @@ public struct NavigatorSurfaceProfile: Sendable, Equatable {
                 primaryBundleID: "com.openai.codex",
                 appAliases: ["antigravity", "antigravity ide", "codex"],
                 preferredTextInputKeywords: ["prompt", "composer", "follow-up", "후속", "reply", "입력"],
-                preparationHotkey: nil
+                preparationHotkey: nil,
+                activationDelayNs: 300_000_000,
+                applescriptAppName: "Antigravity"
             )
         }
 
@@ -72,7 +80,9 @@ public struct NavigatorSurfaceProfile: Sendable, Equatable {
             primaryBundleID: nil,
             appAliases: [],
             preferredTextInputKeywords: [],
-            preparationHotkey: nil
+            preparationHotkey: nil,
+            activationDelayNs: 300_000_000,
+            applescriptAppName: nil
         )
     }
 
