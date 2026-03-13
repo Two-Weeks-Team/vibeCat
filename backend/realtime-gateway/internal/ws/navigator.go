@@ -851,6 +851,26 @@ func buildTaskReplacementQuestion(activeCommand, nextCommand string) string {
 	}
 }
 
+func needsVisionCheckpoint(completedStep navigatorStep, observedOutcome string) bool {
+	switch completedStep.ActionType {
+	case "open_url":
+		return true
+	case "paste_text":
+		return true
+	case "hotkey":
+		for _, k := range completedStep.Hotkey {
+			low := strings.ToLower(k)
+			if low == "return" || low == "enter" {
+				return true
+			}
+		}
+	}
+	if strings.Contains(strings.ToLower(observedOutcome), "inconclusive") {
+		return true
+	}
+	return false
+}
+
 func buildNextActionHint(toolName, text, target string) string {
 	switch toolName {
 	case "navigate_open_url":

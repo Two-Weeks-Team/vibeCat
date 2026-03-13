@@ -185,6 +185,9 @@ type liveSessionState struct {
 	pendingVMu    sync.Mutex
 	pendingVision *pendingVisionVerification
 
+	pendingCpMu sync.Mutex
+	pendingCp   *pendingVisionCheckpoint
+
 	cdpMu   sync.Mutex
 	cdpCtrl *cdp.ChromeController
 	cdpInit bool
@@ -205,6 +208,20 @@ type visionCapturePayload struct {
 	sessionID string
 	userID    string
 	traceID   string
+}
+
+// pendingVisionCheckpoint holds state for a mid-step vision checkpoint.
+// Between pendingFC steps, the gateway captures a screenshot and asks ADK
+// whether the previous step succeeded before dispatching the next step.
+type pendingVisionCheckpoint struct {
+	taskID        string
+	completedStep navigatorStep
+	nextStep      navigatorStep
+	fcID          string
+	fcName        string
+	fcText        string
+	fcTarget      string
+	imgCh         chan visionCapturePayload
 }
 
 type sessionRuntime struct {
@@ -547,6 +564,48 @@ func (ls *liveSessionState) deliverVisionCapture(cap visionCapturePayload) bool 
 	default:
 		return false
 	}
+}
+
+func (ls *liveSessionState) setPendingCheckpoint(cp *pendingVisionCheckpoint) {
+	ls.pendingCpMu.Lock()
+	ls.pendingCp = cp
+	ls.pendingCpMu.Unlock()
+}
+
+func (ls *liveSessionState) clearPendingCheckpoint() {
+	ls.pendingCpMu.Lock()
+	ls.pendingCp = nil
+	ls.pendingCpMu.Unlock()
+}
+
+func (ls *liveSessionState) deliverCheckpointCapture(cap visionCapturePayload) bool {
+	ls.pendingCpMu.Lock()
+	cp := ls.pendingCp
+	ls.pendingCpMu.Unlock()
+	if cp == nil {
+		return false
+	}
+	select {
+	case cp.imgCh <- cap:
+		return true
+	default:
+		return false
+	}
+}
+
+func (ls *liveSessionState) peekPendingFCStep() (navigatorStep, bool) {
+	ls.pendingFCMu.Lock()
+	defer ls.pendingFCMu.Unlock()
+	if len(ls.pendingFCSteps) == 0 {
+		return navigatorStep{}, false
+	}
+	return ls.pendingFCSteps[0], true
+}
+
+func (ls *liveSessionState) getPendingFCInfo() (id, name, text, target string) {
+	ls.pendingFCMu.Lock()
+	defer ls.pendingFCMu.Unlock()
+	return ls.pendingFCID, ls.pendingFCName, ls.pendingFCText, ls.pendingFCTarget
 }
 
 func (ls *liveSessionState) ensureCurrentTurnTrace(defaultFlow string) (string, string, time.Time) {
@@ -2436,23 +2495,114 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 							})
 							sendProcessingState(c, "navigator", navigatorActiveTraceID, "verifying_result", "", "", "", 0, false)
 							if nextStep, hasNext := ls.advancePendingFCStep(); hasNext {
-								sendProcessingState(c, "navigator", navigatorActiveTraceID, "observing_screen", navigatorObservingLabel(ls.getConfig().Language), "", "", 0, true)
-								prevStepAction := refreshMsg.Step.ActionType
-								if prevStepAction == "open_url" {
-									time.Sleep(2500 * time.Millisecond)
-								} else if nextStep.ActionType == "focus_app" || prevStepAction == "focus_app" {
-									time.Sleep(500 * time.Millisecond)
+								if adkClient != nil && needsVisionCheckpoint(refreshMsg.Step, refreshMsg.ObservedOutcome) {
+									fcID, fcName, fcText, fcTarget := ls.getPendingFCInfo()
+									cp := &pendingVisionCheckpoint{
+										taskID:        refreshMsg.TaskID,
+										completedStep: refreshMsg.Step,
+										nextStep:      nextStep,
+										fcID:          fcID,
+										fcName:        fcName,
+										fcText:        fcText,
+										fcTarget:      fcTarget,
+										imgCh:         make(chan visionCapturePayload, 1),
+									}
+									ls.setPendingCheckpoint(cp)
+									sendProcessingState(c, "navigator", navigatorActiveTraceID, "observing_screen", navigatorObservingLabel(ls.getConfig().Language), "", "", 0, true)
+									lockedSendJSON(c, map[string]any{
+										"type":   "requestScreenCapture",
+										"reason": "mid_step_checkpoint",
+									})
+									cpTraceID := navigatorActiveTraceID
+									capturedCtx := ctx
+									go func() {
+										defer ls.clearPendingCheckpoint()
+										var visionText string
+										var errorDetected bool
+										select {
+										case cap := <-cp.imgCh:
+											analyzeCtx, analyzeCancel := context.WithTimeout(capturedCtx, 4*time.Second)
+											defer analyzeCancel()
+											result, err := adkClient.Analyze(analyzeCtx, adk.AnalysisRequest{
+												Image:     cap.image,
+												Context:   fmt.Sprintf("mid-step checkpoint after %s: %s", cp.completedStep.ActionType, truncateText(cp.fcText, 120)),
+												SessionID: cap.sessionID,
+												UserID:    cap.userID,
+												TraceID:   cap.traceID,
+											})
+											if err != nil {
+												slog.Warn("[HANDLER] checkpoint ADK analyze failed", "conn_id", c.ID, "error", err)
+											} else if result != nil && result.Vision != nil {
+												visionText = result.Vision.Content
+												errorDetected = result.Vision.ErrorDetected
+											}
+										case <-time.After(3 * time.Second):
+											slog.Info("[HANDLER] checkpoint vision timeout, proceeding", "conn_id", c.ID, "task_id", cp.taskID)
+										}
+
+										if errorDetected {
+											slog.Info("[HANDLER] checkpoint detected error, aborting remaining steps", "conn_id", c.ID, "task_id", cp.taskID, "vision", visionText)
+											abortID, abortName, _, _ := ls.clearPendingFC()
+											sendProcessingState(c, "navigator", cpTraceID, "observing_screen", "", "", "", 0, false)
+											lockedSendJSON(c, map[string]any{
+												"type":   "navigator.failed",
+												"taskId": cp.taskID,
+												"reason": "checkpoint_error: " + visionText,
+											})
+											if fcSess := ls.getSession(); fcSess != nil {
+												resp := map[string]any{
+													"status": "checkpoint_failed",
+													"error":  "Mid-step verification detected an error after " + cp.completedStep.ActionType,
+												}
+												if visionText != "" {
+													resp["vision"] = visionText
+												}
+												_ = fcSess.SendToolResponse([]*genai.FunctionResponse{{
+													ID:       abortID,
+													Name:     abortName,
+													Response: resp,
+												}})
+											}
+											return
+										}
+
+										slog.Info("[HANDLER] checkpoint passed, advancing to next step", "conn_id", c.ID, "task_id", cp.taskID, "step", cp.nextStep.ActionType, "vision_len", len(visionText))
+										prevAction := cp.completedStep.ActionType
+										if prevAction == "open_url" {
+											time.Sleep(2500 * time.Millisecond)
+										} else if cp.nextStep.ActionType == "focus_app" || prevAction == "focus_app" {
+											time.Sleep(500 * time.Millisecond)
+										} else {
+											time.Sleep(150 * time.Millisecond)
+										}
+										sendProcessingState(c, "navigator", cpTraceID, "observing_screen", "", "", "", 0, false)
+										sendProcessingState(c, "navigator", cpTraceID, "executing_step", navigatorExecutingLabel(ls.getConfig().Language), cp.nextStep.ActionType, "", 0, true)
+										lockedSendJSON(c, map[string]any{
+											"type":    "navigator.stepPlanned",
+											"taskId":  cp.taskID,
+											"step":    cp.nextStep,
+											"message": navigatorMessageForStep(cp.nextStep),
+										})
+									}()
 								} else {
-									time.Sleep(150 * time.Millisecond)
+									sendProcessingState(c, "navigator", navigatorActiveTraceID, "observing_screen", navigatorObservingLabel(ls.getConfig().Language), "", "", 0, true)
+									prevStepAction := refreshMsg.Step.ActionType
+									if prevStepAction == "open_url" {
+										time.Sleep(2500 * time.Millisecond)
+									} else if nextStep.ActionType == "focus_app" || prevStepAction == "focus_app" {
+										time.Sleep(500 * time.Millisecond)
+									} else {
+										time.Sleep(150 * time.Millisecond)
+									}
+									sendProcessingState(c, "navigator", navigatorActiveTraceID, "observing_screen", "", "", "", 0, false)
+									sendProcessingState(c, "navigator", navigatorActiveTraceID, "executing_step", navigatorExecutingLabel(ls.getConfig().Language), nextStep.ActionType, "", 0, true)
+									lockedSendJSON(c, map[string]any{
+										"type":    "navigator.stepPlanned",
+										"taskId":  refreshMsg.TaskID,
+										"step":    nextStep,
+										"message": navigatorMessageForStep(nextStep),
+									})
 								}
-								sendProcessingState(c, "navigator", navigatorActiveTraceID, "observing_screen", "", "", "", 0, false)
-								sendProcessingState(c, "navigator", navigatorActiveTraceID, "executing_step", navigatorExecutingLabel(ls.getConfig().Language), nextStep.ActionType, "", 0, true)
-								lockedSendJSON(c, map[string]any{
-									"type":    "navigator.stepPlanned",
-									"taskId":  refreshMsg.TaskID,
-									"step":    nextStep,
-									"message": navigatorMessageForStep(nextStep),
-								})
 							} else {
 								fcID, fcName, fcText, fcTarget := ls.clearPendingFC()
 								sendProcessingState(c, "navigator", navigatorActiveTraceID, "completing", navigatorCompletingLabel(ls.getConfig().Language), "", "", 0, true)
@@ -2728,13 +2878,18 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 						if capTraceID == "" {
 							capTraceID = newTraceID("cap")
 						}
-						if ls.deliverVisionCapture(visionCapturePayload{
+						capPayload := visionCapturePayload{
 							image:     captureMsg.Image,
 							sessionID: captureMsg.SessionID,
 							userID:    captureMsg.UserID,
 							traceID:   capTraceID,
-						}) {
+						}
+						if ls.deliverVisionCapture(capPayload) {
 							slog.Info("[HANDLER] screen capture delivered to vision verification", "conn_id", c.ID, "trace_id", capTraceID)
+							continue
+						}
+						if ls.deliverCheckpointCapture(capPayload) {
+							slog.Info("[HANDLER] screen capture delivered to mid-step checkpoint", "conn_id", c.ID, "trace_id", capTraceID)
 							continue
 						}
 					}
