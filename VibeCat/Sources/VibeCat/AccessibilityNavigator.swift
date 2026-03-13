@@ -51,6 +51,11 @@ private struct TextInputCandidate {
 final class AccessibilityNavigator {
     nonisolated(unsafe) var onAppActivated: ((_ appName: String) -> Void)?
 
+    /// Set this before each execute(step:) call so the pressAX coordinate path can
+    /// validate screenBasisId against the screen state that was live when the gateway
+    /// calculated the coordinates. Updated by NavigatorActionWorker.
+    var lastKnownScreenBasisID: String = ""
+
     private var lastFocusSignature = ""
     private var focusStableSince = Date()
     private var lastInputFieldHint = ""
@@ -308,25 +313,35 @@ final class AccessibilityNavigator {
             }
             guard let element = resolveElement(for: step.targetDescriptor) else {
                 if let cx = step.targetDescriptor.clickX, let cy = step.targetDescriptor.clickY, cx > 0, cy > 0 {
-                    if let screen = NSScreen.main {
-                        let screenWidth = screen.frame.width
-                        let screenHeight = screen.frame.height
-                        // macOS CGEvent uses top-left origin coordinate system
-                        let pixelX = Int(cx * screenWidth)
-                        let pixelY = Int(cy * screenHeight)
-                        NSLog("[NAV-VISION] attempting vision-based click at (%d, %d) from normalized (%.3f, %.3f)", pixelX, pixelY, cx, cy)
-                        animateCursorTo(CGPoint(x: CGFloat(pixelX), y: CGFloat(pixelY)))
-                        let mcp = AutomationMCPClient.shared
-                        if mcp.isRunning {
-                            let clicked = await mcp.mouseClick(x: pixelX, y: pixelY)
-                            if clicked {
-                                NSLog("[NAV-VISION] vision-based click succeeded at (%d, %d)", pixelX, pixelY)
-                                try? await Task.sleep(nanoseconds: 350_000_000)
-                                return verify(step: step, before: before, defaultOutcome: "Pressed target via vision coordinates")
-                            }
-                        }
-                        NSLog("[NAV-VISION] vision-based MCP click failed, falling back to guided mode")
+                    let stepBasis = step.screenBasisId ?? ""
+                    let currentBasis = lastKnownScreenBasisID
+                    let screenStateChangedSinceCoordinatesWereCalculated = !stepBasis.isEmpty && !currentBasis.isEmpty && stepBasis != currentBasis
+                    if screenStateChangedSinceCoordinatesWereCalculated {
+                        NSLog("[NAV-VISION] screenBasisID mismatch, requesting fresh capture (step=%@ current=%@)", stepBasis, currentBasis)
+                        return .failed(
+                            "Screen state changed since coordinates were calculated — aborting coordinate click",
+                            reason: .screenChanged,
+                            phase: .resolveTarget
+                        )
                     }
+                    let screen = screenForCoordinateClick()
+                    let displayOrigin = screen.frame.origin
+                    let displayWidth = screen.frame.width
+                    let displayHeight = screen.frame.height
+                    let pixelX = Int(displayOrigin.x + cx * displayWidth)
+                    let pixelY = Int(displayOrigin.y + cy * displayHeight)
+                    NSLog("[NAV-VISION] attempting vision-based click at (%d, %d) from normalized (%.3f, %.3f) displayFrame=(%.0f,%.0f,%.0fx%.0f)", pixelX, pixelY, cx, cy, displayOrigin.x, displayOrigin.y, displayWidth, displayHeight)
+                    animateCursorTo(CGPoint(x: CGFloat(pixelX), y: CGFloat(pixelY)))
+                    let mcp = AutomationMCPClient.shared
+                    if mcp.isRunning {
+                        let clicked = await mcp.mouseClick(x: pixelX, y: pixelY)
+                        if clicked {
+                            NSLog("[NAV-VISION] vision-based click succeeded at (%d, %d)", pixelX, pixelY)
+                            try? await Task.sleep(nanoseconds: 350_000_000)
+                            return verify(step: step, before: before, defaultOutcome: "Pressed target via vision coordinates")
+                        }
+                    }
+                    NSLog("[NAV-VISION] vision-based MCP click failed, falling back to guided mode")
                 }
                 return .guided("I found the likely target, but I should not click blindly here.", reason: .targetNotFound, phase: .resolveTarget)
             }
@@ -968,6 +983,10 @@ final class AccessibilityNavigator {
         NSLog("[NAV-COORD] Activation point (%.0f,%.0f) from AX pos (%.0f,%.0f) size (%.0f,%.0f)",
               point.x, point.y, position.x, position.y, size.width, size.height)
         return point
+    }
+
+    private func screenForCoordinateClick() -> NSScreen {
+        NSScreen.main ?? NSScreen.screens.first ?? NSScreen()
     }
 
     private func frontmostWindowFrame() -> CGRect? {

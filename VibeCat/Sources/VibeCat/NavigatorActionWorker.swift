@@ -62,6 +62,7 @@ final class NavigatorActionWorker {
         executionTask?.cancel()
         executionTask = Task { [weak self] in
             guard let self else { return }
+            self.navigator.lastKnownScreenBasisID = await MainActor.run { self.contextProvider().screenBasisID }
             let result = await self.navigator.execute(step: step)
             guard !Task.isCancelled else { return }
             await MainActor.run {
@@ -89,6 +90,33 @@ final class NavigatorActionWorker {
                     self.currentStepID = nil
                 }
                 onResult(result)
+            }
+
+            let wasVisionClick = step.actionType == .pressAX
+                && step.targetDescriptor.clickX != nil
+                && result.status == "success"
+            guard wasVisionClick, !Task.isCancelled else { return }
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run { [weak self] in
+                guard let self,
+                      self.activeTaskID == self.normalized(taskId),
+                      self.currentStepID == step.id,
+                      let activeCommand = self.activeCommand else { return }
+                let postClickContext = self.contextProvider()
+                let verifyResult = NavigatorExecutionResult(
+                    status: "success",
+                    observedOutcome: "post_click_verification: \(result.observedOutcome)",
+                    phase: .verifyOutcome
+                )
+                NSLog("[NAV-EXEC] sending post-click verification snapshot for step=%@", step.id)
+                self.gatewayClient.sendNavigatorRefresh(
+                    taskId: taskId,
+                    command: activeCommand,
+                    step: step,
+                    result: verifyResult,
+                    context: postClickContext
+                )
             }
         }
     }

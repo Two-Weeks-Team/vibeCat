@@ -809,6 +809,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         AutomationMCPClient.shared.startSidecar()
 
+        E2EControlBridge.shared.configure(
+            gatewayClient: gateway,
+            captureService: capture,
+            contextProvider: { [weak self] in
+                self?.currentNavigatorContext() ?? NavigatorContextPayload(
+                    appName: "",
+                    bundleId: "",
+                    frontmostBundleId: "",
+                    windowTitle: "",
+                    focusedRole: "",
+                    focusedLabel: "",
+                    selectedText: "",
+                    axSnapshot: "",
+                    inputFieldHint: "",
+                    lastInputFieldDescriptor: "",
+                    screenshot: "",
+                    focusStableMs: 0,
+                    captureConfidence: 0,
+                    visibleInputCandidateCount: 0,
+                    accessibilityPermission: "unknown",
+                    accessibilityTrusted: false
+                )
+            }
+        )
+        E2EControlBridge.shared.startIfEnabled()
+
         gateway.connect()
         analyzer.start()
         sbc.updatePauseState(isPaused)
@@ -1037,12 +1063,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.activeNavigatorCommand = command
                 self.navigatorStepCount = 0
                 self.navigatorPromptState = nil
-                // Pause proactive screen analysis during navigator action execution
                 self.screenAnalyzer?.pause()
                 NSLog("[NAV-PAUSE] paused proactive screen analysis for navigator action")
                 if let taskId {
                     self.navigatorActionWorker?.beginTask(taskId: taskId, command: command)
                 }
+                E2EControlBridge.shared.notifyCommandAccepted(taskId: taskId, command: command)
                 chatPanel?.updateLastAssistantMessage(VibeCatL10n.navigatorAccepted(intent: intentClass, confidence: intentConfidence))
                 self.showStatusBubbleIfAllowed(
                     panel: panel,
@@ -1068,6 +1094,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .navigatorStepPlanned(let taskId, let step, let message):
                 NSLog("[GW-IN] navigator.stepPlanned task=%@ id=%@ action=%@", taskId, step.id, step.actionType.rawValue)
                 self.navigatorStepCount += 1
+                E2EControlBridge.shared.notifyStepPlanned(taskId: taskId, step: step)
                 chatPanel?.updateLastAssistantMessage(message.isEmpty ? step.expectedOutcome : message)
                 self.showStatusBubbleIfAllowed(
                     panel: panel,
@@ -1084,7 +1111,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.executeNavigatorStep(taskId: taskId, step: step, panel: panel, chatPanel: chatPanel)
             case .navigatorStepRunning(let taskId, let stepId, let status):
                 NSLog("[GW-IN] navigator.stepRunning task=%@ id=%@ status=%@", taskId, stepId, status)
-            case .navigatorStepVerified(_, _, _, let observedOutcome):
+            case .navigatorStepVerified(let taskId, let stepId, _, let observedOutcome):
+                E2EControlBridge.shared.notifyStepVerified(taskId: taskId, stepId: stepId, observedOutcome: observedOutcome)
                 chatPanel?.updateLastAssistantMessage(observedOutcome)
             case .navigatorRiskyActionBlocked(let command, let question, let reason):
                 NSLog("[GW-IN] navigator.riskyActionBlocked command=%@ reason=%@", command, reason)
@@ -1119,6 +1147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.navigatorActionWorker?.clearTask(taskId: taskId)
                 self.screenAnalyzer?.resume()
                 NSLog("[NAV-RESUME] resumed proactive screen analysis after navigator completed")
+                E2EControlBridge.shared.notifyCompleted(taskId: taskId, summary: summary)
                 chatPanel?.updateLastAssistantMessage(summary)
                 self.showStatusBubbleIfAllowed(
                     panel: panel,
@@ -1136,6 +1165,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 self.screenAnalyzer?.resume()
                 NSLog("[NAV-RESUME] resumed proactive screen analysis after navigator failed")
+                E2EControlBridge.shared.notifyFailed(taskId: taskId, reason: reason)
                 chatPanel?.updateLastAssistantMessage(reason)
                 self.showStatusBubbleIfAllowed(
                     panel: panel,

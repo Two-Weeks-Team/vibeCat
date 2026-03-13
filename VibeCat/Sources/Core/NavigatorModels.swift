@@ -40,6 +40,8 @@ public enum ExecutionFailureReason: String, Sendable, Codable {
     case verificationInconclusive = "verification_inconclusive"
     case pasteRejected = "paste_rejected"
     case surfaceAdapterUnavailable = "surface_adapter_unavailable"
+    /// Coordinates were calculated against a different screen state — safe to abort rather than blind-click.
+    case screenChanged = "screen_changed"
 }
 
 public enum ExecutionPhase: String, Sendable, Codable {
@@ -153,6 +155,8 @@ public struct NavigatorStep: Sendable, Codable, Equatable, Identifiable {
     public let maxLocalRetries: Int?
     public let timeoutMs: Int?
     public let proofLevel: ProofLevel?
+    public let screenBasisId: String?
+    public let verificationCue: String?
 
     public init(
         id: String,
@@ -180,7 +184,9 @@ public struct NavigatorStep: Sendable, Codable, Equatable, Identifiable {
         fallbackHotkey: [String]? = nil,
         maxLocalRetries: Int? = nil,
         timeoutMs: Int? = nil,
-        proofLevel: ProofLevel? = nil
+        proofLevel: ProofLevel? = nil,
+        screenBasisId: String? = nil,
+        verificationCue: String? = nil
     ) {
         self.id = id
         self.actionType = actionType
@@ -208,6 +214,8 @@ public struct NavigatorStep: Sendable, Codable, Equatable, Identifiable {
         self.maxLocalRetries = maxLocalRetries
         self.timeoutMs = timeoutMs
         self.proofLevel = proofLevel
+        self.screenBasisId = screenBasisId
+        self.verificationCue = verificationCue
     }
 }
 
