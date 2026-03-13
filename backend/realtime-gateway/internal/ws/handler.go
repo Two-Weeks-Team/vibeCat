@@ -1841,6 +1841,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 						slog.Warn("action state restore failed", "conn_id", c.ID, "owner", actionStateOwner, "error", err)
 					} else if ok {
 						*navState = restored
+						restoredIsStale := navState.isStaleTask()
 						navState.bindLease(strings.TrimSpace(cfg.DeviceID), c.ID)
 						persistNavigatorState()
 						if previousActionStateOwner != actionStateOwner {
@@ -1849,12 +1850,18 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 							}
 						}
 						if navState.hasActiveTask() {
-							lockedSendJSON(c, map[string]any{
-								"type":        "navigator.guidedMode",
-								"taskId":      navState.activeTaskID,
-								"reason":      "restored_task_state",
-								"instruction": fmt.Sprintf("I restored the previous action state for %q. Ask me to resume it or give me a new command.", navState.activeCommand),
-							})
+							if restoredIsStale {
+								slog.Info("clearing stale restored task", "conn_id", c.ID, "task_id", navState.activeTaskID, "command", navState.activeCommand)
+								navState.clearPlan()
+								persistNavigatorState()
+							} else {
+								lockedSendJSON(c, map[string]any{
+									"type":        "navigator.guidedMode",
+									"taskId":      navState.activeTaskID,
+									"reason":      "restored_task_state",
+									"instruction": fmt.Sprintf("I restored the previous action state for %q. Ask me to resume it or give me a new command.", navState.activeCommand),
+								})
+							}
 						}
 					} else {
 						navState.bindLease(strings.TrimSpace(cfg.DeviceID), c.ID)
@@ -2045,8 +2052,6 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 							"instruction": "I can see the request, but I need a more specific target or a supported surface.",
 						})
 					case navState.hasActiveTask():
-						navState.completeAttempt("clarification_needed", "active_task_exists")
-						recordAttemptLog("clarification_needed", attemptID, navMsg.Command, "clarification_needed", "active_task_exists")
 						activeTaskID, activeCommand, currentStepID, _ := navState.activeTaskSnapshot()
 						if strings.TrimSpace(navMsg.Command) == strings.TrimSpace(activeCommand) {
 							lockedSendJSON(c, map[string]any{
@@ -2057,6 +2062,47 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 							})
 							continue
 						}
+						if navState.isStaleTask() {
+							slog.Info("auto-replacing stale task", "conn_id", c.ID, "old_task", activeTaskID, "old_command", activeCommand, "new_command", navMsg.Command)
+							navState.clearPlan()
+							persistNavigatorState()
+							plan = planNavigatorCommand(navMsg.Command, navMsg.Context, false)
+							plan = maybeEscalateNavigatorPlan(ctx, adkClient, metrics, ls.getConfig().Language, navMsg.Command, navMsg.Context, plan, "")
+							if len(plan.Steps) > 0 {
+								taskID := navState.startPlan(navMsg.Command, plan.Steps)
+								navState.attachAttemptTask(taskID)
+								recordAttemptLog("accepted_replaced_stale", attemptID, navMsg.Command, "accepted", taskID)
+								navState.rememberInitialContext(navMsg.Context)
+								persistNavigatorState()
+								if metrics != nil {
+									metrics.RecordNavigatorTask(context.Background(), navigatorSurfaceFromState(*navState), plan.IntentClass)
+								}
+								navigatorActiveTraceID = traceID
+								sendProcessingState(c, "navigator", traceID, "analyzing_command", "", "", "", 0, false)
+								sendProcessingState(c, "navigator", traceID, "planning_steps", navigatorPlanningLabel(ls.getConfig().Language), "", "", len(plan.Steps), true)
+								lockedSendJSON(c, map[string]any{
+									"type":             "navigator.commandAccepted",
+									"taskId":           taskID,
+									"command":          navMsg.Command,
+									"intentClass":      plan.IntentClass,
+									"intentConfidence": plan.IntentConfidence,
+								})
+								if step, ok := navState.nextStep(); ok {
+									persistNavigatorState()
+									sendProcessingState(c, "navigator", traceID, "planning_steps", "", "", "", 0, false)
+									sendProcessingState(c, "navigator", traceID, "executing_step", navigatorExecutingLabel(ls.getConfig().Language), step.ActionType, "", 0, true)
+									lockedSendJSON(c, map[string]any{
+										"type":    "navigator.stepPlanned",
+										"taskId":  taskID,
+										"step":    step,
+										"message": navigatorMessageForStep(step),
+									})
+								}
+								continue
+							}
+						}
+						navState.completeAttempt("clarification_needed", "active_task_exists")
+						recordAttemptLog("clarification_needed", attemptID, navMsg.Command, "clarification_needed", "active_task_exists")
 						navState.stageClarification(navigatorPromptReplace, navMsg.Command)
 						persistNavigatorState()
 						if metrics != nil {
@@ -2437,6 +2483,9 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 											if visionText != "" {
 												resp["vision"] = visionText
 											}
+											if hint := buildNextActionHint(pv.fcName, pv.fcText, pv.fcTarget); hint != "" {
+												resp["next_action_hint"] = hint
+											}
 											if err := fcSess.SendToolResponse([]*genai.FunctionResponse{{
 												ID:       pv.fcID,
 												Name:     pv.fcName,
@@ -2448,14 +2497,18 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 									}()
 								} else {
 									if fcSess := ls.getSession(); fcSess != nil {
+										resp := map[string]any{
+											"status": "completed",
+											"text":   fcText,
+											"target": fcTarget,
+										}
+										if hint := buildNextActionHint(fcName, fcText, fcTarget); hint != "" {
+											resp["next_action_hint"] = hint
+										}
 										if err := fcSess.SendToolResponse([]*genai.FunctionResponse{{
-											ID:   fcID,
-											Name: fcName,
-											Response: map[string]any{
-												"status": "completed",
-												"text":   fcText,
-												"target": fcTarget,
-											},
+											ID:       fcID,
+											Name:     fcName,
+											Response: resp,
 										}}); err != nil {
 											slog.Warn("[HANDLER] FC SendToolResponse failed", "conn_id", c.ID, "error", err)
 										}

@@ -263,6 +263,18 @@ func (s *navigatorSessionState) hasActiveTask() bool {
 	return strings.TrimSpace(s.activeTaskID) != ""
 }
 
+const staleTaskThreshold = 60 * time.Second
+
+func (s *navigatorSessionState) isStaleTask() bool {
+	if !s.hasActiveTask() {
+		return false
+	}
+	if s.updatedAt.IsZero() {
+		return !s.createdAt.IsZero() && time.Since(s.createdAt) > staleTaskThreshold
+	}
+	return time.Since(s.updatedAt) > staleTaskThreshold
+}
+
 func (s *navigatorSessionState) activeTaskSnapshot() (string, string, string, bool) {
 	if strings.TrimSpace(s.activeTaskID) == "" {
 		return "", "", "", false
@@ -835,6 +847,24 @@ func buildTaskReplacementQuestion(activeCommand, nextCommand string) string {
 		return fmt.Sprintf("I am already working on %q. Do you want me to stop that and switch tasks?", active)
 	default:
 		return fmt.Sprintf("I am already working on %q. Do you want me to stop that and switch to %q?", active, next)
+	}
+}
+
+func buildNextActionHint(toolName, text, target string) string {
+	switch toolName {
+	case "navigate_open_url":
+		lowered := strings.ToLower(text)
+		if strings.Contains(lowered, "music.youtube") {
+			return "Page is loading. Next: use navigate_type_and_submit to search for music, then navigate_hotkey with [\"space\"] to ensure playback."
+		}
+		if strings.Contains(lowered, "youtube") {
+			return "YouTube is open. If searching, use navigate_type_and_submit to enter the search query."
+		}
+		return "URL opened. If the user's task requires further interaction on this page, call the next appropriate tool."
+	case "navigate_focus_app":
+		return "App is now focused. If the user requested an action in this app, call the next tool (e.g., navigate_hotkey, navigate_type_and_submit)."
+	default:
+		return ""
 	}
 }
 
