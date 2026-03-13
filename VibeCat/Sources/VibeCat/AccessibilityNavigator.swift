@@ -192,9 +192,9 @@ final class AccessibilityNavigator {
                 let afterCtx = currentContext()
                 let bundleID = afterCtx.bundleId.lowercased()
                 if bundleID.contains("chrome") || bundleID.contains("brave") || bundleID.contains("edgemac") || bundleID.contains("arc") || bundleID.contains("chromium") {
-                    _ = sendHotkey(["escape"])
+                    _ = sendHotkey(["tab"])
                     try? await Task.sleep(nanoseconds: 300_000_000)
-                    NSLog("[NAV-URL] Escape sent to dismiss Chrome address bar focus")
+                    NSLog("[NAV-URL] Tab sent to move focus from Chrome address bar without canceling page load")
                 }
                 return verify(step: step, before: before, defaultOutcome: "Opened \(url.absoluteString)")
             }
