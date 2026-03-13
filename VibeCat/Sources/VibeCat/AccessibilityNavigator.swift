@@ -418,18 +418,32 @@ final class AccessibilityNavigator {
             NSLog("[NAV-FOCUS] activate '%@' pid=%d ok=%d", trimmed, running.processIdentifier, ok ? 1 : 0)
             let confirmed = await pollFrontmostApp(targetApp: trimmed, profile: focusProfile)
             if confirmed { return true }
+            // Dock-click equivalent: openApplication brings running app to front reliably
+            if let bid = running.bundleIdentifier,
+               let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bid) {
+                NSLog("[NAV-FOCUS] dock-click fallback via openApplication for '%@'", trimmed)
+                let config = NSWorkspace.OpenConfiguration()
+                config.activates = true
+                NSWorkspace.shared.openApplication(at: appURL, configuration: config) { _, _ in }
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                let recheck = await pollFrontmostApp(targetApp: trimmed, profile: focusProfile, maxAttempts: 3)
+                if recheck { return true }
+            }
             if let asName = focusProfile.applescriptAppName {
+                NSLog("[NAV-FOCUS] AppleScript fallback for '%@'", trimmed)
                 let result = runAppleScript(lines: ["tell application \"\(asName)\" to activate"])
                 if result != nil { return true }
             }
             return ok
         }
 
+        // App not running — launch via bundle ID (same as Dock click on non-running app)
         let bundleIdentifier = explicitBundleIdentifier(for: targetApp) ?? explicitBundleIdentifier(for: trimmed)
         if let bundleIdentifier,
            let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) {
             NSLog("[NAV-FOCUS] launching '%@' via bundle=%@", trimmed, bundleIdentifier)
             let config = NSWorkspace.OpenConfiguration()
+            config.activates = true
             NSWorkspace.shared.openApplication(at: appURL, configuration: config) { _, _ in }
             return true
         }
