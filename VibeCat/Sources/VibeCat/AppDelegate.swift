@@ -1144,9 +1144,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     NSLog("[BUBBLE] listening auto-armed from input transcription")
                 }
                 if !finished && self.listeningStatusArmed {
-                    if !self.bubbleLockedByTTS && !self.chatModeActive && !displayText.isEmpty {
-                        panel?.showBubble(text: displayText)
-                    }
                     self.showStatusBubbleIfAllowed(
                         panel: panel,
                         text: VibeCatL10n.listeningTitle(),
@@ -1630,7 +1627,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.navigatorOverlayPanel?.showResult(overlayResult)
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                let captureResult = await self.captureService?.forceCapture()
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                let captureResult = await self.captureService?.forceCaptureFrontmost()
                 if case .captured(let snapshot) = captureResult {
                     let bitmapRep = NSBitmapImageRep(cgImage: snapshot.image)
                     if let jpegData = bitmapRep.representation(using: .jpeg, properties: [.compressionFactor: 0.7]) {

@@ -128,10 +128,20 @@ final class ScreenCaptureService {
         }
     }
 
-    /// Force a capture regardless of change detection.
     func forceCapture() async -> CaptureResult {
         do {
             let snapshot = try await performCapture(mode: selectedCaptureMode())
+            lastTargetIdentity = snapshot.targetIdentity
+            lastImage = snapshot.image
+            return .captured(snapshot)
+        } catch {
+            return .unavailable(error.localizedDescription)
+        }
+    }
+
+    func forceCaptureFrontmost() async -> CaptureResult {
+        do {
+            let snapshot = try await performCapture(mode: .frontmostWindow)
             lastTargetIdentity = snapshot.targetIdentity
             lastImage = snapshot.image
             return .captured(snapshot)
