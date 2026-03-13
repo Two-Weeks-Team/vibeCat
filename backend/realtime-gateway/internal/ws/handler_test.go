@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -287,6 +288,12 @@ func TestResolveQueryRoute(t *testing.T) {
 }
 
 func TestHandlerScreenCaptureTimeoutReturnsSilentFallbackQuickly(t *testing.T) {
+	originalTimeout := proactiveAnalyzeTimeout
+	proactiveAnalyzeTimeout = 100 * time.Millisecond
+	t.Cleanup(func() {
+		proactiveAnalyzeTimeout = originalTimeout
+	})
+
 	reg := NewRegistry()
 	fakeADK := &stubADK{
 		analyzeFn: func(ctx context.Context, req adk.AnalysisRequest) (*adk.AnalysisResult, error) {
@@ -346,6 +353,90 @@ func TestHandlerScreenCaptureTimeoutReturnsSilentFallbackQuickly(t *testing.T) {
 	}
 	if elapsed := inactiveAt.Sub(start); elapsed >= 5*time.Second {
 		t.Fatalf("silent fallback completed in %v, want < 5s", elapsed)
+	}
+}
+
+func TestHandlerSkipsOverlappingScreenCaptureAnalyze(t *testing.T) {
+	reg := NewRegistry()
+	var analyzeCalls atomic.Int32
+	analyzeDone := make(chan struct{})
+	t.Cleanup(func() {
+		close(analyzeDone)
+	})
+	fakeADK := &stubADK{
+		analyzeFn: func(ctx context.Context, req adk.AnalysisRequest) (*adk.AnalysisResult, error) {
+			analyzeCalls.Add(1)
+			select {
+			case <-analyzeDone:
+				return &adk.AnalysisResult{}, nil
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		},
+	}
+
+	server := httptest.NewServer(Handler(reg, nil, fakeADK, nil, nil, NewInMemoryActionStateStore()))
+	defer server.Close()
+
+	conn := dialTestWebSocket(t, server.URL)
+	defer conn.Close()
+
+	first := map[string]any{
+		"type":            "screenCapture",
+		"image":           "ZmFrZV9pbWFnZQ==",
+		"context":         "first capture",
+		"sessionId":       "session-overlap",
+		"userId":          "user-overlap",
+		"character":       "cat",
+		"activityMinutes": 1,
+	}
+	second := map[string]any{
+		"type":            "screenCapture",
+		"image":           "ZmFrZV9pbWFnZQ==",
+		"context":         "second capture",
+		"sessionId":       "session-overlap",
+		"userId":          "user-overlap",
+		"character":       "cat",
+		"activityMinutes": 1,
+	}
+
+	if err := conn.WriteJSON(first); err != nil {
+		t.Fatalf("send first screenCapture: %v", err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if analyzeCalls.Load() == 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if analyzeCalls.Load() != 1 {
+		t.Fatalf("expected first analyze call to start, got %d", analyzeCalls.Load())
+	}
+
+	if err := conn.WriteJSON(second); err != nil {
+		t.Fatalf("send second screenCapture: %v", err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if analyzeCalls.Load() != 1 {
+		t.Fatalf("expected overlapping screenCapture to be skipped, got %d analyze calls", analyzeCalls.Load())
+	}
+}
+
+func TestLiveSessionStateAnalyzeGateReleasesAfterFinish(t *testing.T) {
+	ls := &liveSessionState{}
+	if !ls.beginProactiveAnalyze("screenCapture") {
+		t.Fatal("expected first screenCapture analyze to begin")
+	}
+	if ls.beginProactiveAnalyze("screenCapture") {
+		t.Fatal("expected overlapping screenCapture analyze to be rejected")
+	}
+	ls.finishProactiveAnalyze("screenCapture")
+	if !ls.beginProactiveAnalyze("screenCapture") {
+		t.Fatal("expected analyze gate to reopen after finish")
+	}
+	if !ls.beginProactiveAnalyze("forceCapture") {
+		t.Fatal("forceCapture should bypass proactive screenCapture gate")
 	}
 }
 

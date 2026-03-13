@@ -41,6 +41,7 @@ final class ChatBubbleView: NSView {
     private let textWidthSlack: CGFloat = 10
 
     var isShowingStatus: Bool { displayMode == .status }
+    var currentDisplayMode: DisplayMode { displayMode }
 
     override init(frame: NSRect) {
         super.init(frame: frame)

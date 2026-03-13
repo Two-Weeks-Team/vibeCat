@@ -1,19 +1,25 @@
 import AppKit
+import CoreGraphics
+import Foundation
 import VibeCatCore
 
-@MainActor
-final class CatViewModel {
-    private(set) var position: CGPoint = .zero
-    private(set) var facingLeft = false
-    private var targetPosition: CGPoint = .zero
-    private var homePosition: CGPoint = .zero
-    private var moveTimer: Timer?
-    private var returnHomeTimer: Timer?
-    private var screenBounds: CGRect = .zero
+final class CatViewModel: @unchecked Sendable {
+    private let motionQueue = DispatchQueue(label: "vibecat.cat.motion", qos: .userInteractive)
+    private let mouseLocationProvider: @Sendable () -> CGPoint
+    private let screenFramesProvider: @Sendable () -> [CGRect]
+    private var motionTimer: DispatchSourceTimer?
+    private var state: CatMotionState
+
+    private let deliveryLock = NSLock()
+    private var pendingDelivery: CatMotionStepResult?
+    private var deliveryScheduled = false
 
     var onPositionUpdate: ((CGPoint) -> Void)?
     var onScreenFrameUpdate: ((CGRect) -> Void)?
-    var activeScreenFrame: CGRect { screenBounds }
+
+    var position: CGPoint { motionQueue.sync { state.position } }
+    var facingLeft: Bool { motionQueue.sync { state.facingLeft } }
+    var activeScreenFrame: CGRect { motionQueue.sync { state.screenBounds } }
 
     nonisolated static func combinedScreenBounds(_ screens: [NSScreen]) -> CGRect {
         combinedBounds(screens.map(\.frame))
@@ -28,69 +34,94 @@ final class CatViewModel {
         }
     }
 
-    init() {
-        updateScreenBounds(for: NSEvent.mouseLocation)
-        homePosition = CGPoint(x: screenBounds.maxX - 120, y: screenBounds.maxY - 120)
-        position = homePosition
-        targetPosition = homePosition
+    /// Returns the current mouse location in AppKit screen coordinates (Y=0 at bottom).
+    /// Uses thread-safe CG API internally and converts to AppKit coordinates.
+    nonisolated static func defaultMouseLocation() -> CGPoint {
+        guard let event = CGEvent(source: nil) else { return .zero }
+        let cg = event.location
+        let mainHeight = CGDisplayBounds(CGMainDisplayID()).size.height
+        return CGPoint(x: cg.x, y: mainHeight - cg.y)
+    }
+
+    /// Returns active display frames in AppKit screen coordinates (Y=0 at bottom).
+    /// Uses thread-safe CG API internally and converts to AppKit coordinates.
+    nonisolated static func activeDisplayFrames() -> [CGRect] {
+        var count: UInt32 = 0
+        guard CGGetActiveDisplayList(0, nil, &count) == .success, count > 0 else {
+            return []
+        }
+        var displays = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        guard CGGetActiveDisplayList(count, &displays, &count) == .success else {
+            return []
+        }
+        let mainHeight = CGDisplayBounds(CGMainDisplayID()).size.height
+        return displays.prefix(Int(count)).map { display in
+            let cg = CGDisplayBounds(display)
+            return CGRect(
+                x: cg.origin.x,
+                y: mainHeight - cg.origin.y - cg.size.height,
+                width: cg.size.width,
+                height: cg.size.height
+            )
+        }
+    }
+
+    init(
+        mouseLocationProvider: @escaping @Sendable () -> CGPoint = CatViewModel.defaultMouseLocation,
+        screenFramesProvider: @escaping @Sendable () -> [CGRect] = CatViewModel.activeDisplayFrames
+    ) {
+        self.mouseLocationProvider = mouseLocationProvider
+        self.screenFramesProvider = screenFramesProvider
+        self.state = CatMotionMath.initialState(mouseGlobal: mouseLocationProvider(), screenFrames: screenFramesProvider())
         startMoveLoop()
     }
 
-    func pointToward(_ screenPoint: CGPoint) {
-        let clamped = clampToBounds(globalToLocal(screenPoint))
-        targetPosition = clamped
-        returnHomeTimer?.invalidate()
-        let timer = Timer(timeInterval: 5.0, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.returnHome()
-            }
+    deinit {
+        motionQueue.sync {
+            motionTimer?.setEventHandler {}
+            motionTimer?.cancel()
+            motionTimer = nil
         }
-        RunLoop.main.add(timer, forMode: .common)
-        returnHomeTimer = timer
+    }
+
+    func pointToward(_ screenPoint: CGPoint) {
+        motionQueue.async { [weak self] in
+            guard let self else { return }
+            CatMotionMath.applyManualTarget(screenPoint, now: Date(), state: &self.state)
+        }
     }
 
     func returnHome() {
-        targetPosition = homePosition
+        motionQueue.async { [weak self] in
+            guard let self else { return }
+            CatMotionMath.applyReturnHome(now: Date(), state: &self.state)
+        }
     }
 
     private func startMoveLoop() {
-        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.updateFromMouse()
-                self?.updatePosition()
+        motionQueue.async { [weak self] in
+            guard let self, self.motionTimer == nil else { return }
+            let timer = DispatchSource.makeTimerSource(queue: self.motionQueue)
+            timer.schedule(deadline: .now(), repeating: .milliseconds(16), leeway: .milliseconds(2))
+            timer.setEventHandler { [weak self] in
+                self?.tickMotion()
             }
+            self.motionTimer = timer
+            timer.resume()
         }
-        RunLoop.main.add(timer, forMode: .common)
-        moveTimer = timer
     }
 
-    private let catOffsetX: CGFloat = 150
-    private let catOffsetY: CGFloat = 30
+    private func tickMotion() {
+        let result = CatMotionMath.step(
+            state: &state,
+            mouseGlobal: mouseLocationProvider(),
+            screenFrames: screenFramesProvider(),
+            now: Date(),
+            followFactor: followFactor
+        )
 
-    private func updateFromMouse() {
-        let mouseGlobal = NSEvent.mouseLocation
-        updateScreenBounds(for: mouseGlobal)
-        let mouseLocal = globalToLocal(mouseGlobal)
-        let catTarget = CGPoint(x: mouseLocal.x + catOffsetX, y: mouseLocal.y + catOffsetY)
-        targetPosition = clampToBounds(catTarget)
-        facingLeft = mouseLocal.x < position.x
-    }
-
-    private func updatePosition() {
-        let dx = targetPosition.x - position.x
-        let dy = targetPosition.y - position.y
-        let dist = sqrt(dx * dx + dy * dy)
-        guard dist > 1.0 else { return }
-
-        if dist > 500 {
-            position = targetPosition
-            onPositionUpdate?(position)
-            return
-        }
-
-        let factor = followFactor
-        position = CGPoint(x: position.x + dx * factor, y: position.y + dy * factor)
-        onPositionUpdate?(position)
+        guard result.positionChanged || result.screenBoundsChanged else { return }
+        enqueueDelivery(result)
     }
 
     private var followFactor: CGFloat {
@@ -100,36 +131,46 @@ final class CatViewModel {
         return CGFloat(clamped)
     }
 
-    private func clampToBounds(_ point: CGPoint) -> CGPoint {
-        let margin: CGFloat = 60
-        return CGPoint(
-            x: max(margin, min(screenBounds.width - margin, point.x)),
-            y: max(margin, min(screenBounds.height - margin, point.y))
-        )
-    }
-
-    private func updateScreenBounds(for mouseGlobal: CGPoint) {
-        let allScreens = NSScreen.screens
-        let newBounds = allScreens.first(where: { NSMouseInRect(mouseGlobal, $0.frame, false) })?.frame
-            ?? NSScreen.main?.frame
-            ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
-
-        guard newBounds != screenBounds else { return }
-        screenBounds = newBounds
-        homePosition = CGPoint(x: screenBounds.width - 120, y: screenBounds.height - 120)
-
-        if position == .zero {
-            position = homePosition
-            targetPosition = homePosition
+    private func enqueueDelivery(_ result: CatMotionStepResult) {
+        deliveryLock.lock()
+        // Merge flags: if an earlier result had screenBoundsChanged or positionChanged
+        // but main thread hasn't flushed yet, preserve those flags so setFrame isn't lost.
+        if let existing = pendingDelivery {
+            pendingDelivery = CatMotionStepResult(
+                position: result.position,
+                screenBounds: result.screenBounds,
+                facingLeft: result.facingLeft,
+                positionChanged: result.positionChanged || existing.positionChanged,
+                screenBoundsChanged: result.screenBoundsChanged || existing.screenBoundsChanged
+            )
+        } else {
+            pendingDelivery = result
         }
+        guard !deliveryScheduled else {
+            deliveryLock.unlock()
+            return
+        }
+        deliveryScheduled = true
+        deliveryLock.unlock()
 
-        position = clampToBounds(position)
-        targetPosition = clampToBounds(position)
-        onScreenFrameUpdate?(screenBounds)
-        onPositionUpdate?(position)
+        DispatchQueue.main.async { [weak self] in
+            self?.flushPendingDelivery()
+        }
     }
 
-    private func globalToLocal(_ point: CGPoint) -> CGPoint {
-        CGPoint(x: point.x - screenBounds.minX, y: point.y - screenBounds.minY)
+    private func flushPendingDelivery() {
+        deliveryLock.lock()
+        let result = pendingDelivery
+        pendingDelivery = nil
+        deliveryScheduled = false
+        deliveryLock.unlock()
+
+        guard let result else { return }
+        if result.screenBoundsChanged {
+            onScreenFrameUpdate?(result.screenBounds)
+        }
+        if result.positionChanged || result.screenBoundsChanged {
+            onPositionUpdate?(result.position)
+        }
     }
 }

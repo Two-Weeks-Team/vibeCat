@@ -577,31 +577,20 @@ final class CatPanel: NSPanel {
 
         let size = bubbleView.preferredSize(primary: text, meta: currentBubbleMeta, showsSpinner: bubbleShowsSpinner)
         let catFrame = imageView.frame
+        let localScreenFrame = screenFrame.offsetBy(dx: -frame.minX, dy: -frame.minY)
 
-        var bubbleX = catFrame.midX - size.width / 2
-        var bubbleY = catFrame.maxY + 8
-        var tailDir: ChatBubbleView.TailDirection = .bottom
+        let reservedBottomMinY = windowTitleBadgeView.isHidden ? nil : windowTitleBadgeView.frame.minY
+        let placement = CatBubbleLayout.placement(
+            catFrame: catFrame,
+            bubbleSize: size,
+            screenFrame: localScreenFrame,
+            mode: bubbleView.currentDisplayMode,
+            reservedBottomMinY: reservedBottomMinY
+        )
 
-        let projectedTop = frame.minY + bubbleY + size.height
-        if projectedTop > screenFrame.maxY - 8 {
-            bubbleY = catFrame.minY - size.height - 8
-            tailDir = .top
-        }
-
-        let projectedLeft = frame.minX + bubbleX
-        let projectedRight = projectedLeft + size.width
-        if projectedRight > screenFrame.maxX - 8 {
-            bubbleX -= (projectedRight - screenFrame.maxX + 8)
-        }
-        if projectedLeft < screenFrame.minX + 8 {
-            bubbleX += (screenFrame.minX + 8 - projectedLeft)
-        }
-
-        let tailLocalX = catFrame.midX - bubbleX
-        let tailRatio = tailLocalX / size.width
-        bubbleView.setTailPosition(tailRatio)
-        bubbleView.setTailDirection(tailDir)
-        bubbleView.frame = NSRect(x: bubbleX, y: bubbleY, width: size.width, height: size.height)
+        bubbleView.setTailPosition(placement.tailRatio)
+        bubbleView.setTailDirection(placement.tailDirection)
+        bubbleView.frame = placement.frame
         bubbleView.layoutSubtreeIfNeeded()
     }
 

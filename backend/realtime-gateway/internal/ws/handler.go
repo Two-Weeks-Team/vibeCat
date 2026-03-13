@@ -36,11 +36,10 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-const (
-	memoryContextCacheTTL   = 5 * time.Minute
-	proactiveAnalyzeTimeout = 4 * time.Second
-	forcedAnalyzeTimeout    = 8 * time.Second
-)
+const memoryContextCacheTTL = 5 * time.Minute
+
+var proactiveAnalyzeTimeout = 8 * time.Second
+var forcedAnalyzeTimeout = 12 * time.Second
 
 var proactiveContextHintDelay = 1200 * time.Millisecond
 var proactiveContextHintCooldown = 90 * time.Second
@@ -162,16 +161,17 @@ type liveSessionState struct {
 
 	// modelSpeaking is true while any assistant audio is actively streaming to the client.
 	// While true, screen captures are deferred and incoming user speech is treated as barge-in.
-	modelSpeaking         bool
-	discardModelAudio     bool
-	pendingTurnTrace      string
-	pendingTurnFlow       string
-	pendingTurnRootAt     time.Time
-	currentTurnTrace      string
-	currentTurnFlow       string
-	currentTurnRootAt     time.Time
-	lastProactiveHintText string
-	lastProactiveHintAt   time.Time
+	modelSpeaking          bool
+	discardModelAudio      bool
+	pendingTurnTrace       string
+	pendingTurnFlow        string
+	pendingTurnRootAt      time.Time
+	currentTurnTrace       string
+	currentTurnFlow        string
+	currentTurnRootAt      time.Time
+	lastProactiveHintText  string
+	lastProactiveHintAt    time.Time
+	proactiveAnalyzeActive bool
 
 	pendingFCMu             sync.Mutex
 	pendingFCID             string
@@ -394,6 +394,28 @@ func (ls *liveSessionState) clearPendingTurnTrace() {
 	ls.pendingTurnTrace = ""
 	ls.pendingTurnFlow = ""
 	ls.pendingTurnRootAt = time.Time{}
+}
+
+func (ls *liveSessionState) beginProactiveAnalyze(captureType string) bool {
+	if captureType != "screenCapture" {
+		return true
+	}
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+	if ls.proactiveAnalyzeActive {
+		return false
+	}
+	ls.proactiveAnalyzeActive = true
+	return true
+}
+
+func (ls *liveSessionState) finishProactiveAnalyze(captureType string) {
+	if captureType != "screenCapture" {
+		return
+	}
+	ls.mu.Lock()
+	ls.proactiveAnalyzeActive = false
+	ls.mu.Unlock()
 }
 
 func (ls *liveSessionState) setPendingFC(id, name, taskID, text, target, firstStepID string, remainingSteps []navigatorStep) {
@@ -2599,7 +2621,17 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 							continue
 						}
 					}
+					if !ls.beginProactiveAnalyze(captureMsg.Type) {
+						traceID := strings.TrimSpace(captureMsg.TraceID)
+						if traceID == "" {
+							traceID = newTraceID("cap")
+						}
+						slog.Info("[HANDLER] skipping proactive analyze while previous screen capture analyze is still running", "conn_id", c.ID, "trace_id", traceID)
+						sendTraceEvent(c, "proactive", traceID, "adk_analyze_skipped_inflight", time.Now(), captureMsg.Type)
+						continue
+					}
 					go func() {
+						defer ls.finishProactiveAnalyze(captureMsg.Type)
 						traceID := strings.TrimSpace(captureMsg.TraceID)
 						if traceID == "" {
 							traceID = newTraceID("cap")
