@@ -230,7 +230,10 @@ final class AccessibilityNavigator {
                 appName: before.appName,
                 bundleID: before.bundleId
             )
-            if terminalSurface.kind == .terminal, let terminalInputText = step.inputText, !terminalInputText.isEmpty {
+            let explicitTerminalTarget = step.targetApp.lowercased().contains("terminal")
+                || step.targetApp.lowercased().contains("iterm")
+                || step.targetDescriptor.appName?.lowercased().contains("terminal") == true
+            if terminalSurface.kind == .terminal, explicitTerminalTarget, let terminalInputText = step.inputText, !terminalInputText.isEmpty {
                 if executeTerminalCommand(terminalInputText) {
                     try? await Task.sleep(nanoseconds: 350_000_000)
                     return verify(step: step, before: before, defaultOutcome: "Executed command in Terminal")
@@ -305,6 +308,10 @@ final class AccessibilityNavigator {
                 didAct = await activateTextEntryElement(element, descriptor: step.targetDescriptor, targetApp: step.targetApp)
                 defaultOutcome = "Focused the target input field"
             } else {
+                if let rect = rectValue(for: element) {
+                    let center = CGPoint(x: rect.midX, y: rect.midY)
+                    animateCursorTo(center)
+                }
                 didAct = AXUIElementPerformAction(element, kAXPressAction as CFString) == .success
                 defaultOutcome = "Pressed the target control"
             }
@@ -520,8 +527,9 @@ final class AccessibilityNavigator {
     }
 
     private func targetAppMatchesFrontmost(_ targetApp: String, descriptorAppName: String? = nil) -> Bool {
-        let profile = NavigatorSurfaceProfile.detect(targetApp: targetApp, descriptor: .init(appName: descriptorAppName))
-        let expectedApp = normalizedMatchValue(targetApp) ?? normalizedMatchValue(descriptorAppName)
+        let effectiveTarget = targetApp.isEmpty ? (descriptorAppName ?? "") : targetApp
+        let profile = NavigatorSurfaceProfile.detect(targetApp: effectiveTarget, descriptor: .init(appName: descriptorAppName))
+        let expectedApp = normalizedMatchValue(effectiveTarget) ?? normalizedMatchValue(descriptorAppName)
         guard let expectedApp else {
             NSLog("[NAV-TARGET] no expected app derived from targetApp=%@ descriptor=%@, accepting frontmost", targetApp, descriptorAppName ?? "nil")
             return true
@@ -900,27 +908,67 @@ final class AccessibilityNavigator {
 
         let insetX = min(max(18, size.width * 0.08), max(18, size.width - 12))
         let insetY = min(max(18, size.height * 0.5), max(18, size.height - 12))
-        return CGPoint(x: position.x + insetX, y: position.y + insetY)
+        let point = CGPoint(x: position.x + insetX, y: position.y + insetY)
+
+        if let windowFrame = frontmostWindowFrame() {
+            let expanded = windowFrame.insetBy(dx: -20, dy: -20)
+            if !expanded.contains(point) {
+                NSLog("[NAV-COORD] Point (%.0f,%.0f) outside window frame (%.0f,%.0f,%.0f,%.0f) — possible coordinate mismatch",
+                      point.x, point.y, windowFrame.origin.x, windowFrame.origin.y, windowFrame.width, windowFrame.height)
+                return nil
+            }
+        }
+
+        NSLog("[NAV-COORD] Activation point (%.0f,%.0f) from AX pos (%.0f,%.0f) size (%.0f,%.0f)",
+              point.x, point.y, position.x, position.y, size.width, size.height)
+        return point
+    }
+
+    private func frontmostWindowFrame() -> CGRect? {
+        guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
+        let appElement = AXUIElementCreateApplication(app.processIdentifier)
+        var windowValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appElement, kAXFocusedWindowAttribute as CFString, &windowValue) == .success,
+              let window = windowValue else { return nil }
+        let windowElement = window as! AXUIElement
+        guard let pos = pointValue(for: windowElement, attribute: kAXPositionAttribute),
+              let size = sizeValue(for: windowElement, attribute: kAXSizeAttribute) else { return nil }
+        return CGRect(origin: pos, size: size)
+    }
+
+    private func animateCursorTo(_ target: CGPoint, steps: Int = 20, totalDurationUs: UInt32 = 300_000) {
+        let current = CGEvent(source: nil)?.location ?? target
+        let dx = target.x - current.x
+        let dy = target.y - current.y
+        let distance = sqrt(dx * dx + dy * dy)
+        guard distance > 4 else {
+            CGWarpMouseCursorPosition(target)
+            return
+        }
+        let stepDelay = totalDurationUs / UInt32(steps)
+        for i in 1...steps {
+            let t = CGFloat(i) / CGFloat(steps)
+            let ease = t * t * (3.0 - 2.0 * t)
+            let point = CGPoint(x: current.x + dx * ease, y: current.y + dy * ease)
+            CGWarpMouseCursorPosition(point)
+            usleep(stepDelay)
+        }
+        CGAssociateMouseAndMouseCursorPosition(1)
     }
 
     private func clickTextInput(at axPoint: CGPoint) -> Bool {
-        // Step 1: Create proper event source (Vimac/robotgo pattern)
         guard let source = CGEventSource(stateID: .hidSystemState) else {
             NSLog("[NAV-CLICK] Failed to create CGEventSource")
             return false
         }
 
-        // Step 2: Move mouse to target position (Hammerspoon pattern)
-        CGWarpMouseCursorPosition(axPoint)
-        CGAssociateMouseAndMouseCursorPosition(1)
-        // Post a mouseMoved event so the app registers the cursor (Vimac pattern)
+        animateCursorTo(axPoint)
         if let moveEvent = CGEvent(mouseEventSource: source, mouseType: .mouseMoved,
                                     mouseCursorPosition: axPoint, mouseButton: .left) {
             moveEvent.post(tap: .cghidEventTap)
         }
-        usleep(15_000) // 15ms settle time
+        usleep(15_000)
 
-        // Step 3: Hit-test verification — confirm target is at cursor position
         let role = hitTestTextInputRole(at: axPoint)
         if !role.isEmpty {
             NSLog("[NAV-CLICK] Hit-test confirmed: role=%@ at (%.0f,%.0f)", role, axPoint.x, axPoint.y)
@@ -928,21 +976,18 @@ final class AccessibilityNavigator {
             NSLog("[NAV-CLICK] Hit-test warning: no text input at (%.0f,%.0f), proceeding anyway", axPoint.x, axPoint.y)
         }
 
-        // Step 4: Click with proper flags (Vimac pattern)
         guard let down = CGEvent(mouseEventSource: source, mouseType: .leftMouseDown,
                                  mouseCursorPosition: axPoint, mouseButton: .left),
               let up = CGEvent(mouseEventSource: source, mouseType: .leftMouseUp,
                                mouseCursorPosition: axPoint, mouseButton: .left) else { return false }
 
-        // Set click state so apps recognize this as a real click (Vimac SO reference)
         down.setIntegerValueField(.mouseEventClickState, value: 1)
         up.setIntegerValueField(.mouseEventClickState, value: 1)
-        // Clear modifier flags to prevent interference
         down.flags = CGEventFlags(rawValue: 0)
         up.flags = CGEventFlags(rawValue: 0)
 
         down.post(tap: .cghidEventTap)
-        usleep(15_000) // 15ms between down/up (cliclick pattern)
+        usleep(15_000)
         up.post(tap: .cghidEventTap)
         return true
     }
