@@ -60,6 +60,12 @@ func (c *ChromeController) Scroll(deltaX, deltaY int) error {
 	return chromedp.Run(c.ctx, chromedp.Evaluate(js, nil))
 }
 
+func (c *ChromeController) EvaluateJS(js string) (string, error) {
+	var result string
+	err := chromedp.Run(c.ctx, chromedp.Evaluate(js, &result))
+	return result, err
+}
+
 func (c *ChromeController) Screenshot() ([]byte, error) {
 	var buf []byte
 	if err := chromedp.Run(c.ctx, chromedp.FullScreenshot(&buf, 90)); err != nil {

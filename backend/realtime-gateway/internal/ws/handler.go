@@ -2548,6 +2548,21 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 										retryStep.Hotkey = retryStep.FallbackHotkey
 									}
 								}
+								if retryStep.ActionType == "cdp_js" && retryStep.CDPScript != "" {
+									if ctrl := ls.getCDPController(); ctrl != nil {
+										jsResult, jsErr := ctrl.EvaluateJS(retryStep.CDPScript)
+										if jsErr == nil && (jsResult == "focused" || jsResult == "clicked" || jsResult == "clicked_container") {
+											slog.Info("navigator FC cdp_js search activation succeeded, retrying paste_text", "conn_id", c.ID, "result", jsResult)
+											retryStep.ActionType = "paste_text"
+											retryStep.FallbackActionType = ""
+											retryStep.CDPScript = ""
+										} else {
+											slog.Info("navigator FC cdp_js fallback result", "conn_id", c.ID, "result", jsResult, "err", jsErr)
+										}
+									} else {
+										slog.Info("navigator FC cdp_js: CDP controller unavailable, dispatching to client", "conn_id", c.ID)
+									}
+								}
 								slog.Info("navigator FC self-healing retry", "conn_id", c.ID, "step_id", retryStep.ID, "retry", retryCount, "status", refreshMsg.Status)
 								sendProcessingState(c, "navigator", navigatorActiveTraceID, "verifying_result", "", "", "", 0, false)
 								// Vision-first: observe screen after failure so Gemini sees what went wrong
@@ -2640,6 +2655,21 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 								retryStep.ActionType = retryStep.FallbackActionType
 								if len(retryStep.FallbackHotkey) > 0 {
 									retryStep.Hotkey = retryStep.FallbackHotkey
+								}
+							}
+							if retryStep.ActionType == "cdp_js" && retryStep.CDPScript != "" {
+								if ctrl := ls.getCDPController(); ctrl != nil {
+									jsResult, jsErr := ctrl.EvaluateJS(retryStep.CDPScript)
+									if jsErr == nil && (jsResult == "focused" || jsResult == "clicked" || jsResult == "clicked_container") {
+										slog.Info("navigator cdp_js search activation succeeded, retrying paste_text", "conn_id", c.ID, "result", jsResult)
+										retryStep.ActionType = "paste_text"
+										retryStep.FallbackActionType = ""
+										retryStep.CDPScript = ""
+									} else {
+										slog.Info("navigator cdp_js fallback result", "conn_id", c.ID, "result", jsResult, "err", jsErr)
+									}
+								} else {
+									slog.Info("navigator cdp_js: CDP controller unavailable, dispatching to client", "conn_id", c.ID)
 								}
 							}
 							slog.Info("navigator self-healing retry", "conn_id", c.ID, "step_id", retryStep.ID, "retry", retryCount, "status", refreshMsg.Status)
@@ -3447,16 +3477,28 @@ func buildToolCallTextEntrySteps(text, targetApp, targetLabel string, submit boo
 			ProofStrategy:             "text_entry",
 		},
 		FallbackActionType: func() string {
+			if wantsSearchActivation {
+				return "cdp_js"
+			}
 			if isBrowser {
 				return "hotkey"
 			}
 			return ""
 		}(),
 		FallbackHotkey: func() []string {
+			if wantsSearchActivation {
+				return nil
+			}
 			if isBrowser {
 				return []string{"/"}
 			}
 			return nil
+		}(),
+		CDPScript: func() string {
+			if wantsSearchActivation {
+				return `(function(){var sb=document.querySelector('ytmusic-search-box');if(!sb)return 'not_found';var sr=sb.shadowRoot;if(sr){var inp=sr.querySelector('input');if(inp){inp.focus();inp.click();return 'focused';}var btn=sr.querySelector('#search-button');if(btn){btn.click();return 'clicked';}}sb.click();return 'clicked_container';})()`
+			}
+			return ""
 		}(),
 		MaxLocalRetries: 2,
 		TimeoutMs:       1200,

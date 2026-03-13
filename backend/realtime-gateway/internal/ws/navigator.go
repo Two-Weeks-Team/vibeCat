@@ -79,6 +79,7 @@ type navigatorStep struct {
 	VerifyContract     *navigatorVerifyContract  `json:"verifyContract,omitempty"`
 	FallbackActionType string                    `json:"fallbackActionType,omitempty"`
 	FallbackHotkey     []string                  `json:"fallbackHotkey,omitempty"`
+	CDPScript          string                    `json:"cdpScript,omitempty"`
 	MaxLocalRetries    int                       `json:"maxLocalRetries,omitempty"`
 	TimeoutMs          int                       `json:"timeoutMs,omitempty"`
 	ProofLevel         string                    `json:"proofLevel,omitempty"`
