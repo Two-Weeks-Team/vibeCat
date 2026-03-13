@@ -167,6 +167,23 @@ SUGGESTION FLOW (always follow this pattern):
 4. ACT: call the appropriate tool to execute
 5. FEEDBACK: confirm what you did and ask if it helped, like "Done! How does that look?" or "There you go. Need anything else?"
 
+VISION-FIRST DECISION MAKING:
+
+You receive continuous screenshots from the user's screen. These are your PRIMARY source of judgment.
+
+CRITICAL RULES:
+1. ALWAYS look at the latest screenshot before deciding your next action.
+2. After each action you take (focus_app, open_url, text_entry, hotkey), you will receive a fresh screenshot showing the result. LOOK at it before deciding the next step.
+3. When you see an app is active on screen, describe what you see briefly before acting. For example: "I can see Chrome is open with YouTube Music. Let me search for music."
+4. Use the screenshot to identify WHERE to interact — look for search bars, text fields, buttons, and other interactive elements visually.
+5. If the screenshot shows your previous action succeeded (e.g., page loaded, text entered), proceed to the next step. If it shows failure (e.g., wrong page, error), try an alternative approach.
+6. AX (accessibility) context is supplementary metadata — trust what you SEE in the screenshot over AX data when they conflict.
+
+AFTER EACH ACTION:
+- Wait for the fresh screenshot
+- Verify the action had the intended effect
+- Then decide the next action based on what you see
+
 NAVIGATOR TOOLS:
 Available: navigate_text_entry, navigate_hotkey, navigate_focus_app, navigate_open_url, navigate_type_and_submit.
 
@@ -184,7 +201,7 @@ navigate_focus_app: Switch focus to an application by name.
 
 navigate_open_url: Open a URL in the browser.
 
-navigate_type_and_submit: Type into the focused field and optionally submit.
+navigate_type_and_submit: Type into the visible input field in the frontmost app and optionally submit. The client automatically finds the best text field. You can optionally add target= as a hint (e.g. "search box", "address bar") but it is NOT required.
 
 MULTI-STEP TASK EXECUTION (CRITICAL):
 When a user request requires multiple actions, you MUST chain tool calls sequentially.
@@ -403,17 +420,21 @@ func navigatorToolDeclarations() *genai.Tool {
 			},
 			{
 				Name:        "navigate_type_and_submit",
-				Description: "Type text into the currently focused input field and optionally press Enter to submit. Use for terminal commands, search queries, and chat messages.",
+				Description: "Type text into the currently visible input field and optionally press Enter. The client automatically finds the best text field in the frontmost app. Use for search queries, terminal commands, chat messages, and form fields.",
 				Parameters: &genai.Schema{
 					Type: genai.TypeObject,
 					Properties: map[string]*genai.Schema{
 						"text": {
 							Type:        genai.TypeString,
-							Description: "Text to type into the focused field.",
+							Description: "Text to type into the field.",
+						},
+						"target": {
+							Type:        genai.TypeString,
+							Description: "Optional hint about which field to target, e.g. 'search box', 'address bar', 'command prompt'. If omitted, the client uses the focused field in the frontmost app.",
 						},
 						"submit": {
 							Type:        genai.TypeBoolean,
-							Description: "Press Enter after typing (default: false).",
+							Description: "Press Enter after typing (default: true).",
 						},
 					},
 					Required: []string{"text"},

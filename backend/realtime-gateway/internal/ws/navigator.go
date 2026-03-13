@@ -855,14 +855,18 @@ func buildNextActionHint(toolName, text, target string) string {
 	case "navigate_open_url":
 		lowered := strings.ToLower(text)
 		if strings.Contains(lowered, "music.youtube") {
-			return "Page is loading. Next: use navigate_type_and_submit to search for music, then navigate_hotkey with [\"space\"] to ensure playback."
+			return "YouTube Music page is loading. Next: call navigate_type_and_submit to search for music, then navigate_hotkey with keys=[\"space\"] to ensure playback starts."
 		}
 		if strings.Contains(lowered, "youtube") {
-			return "YouTube is open. If searching, use navigate_type_and_submit to enter the search query."
+			return "YouTube is open. If searching, call navigate_type_and_submit to enter the search query."
 		}
-		return "URL opened. If the user's task requires further interaction on this page, call the next appropriate tool."
+		return "URL opened. If the user's task requires typing on this page, call navigate_type_and_submit. The client automatically finds the right input field."
 	case "navigate_focus_app":
-		return "App is now focused. If the user requested an action in this app, call the next tool (e.g., navigate_hotkey, navigate_type_and_submit)."
+		return "App is now focused and frontmost. If the user requested an action in this app, call the next tool. The client automatically detects text fields."
+	case "navigate_type_and_submit":
+		return "Text was typed and submitted. If the task requires more steps (e.g., clicking play), call navigate_hotkey next."
+	case "navigate_text_entry":
+		return "Text was entered into the field. If submission is needed, call navigate_hotkey with keys=[\"return\"]."
 	default:
 		return ""
 	}

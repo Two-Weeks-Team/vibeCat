@@ -2421,6 +2421,9 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 							})
 							sendProcessingState(c, "navigator", navigatorActiveTraceID, "verifying_result", "", "", "", 0, false)
 							if nextStep, hasNext := ls.advancePendingFCStep(); hasNext {
+								sendProcessingState(c, "navigator", navigatorActiveTraceID, "observing_screen", navigatorObservingLabel(ls.getConfig().Language), "", "", 0, true)
+								time.Sleep(150 * time.Millisecond)
+								sendProcessingState(c, "navigator", navigatorActiveTraceID, "observing_screen", "", "", "", 0, false)
 								sendProcessingState(c, "navigator", navigatorActiveTraceID, "executing_step", navigatorExecutingLabel(ls.getConfig().Language), nextStep.ActionType, "", 0, true)
 								lockedSendJSON(c, map[string]any{
 									"type":    "navigator.stepPlanned",
@@ -2527,6 +2530,10 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 								}
 								slog.Info("navigator FC self-healing retry", "conn_id", c.ID, "step_id", retryStep.ID, "retry", retryCount, "status", refreshMsg.Status)
 								sendProcessingState(c, "navigator", navigatorActiveTraceID, "verifying_result", "", "", "", 0, false)
+								// Vision-first: observe screen after failure so Gemini sees what went wrong
+								sendProcessingState(c, "navigator", navigatorActiveTraceID, "observing_screen", navigatorObservingLabel(ls.getConfig().Language), "", "", 0, true)
+								time.Sleep(200 * time.Millisecond)
+								sendProcessingState(c, "navigator", navigatorActiveTraceID, "observing_screen", "", "", "", 0, false)
 								sendProcessingState(c, "navigator", navigatorActiveTraceID, "retrying_step", navigatorRetryingLabel(ls.getConfig().Language), "", "", 0, true)
 								sendProcessingState(c, "navigator", navigatorActiveTraceID, "retrying_step", "", "", "", 0, false)
 								sendProcessingState(c, "navigator", navigatorActiveTraceID, "executing_step", navigatorExecutingLabel(ls.getConfig().Language), retryStep.ActionType, "", 0, true)
@@ -3623,6 +3630,9 @@ func handleNavigateTypeAndSubmitToolCall(c *Conn, sess *live.Session, ls *liveSe
 		return
 	}
 
+	target, _ := fc.Args["target"].(string)
+	target = strings.TrimSpace(target)
+
 	submit := true
 	if raw, ok := fc.Args["submit"]; ok {
 		if b, ok := raw.(bool); ok {
@@ -3632,11 +3642,13 @@ func handleNavigateTypeAndSubmitToolCall(c *Conn, sess *live.Session, ls *liveSe
 
 	traceID := newTraceID("fc_type_submit")
 	rootAt := time.Now()
-	runtime.appendExecution(fmt.Sprintf("tool_call[navigate_type_and_submit]: text=%q submit=%v", truncateText(text, 80), submit))
+	runtime.appendExecution(fmt.Sprintf("tool_call[navigate_type_and_submit]: text=%q target=%q submit=%v", truncateText(text, 80), target, submit))
 	taskID := "fc_" + newConnID()
-	sendTraceEvent(c, "navigator", traceID, "function_call_type_and_submit", rootAt, fmt.Sprintf("text_len=%d submit=%v", len(text), submit))
+	sendTraceEvent(c, "navigator", traceID, "function_call_type_and_submit", rootAt, fmt.Sprintf("text_len=%d target=%q submit=%v", len(text), target, submit))
 
-	steps := buildToolCallTextEntrySteps(text, "", "", submit)
+	targetApp := resolveToolCallTargetApp(target)
+	targetLabel := resolveToolCallTargetLabel(target)
+	steps := buildToolCallTextEntrySteps(text, targetApp, targetLabel, submit)
 	lockedSendJSON(c, map[string]any{
 		"type":             "navigator.commandAccepted",
 		"taskId":           taskID,
