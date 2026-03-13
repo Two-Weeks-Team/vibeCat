@@ -153,8 +153,9 @@ final class AccessibilityNavigator {
 
         switch step.actionType {
         case .focusApp:
-            if focusApp(named: step.targetApp) {
-                try? await Task.sleep(nanoseconds: 300_000_000)
+            let profile = NavigatorSurfaceProfile.detect(targetApp: step.targetApp)
+            if await focusApp(named: step.targetApp) {
+                try? await Task.sleep(nanoseconds: profile.activationDelayNs)
                 return verify(step: step, before: before, defaultOutcome: "Focused \(step.targetApp)")
             }
             return .failed("Could not focus \(step.targetApp)", reason: .targetNotFound, phase: .activateTarget)
@@ -178,11 +179,34 @@ final class AccessibilityNavigator {
             }
             if sendHotkey(step.hotkey) {
                 try? await Task.sleep(nanoseconds: 350_000_000)
-                return verify(step: step, before: before, defaultOutcome: "Sent hotkey \(step.hotkey.joined(separator: "+"))")
+                let result = verify(step: step, before: before, defaultOutcome: "Sent hotkey \(step.hotkey.joined(separator: "+"))")
+                if result.status != "success",
+                   step.hotkey == ["space"],
+                   NavigatorSurfaceProfile.detect(targetApp: step.targetApp, appName: before.appName, bundleID: before.bundleId).kind == .chrome {
+                    NSLog("[NAV-CHROME] Space verify failed, trying JS video.play() fallback")
+                    let jsResult = executeJavaScriptInChrome("var v=document.querySelector('video');if(v){v.paused?v.play():v.pause();'toggled'}else{'no_video'}")
+                    if let jsResult, jsResult.contains("toggled") {
+                        return .success("Toggled video playback via JavaScript", phase: .verifyOutcome)
+                    }
+                }
+                return result
             }
             return .failed("Could not send hotkey", reason: .focusNotReady, phase: .performAction)
 
         case .pasteText:
+            let terminalSurface = NavigatorSurfaceProfile.detect(
+                targetApp: step.targetApp,
+                descriptor: step.targetDescriptor,
+                appName: before.appName,
+                bundleID: before.bundleId
+            )
+            if terminalSurface.kind == .terminal, let terminalInputText = step.inputText, !terminalInputText.isEmpty {
+                if executeTerminalCommand(terminalInputText) {
+                    try? await Task.sleep(nanoseconds: 350_000_000)
+                    return verify(step: step, before: before, defaultOutcome: "Executed command in Terminal")
+                }
+                NSLog("[NAV-TERMINAL] do script failed, falling back to paste+return")
+            }
             await prepareSurfaceForAction(step)
             guard AXIsProcessTrusted() else {
                 return .guided("Accessibility permission is required for text entry", reason: .focusNotReady, phase: .preflight)
@@ -371,18 +395,33 @@ final class AccessibilityNavigator {
         try? await Task.sleep(nanoseconds: 180_000_000)
     }
 
-    private func focusApp(named targetApp: String) -> Bool {
+    private func focusApp(named targetApp: String) async -> Bool {
         let trimmed = targetApp.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             NSLog("[NAV-FOCUS] empty targetApp")
             return false
         }
 
-        if let running = NSWorkspace.shared.runningApplications.first(where: {
+        let focusProfile = NavigatorSurfaceProfile.detect(targetApp: trimmed)
+
+        let running = NSWorkspace.shared.runningApplications.first(where: {
             ($0.localizedName ?? "").caseInsensitiveCompare(trimmed) == .orderedSame
-        }) {
+        }) ?? NSWorkspace.shared.runningApplications.first(where: {
+            $0.localizedName?.lowercased().contains(trimmed.lowercased()) ?? false
+        }) ?? NSWorkspace.shared.runningApplications.first(where: {
+            focusProfile.matches(bundleID: $0.bundleIdentifier)
+        })
+
+        if let running {
+            if running.isHidden { _ = running.unhide() }
             let ok = running.activate(options: [.activateAllWindows])
             NSLog("[NAV-FOCUS] activate '%@' pid=%d ok=%d", trimmed, running.processIdentifier, ok ? 1 : 0)
+            let confirmed = await pollFrontmostApp(targetApp: trimmed, profile: focusProfile)
+            if confirmed { return true }
+            if let asName = focusProfile.applescriptAppName {
+                let result = runAppleScript(lines: ["tell application \"\(asName)\" to activate"])
+                if result != nil { return true }
+            }
             return ok
         }
 
@@ -404,6 +443,17 @@ final class AccessibilityNavigator {
             let configuration = NSWorkspace.OpenConfiguration()
             NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: configuration) { _, _ in }
             return true
+        }
+        let openProfile = NavigatorSurfaceProfile.detect(targetApp: targetApp)
+        if let asName = openProfile.applescriptAppName, openProfile.kind == .chrome {
+            let escaped = url.absoluteString.replacingOccurrences(of: "\"", with: "\\\"")
+            let result = runAppleScript(lines: [
+                "tell application \"\(asName)\"",
+                "activate",
+                "open location \"\(escaped)\"",
+                "end tell"
+            ])
+            return result != nil
         }
         return NSWorkspace.shared.open(url)
     }
@@ -922,6 +972,40 @@ final class AccessibilityNavigator {
         let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
         return String(data: data, encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func executeJavaScriptInChrome(_ js: String) -> String? {
+        let escaped = js.replacingOccurrences(of: "\"", with: "\\\"")
+        return runAppleScript(lines: [
+            "tell application \"Google Chrome\"",
+            "execute front window's active tab javascript \"\(escaped)\"",
+            "end tell"
+        ])
+    }
+
+    private func executeTerminalCommand(_ command: String) -> Bool {
+        let escaped = command.replacingOccurrences(of: "\"", with: "\\\"")
+        let result = runAppleScript(lines: [
+            "tell application \"Terminal\"",
+            "activate",
+            "do script \"\(escaped)\" in front window",
+            "end tell"
+        ])
+        return result != nil
+    }
+
+    private func pollFrontmostApp(targetApp: String, profile: NavigatorSurfaceProfile, maxAttempts: Int = 5) async -> Bool {
+        for _ in 0..<maxAttempts {
+            if let frontApp = NSWorkspace.shared.frontmostApplication {
+                if profile.matches(bundleID: frontApp.bundleIdentifier) { return true }
+                if profile.matches(appName: frontApp.localizedName) { return true }
+                let frontName = (frontApp.localizedName ?? "").lowercased()
+                let target = targetApp.lowercased()
+                if frontName.contains(target) || target.contains(frontName) { return true }
+            }
+            try? await Task.sleep(nanoseconds: 200_000_000)
+        }
+        return false
     }
 
     private func normalizedMatchValue(_ raw: String?) -> String? {
