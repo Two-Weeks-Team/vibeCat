@@ -3437,23 +3437,6 @@ func buildToolCallTextEntrySteps(text, targetApp, targetLabel string, submit boo
 		strings.Contains(labelLower, "youtube"))
 	if wantsSearchActivation {
 		steps = append(steps, navigatorStep{
-			ID:               "fc_defocus_addressbar_" + newConnID(),
-			ActionType:       "hotkey",
-			TargetApp:        targetApp,
-			Hotkey:           []string{"escape"},
-			ExpectedOutcome:  "Address bar defocused so page receives keyboard shortcuts",
-			Confidence:       0.95,
-			IntentConfidence: 0.95,
-			RiskLevel:        "low",
-			ExecutionPolicy:  navigatorExecutionPolicyLow,
-			FallbackPolicy:   "guided_mode",
-			Surface:          navigatorSurfaceValue(targetApp),
-			MacroID:          "fc_defocus_addressbar",
-			Narration:        "Defocusing address bar.",
-			TimeoutMs:        500,
-			ProofLevel:       "basic",
-		})
-		steps = append(steps, navigatorStep{
 			ID:               "fc_search_activate_" + newConnID(),
 			ActionType:       "hotkey",
 			TargetApp:        targetApp,
