@@ -188,6 +188,14 @@ final class AccessibilityNavigator {
                 if !settled {
                     try? await Task.sleep(nanoseconds: 600_000_000)
                 }
+                // Dismiss Chrome address bar focus so next paste_text targets page content
+                let afterCtx = currentContext()
+                let bundleID = afterCtx.bundleId.lowercased()
+                if bundleID.contains("chrome") || bundleID.contains("brave") || bundleID.contains("edgemac") || bundleID.contains("arc") || bundleID.contains("chromium") {
+                    _ = sendHotkey(["escape"])
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    NSLog("[NAV-URL] Escape sent to dismiss Chrome address bar focus")
+                }
                 return verify(step: step, before: before, defaultOutcome: "Opened \(url.absoluteString)")
             }
             return .failed("Could not open URL", reason: .targetNotFound, phase: .performAction)
@@ -1565,9 +1573,12 @@ final class AccessibilityNavigator {
         if profile.kind == .antigravity && containsKeywordAny(label, "후속 변경", "follow-up", "부탁하세요") {
             score += 12
         }
-        if profile.kind == .chrome,
-           containsKeywordAny(label, "search", "검색", "address", "url") {
-            score += 8
+        if profile.kind == .chrome {
+            if containsKeywordAny(label, "address", "url", "주소") {
+                score -= 12
+            } else if containsKeywordAny(label, "search", "검색") {
+                score += 4
+            }
         }
         if profile.kind == .terminal,
            containsKeywordAny(label, "prompt", "shell", "command") {
