@@ -30,6 +30,7 @@ final class NavigatorOverlayPanel: NSPanel {
     private var hideTask: Task<Void, Never>?
     private var currentTaskID: String?
     private var stepIndex = 0
+    private var lastCatPosition: CGPoint?
 
     init() {
         let screen = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
@@ -167,12 +168,17 @@ final class NavigatorOverlayPanel: NSPanel {
 
         resultLabel.isHidden = true
 
-        let screen = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let panelOrigin = NSPoint(
-            x: screen.midX - Layout.width / 2,
-            y: screen.minY + Layout.bottomMargin
-        )
-        setFrame(NSRect(origin: panelOrigin, size: NSSize(width: Layout.width, height: 52)), display: true)
+        let panelSize = NSSize(width: Layout.width, height: 52)
+        if let catPos = lastCatPosition {
+            let screen = NSScreen.screens.first(where: { $0.frame.contains(catPos) })?.frame
+                ?? NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+            let origin = clampedOrigin(catPosition: catPos, panelSize: panelSize, screenFrame: screen)
+            setFrame(NSRect(origin: origin, size: panelSize), display: true)
+        } else {
+            let screen = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+            let origin = NSPoint(x: screen.midX - Layout.width / 2, y: screen.minY + Layout.bottomMargin)
+            setFrame(NSRect(origin: origin, size: panelSize), display: true)
+        }
 
         if !isVisible {
             alphaValue = 0
@@ -222,6 +228,19 @@ final class NavigatorOverlayPanel: NSPanel {
         groundingBadgeBackground.layer?.backgroundColor = NSColor.clear.cgColor
 
         scheduleHide(after: 2.0)
+    }
+
+    func updatePosition(catScreenPosition: CGPoint, screenFrame: NSRect) {
+        lastCatPosition = catScreenPosition
+        guard isVisible else { return }
+        let origin = clampedOrigin(catPosition: catScreenPosition, panelSize: frame.size, screenFrame: screenFrame)
+        setFrameOrigin(origin)
+    }
+
+    private func clampedOrigin(catPosition: CGPoint, panelSize: NSSize, screenFrame: NSRect) -> NSPoint {
+        let x = max(screenFrame.minX + 8, min(catPosition.x - panelSize.width / 2, screenFrame.maxX - panelSize.width - 8))
+        let y = max(screenFrame.minY + 8, catPosition.y - 90 - panelSize.height)
+        return NSPoint(x: x, y: y)
     }
 
     func dismiss() {

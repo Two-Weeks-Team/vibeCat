@@ -675,6 +675,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.clearPendingBubbleMeta()
             self?.clearTraceIfReady()
         }
+        panel.onCatMoved = { [weak self] screenPos, panelFrame in
+            self?.navigatorOverlayPanel?.updatePosition(catScreenPosition: screenPos, screenFrame: panelFrame)
+        }
         panel.show()
         refreshCapturePrivacyUI()
         NSLog("[AppDelegate] CatPanel shown. frame=%@ level=%d isVisible=%d", NSStringFromRect(panel.frame), panel.level.rawValue, panel.isVisible ? 1 : 0)

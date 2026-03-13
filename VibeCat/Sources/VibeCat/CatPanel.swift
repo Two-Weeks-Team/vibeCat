@@ -435,6 +435,8 @@ final class CatPanel: NSPanel {
         orderFrontRegardless()
     }
 
+    var onCatMoved: ((CGPoint, NSRect) -> Void)?
+
     func catPositionInScreenCoordinates() -> CGPoint {
         CGPoint(x: frame.minX + imageView.frame.midX, y: frame.minY + imageView.frame.midY)
     }
@@ -451,6 +453,7 @@ final class CatPanel: NSPanel {
         if !bubbleView.isHidden, currentBubbleText != nil {
             updateBubbleFrame()
         }
+        onCatMoved?(catPositionInScreenCoordinates(), frame)
     }
 
     private func layoutOverlayElements() {

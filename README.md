@@ -163,6 +163,42 @@ flowchart LR
 | **ADK Orchestrator** | Go 1.26.1 / ADK v0.6.0 / Cloud Run | Confidence escalation, screenshot interpretation, visible-text extraction, async summary/memory/replay/research enrichment |
 | **Chrome Controller** | chromedp v0.14.2 | Click, Type, Navigate, Scroll, Screenshot, Close — lazy connect with graceful fallback |
 
+### Client UI Panel Layout
+
+All UI panels follow the cat sprite in real-time. The cat roams freely across all monitors inside a full-screen borderless `CatPanel`.
+
+```
+                 ┌─────────────────┐
+                 │ CompanionChat   │  ← cat +70pt (on show)
+                 │ (360×360, key)  │     interactive, movable
+                 └─────────────────┘
+                 ┌───────────┐
+                 │  Speech   │  ← above cat (flips below if off-screen)
+                 └─────┬─────┘
+                       🐱          ← CatPanel sprite (follows mouse)
+                 ┌─────┴─────┐                    ┌──────────────┐
+                 │  Status   │  ← below cat        │ DecisionHUD  │ ← cat +50pt right
+                 └───────────┘                    │ (280×160)    │    debug info
+              ┌────────────────────┐              └──────────────┘
+              │ NavigatorOverlay   │  ← cat -90pt (below status area)
+              │ (260×52, grounding)│     follows cat in real-time
+              └────────────────────┘
+
+        ╔═══════════════╗
+        ║TargetHighlight║  ← overlays AX target element (independent of cat)
+        ╚═══════════════╝
+```
+
+| Panel | Anchor | Follows Cat | Interactive |
+|-------|--------|-------------|-------------|
+| **CatPanel** | Full screen, sprite moves inside | Is the cat | No (click-through) |
+| **Speech Bubble** | Above cat, flips below if clipped | Real-time | No |
+| **Status Bubble** | Below cat, below window badge | Real-time | No |
+| **NavigatorOverlay** | 90pt below cat center | Real-time | No |
+| **DecisionOverlayHUD** | 50pt right of cat center | Real-time | No |
+| **CompanionChatPanel** | 70pt above cat on show() | On show only | Yes (typing, movable) |
+| **TargetHighlightOverlay** | On AX target element + 6pt padding | Follows target | No |
+
 ### Realtime Gateway Architecture
 
 ```mermaid

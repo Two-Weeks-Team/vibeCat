@@ -11,14 +11,14 @@ final class DecisionOverlayHUD: NSPanel {
     private let mediatorLabel = NSTextField(labelWithString: VibeCatL10n.decisionMediator("—"))
     private let moodLabel = NSTextField(labelWithString: VibeCatL10n.decisionMood("—"))
     private let cooldownLabel = NSTextField(labelWithString: VibeCatL10n.decisionCooldown("—"))
+    private let hudSize = NSSize(width: 280, height: 160)
 
     init() {
-        let size = NSSize(width: 280, height: 160)
         let screen = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let origin = NSPoint(x: screen.minX + 20, y: screen.maxY - size.height - 40)
+        let origin = NSPoint(x: screen.midX + 40, y: screen.midY - 80)
 
         super.init(
-            contentRect: NSRect(origin: origin, size: size),
+            contentRect: NSRect(origin: origin, size: hudSize),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -71,6 +71,13 @@ final class DecisionOverlayHUD: NSPanel {
             orderFront(nil)
             hudVisible = true
         }
+    }
+
+    func updatePosition(catScreenPosition: CGPoint, screenFrame: NSRect) {
+        guard hudVisible else { return }
+        let x = min(catScreenPosition.x + 50, screenFrame.maxX - hudSize.width - 8)
+        let y = max(screenFrame.minY + 8, min(catScreenPosition.y - hudSize.height / 2, screenFrame.maxY - hudSize.height - 8))
+        setFrameOrigin(NSPoint(x: x, y: y))
     }
 
     func update(trigger: String, vision: String, mediator: String, mood: String, cooldown: String) {

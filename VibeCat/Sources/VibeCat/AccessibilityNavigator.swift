@@ -284,7 +284,8 @@ final class AccessibilityNavigator {
         let after = currentContext()
         let verifyHint = (step.verifyHint ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let targetApp = step.targetApp.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let appMatches = targetApp.isEmpty || after.appName.lowercased().contains(targetApp)
+        let lowerAppName = after.appName.lowercased()
+        let appMatches = targetApp.isEmpty || lowerAppName.contains(targetApp) || targetApp.contains(lowerAppName)
 
         if !verifyHint.isEmpty {
             let haystack = [
@@ -425,21 +426,28 @@ final class AccessibilityNavigator {
         let profile = NavigatorSurfaceProfile.detect(targetApp: targetApp, descriptor: .init(appName: descriptorAppName))
         let expectedApp = normalizedMatchValue(targetApp) ?? normalizedMatchValue(descriptorAppName)
         guard let expectedApp else {
-            return false
+            NSLog("[NAV-TARGET] no expected app derived from targetApp=%@ descriptor=%@, accepting frontmost", targetApp, descriptorAppName ?? "nil")
+            return true
         }
         guard let frontApp = NSWorkspace.shared.frontmostApplication else {
+            NSLog("[NAV-TARGET] no frontmost application")
             return false
         }
         if profile.matches(bundleID: frontApp.bundleIdentifier) {
             return true
         }
         guard let frontmostName = normalizedMatchValue(frontApp.localizedName) else {
+            NSLog("[NAV-TARGET] mismatch: expected=%@ frontName=nil bundleID=%@", expectedApp, frontApp.bundleIdentifier ?? "nil")
             return false
         }
         if profile.matches(appName: frontmostName) {
             return true
         }
-        return frontmostName.contains(expectedApp) || expectedApp.contains(frontmostName)
+        let matched = frontmostName.contains(expectedApp) || expectedApp.contains(frontmostName)
+        if !matched {
+            NSLog("[NAV-TARGET] mismatch: expected=%@ front=%@ bundleID=%@", expectedApp, frontmostName, frontApp.bundleIdentifier ?? "nil")
+        }
+        return matched
     }
 
     private func stagePasteboardText(_ text: String) -> [PasteboardSnapshotItem]? {
