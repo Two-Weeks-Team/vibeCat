@@ -1,0 +1,14 @@
+{
+  "name": "chrome_youtube_music_play",
+  "surface": "chrome",
+  "setup": {
+    "description": "Chrome is on music.youtube.com search results page with results visible",
+    "requiredApp": "Google Chrome",
+    "requiredBundles": ["com.google.Chrome"]
+  },
+  "command": "여기서 바로 음악 재생되게 해줘",
+  "successPrompt": "Verify that the LLM chose the most appropriate playback-start target (could be first playable result row, shuffle, music station, mini-player play affordance, or equivalent playback-start control) and clicked it. Look for: mini-player playing/pause state change, now-playing strip activation, progress bar start, or row now-playing indicator. FORBIDDEN: asserting literal 'Play' label.",
+  "timeout": 60,
+  "surface_id": "chrome_ytmusic",
+  "artifacts": ["pre_screenshot", "post_screenshot", "step_timeline", "logs"]
+}

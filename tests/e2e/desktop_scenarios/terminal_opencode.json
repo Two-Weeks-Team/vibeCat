@@ -1,0 +1,14 @@
+{
+  "name": "terminal_opencode_prompt",
+  "surface": "terminal",
+  "setup": {
+    "description": "Terminal is open with OpenCode session active",
+    "requiredApp": "Terminal",
+    "requiredBundles": ["com.apple.Terminal", "com.googlecode.iterm2"]
+  },
+  "command": "현재 OpenCode 프롬프트에 'hello world를 출력하는 파이썬 코드 작성해줘'라고 입력하고 실행해줘",
+  "successPrompt": "Verify that the prompt input area was selected, the request text was entered, and submitted. Look for signs that the prompt was consumed: new output block, prompt deactivation, spinner/streaming, or input line reset.",
+  "timeout": 45,
+  "surface_id": "terminal_opencode",
+  "artifacts": ["pre_screenshot", "post_screenshot", "step_timeline", "logs"]
+}
