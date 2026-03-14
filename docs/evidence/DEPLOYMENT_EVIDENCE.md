@@ -1,66 +1,82 @@
 # Deployment Evidence
 
-This file tracks the current evidence baseline for the **UI Navigator** submission.
+**Last verified:** 2026-03-14T17:08 KST
+**Submission category:** UI Navigator
 
-## Deployed Services
+## Deployed Services (Live)
 
-- project: `vibecat-489105`
-- region: `asia-northeast3`
-- gateway: `https://realtime-gateway-a4akw2crra-du.a.run.app`
-- orchestrator: `https://adk-orchestrator-a4akw2crra-du.a.run.app`
+| Service | URL | Status |
+|---------|-----|--------|
+| **Realtime Gateway** | `https://realtime-gateway-163070481841.asia-northeast3.run.app` | ✅ 200 OK |
+| **ADK Orchestrator** | `https://adk-orchestrator-163070481841.asia-northeast3.run.app` | ✅ Deployed (auth-only) |
 
-## Evidence Categories
+- **GCP Project:** `vibecat-489105`
+- **Region:** `asia-northeast3`
+- **Firestore:** `(default)` native database
 
-### Runtime
+### Live Health Check (2026-03-14T08:08:36Z)
 
-- websocket gateway is deployed
-- orchestrator is deployed
-- authentication and health paths exist
-- Cloud Logging is active
-- Cloud Trace is active
-- Monitoring/dashboard evidence is tracked separately
+```json
+{
+    "connections": 1,
+    "service": "realtime-gateway",
+    "status": "ok"
+}
+```
 
-### Submission Alignment
+## Proof of Google Cloud Deployment
 
-Evidence must now support the following claims:
+### Option 1: Code Files Demonstrating GCP Usage
 
-- VibeCat is a desktop UI navigator
-- it executes real UI actions through `VibeCat/Sources/VibeCat/AccessibilityNavigator.swift`, including `AXUIElementPerformAction`-backed control presses and guarded keyboard automation
-- it supports a gold-tier workflow on Antigravity IDE, Terminal, and Chrome
-- it is hosted on Google Cloud
-- it emits observable runtime evidence for navigator turns
+| File | Google Cloud Service | Purpose |
+|------|---------------------|---------|
+| [`infra/deploy.sh`](../../infra/deploy.sh) | Cloud Run, Cloud Build, IAM, Secret Manager | Automated deployment script |
+| [`backend/realtime-gateway/Dockerfile`](../../backend/realtime-gateway/Dockerfile) | Cloud Run (distroless container) | Gateway container image |
+| [`backend/adk-orchestrator/Dockerfile`](../../backend/adk-orchestrator/Dockerfile) | Cloud Run (distroless container) | Orchestrator container image |
+| [`backend/realtime-gateway/internal/ws/action_state_store.go`](../../backend/realtime-gateway/internal/ws/action_state_store.go) | Firestore | Session state persistence |
+| [`backend/realtime-gateway/internal/live/session.go`](../../backend/realtime-gateway/internal/live/session.go) | Gemini Live API (GenAI SDK) | Real-time multimodal AI conversation |
+| [`backend/adk-orchestrator/internal/navigator/processor.go`](../../backend/adk-orchestrator/internal/navigator/processor.go) | ADK + GenAI SDK | Vision analysis, confidence escalation |
+| [`backend/realtime-gateway/main.go`](../../backend/realtime-gateway/main.go) | Cloud Logging, Cloud Trace (OTEL) | Observability |
+| [`infra/setup.sh`](../../infra/setup.sh) | APIs, Artifact Registry, Firestore, Secret Manager, IAM | One-time GCP project bootstrap |
 
-### Remaining Evidence Work
+### Option 2: Screen Recording of GCP Console
 
-- final screenshot-grade trace capture for navigator flows
-- final monitoring screenshots aligned with navigator metrics
-- final public demo/proof asset links
+See `docs/GCP_PROOF_GUIDE.md` for recording instructions showing:
+- Cloud Run services list (green status)
+- Cloud Logging traces
+- Firestore collections
+- Secret Manager entries
 
-## Final Proof Asset Checklist
+### Google Cloud Services Used
 
-The award-maximizing submission should capture these final artifacts:
+| Service | Purpose | Evidence |
+|---------|---------|----------|
+| **Cloud Run** | Serverless hosting for gateway + orchestrator | `infra/deploy.sh` lines 38-71, Dockerfile |
+| **Gemini Live API** | Real-time voice + vision AI conversation | `internal/live/session.go`, GenAI SDK v1.49.0 |
+| **ADK (Agent Development Kit)** | Screenshot analysis, confidence escalation | `backend/adk-orchestrator/`, ADK v0.6.0 |
+| **Firestore** | Action state persistence, session memory, replay | `action_state_store.go`, orchestrator replay |
+| **Secret Manager** | API keys, auth secrets | `deploy.sh` --set-secrets flags |
+| **Cloud Build** | Container image builds | `deploy.sh` gcloud builds submit |
+| **Cloud Logging** | Structured logging, navigator metrics | `main.go` OTEL setup |
+| **Cloud Trace** | Distributed tracing | `main.go` OTEL setup |
+| **Artifact Registry** | Container image storage | `deploy.sh` registry config |
 
-### Hero Run Assets
+### Deployment Architecture
 
-- one recording of the primary Antigravity -> Chrome -> Terminal hero workflow
-- one still image showing target highlight + step HUD during execution
-- one still image or clip showing explicit ambiguity clarification
-- one still image or clip showing safe downgrade instead of blind click
+```
+infra/deploy.sh execution flow:
+  1. gcloud builds submit → Cloud Build → Artifact Registry
+  2. gcloud run deploy adk-orchestrator → Cloud Run (internal, auth-only)
+  3. gcloud run deploy realtime-gateway → Cloud Run (public, WebSocket)
+  4. IAM binding: gateway service account → orchestrator invoker role
+```
 
-### Cloud-Native Assets
+### Automated Deployment Script
 
-- Cloud Run service view for gateway and orchestrator
-- Cloud Logging or Cloud Trace evidence from the same hero run
-- monitoring screenshot for navigator metrics
-- replay or persisted summary evidence if used in final architecture/proof story
+`infra/deploy.sh` automates the full deployment pipeline:
+- Builds Docker images via Cloud Build
+- Deploys orchestrator first (internal, no unauthenticated access)
+- Deploys gateway second (public, with orchestrator URL injected)
+- Configures IAM for gateway-to-orchestrator invocation
 
-### Submission Assets
-
-- final public demo link
-- final proof-of-deployment link or recording
-- final public repository link
-- final public blog/devlog link if used for bonus points
-
-## Historical Note
-
-Older evidence that refers to companion-intelligence or proactive-speech acceptance should be treated as implementation history, not current submission truth.
+This qualifies for the **Automated Cloud Deployment** bonus (+0.2 points).

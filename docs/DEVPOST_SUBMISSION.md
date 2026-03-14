@@ -83,9 +83,9 @@ Proactive AI requires careful safety design. The confirm-before-acting model isn
 
 ## Built With
 
-- **Google Gemini Live API** — Real-time multimodal voice + vision conversation
+- **Google GenAI SDK (v1.49.0)** — Gemini Live API client for real-time multimodal voice + vision conversation
 - **Google Cloud Run** — Serverless backend hosting (asia-northeast3)
-- **Google ADK (Agent Development Kit)** — Screenshot analysis and confidence escalation
+- **Google ADK (Agent Development Kit, v0.6.0)** — Screenshot analysis and confidence escalation
 - **Google Firestore** — Session state and memory persistence
 - **Google Secret Manager** — Secure credential management
 - **Swift 6.2** — Native macOS client (AppKit, Accessibility API, AVFoundation)

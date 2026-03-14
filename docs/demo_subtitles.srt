@@ -1,0 +1,186 @@
+1
+00:00:00,000 --> 00:00:05,000
+Every developer knows this feeling...
+
+2
+00:00:05,000 --> 00:00:10,000
+Context switching. It's the silent killer of deep work.
+
+3
+00:00:10,000 --> 00:00:16,000
+You're in the zone, then - terminal, browser, Slack, back to code.
+
+4
+00:00:16,000 --> 00:00:20,000
+By the time you're back, the thought is gone.
+
+5
+00:00:20,000 --> 00:00:25,000
+What if your computer just... helped?
+
+6
+00:00:25,000 --> 00:00:30,000
+[Antigravity IDE - Developer typing getUserData()]
+
+7
+00:00:30,000 --> 00:00:33,000
+Meet VibeCat. It's been watching.
+
+8
+00:00:33,000 --> 00:00:40,000
+[VibeCat]: "Hey - I noticed a potential null check
+missing on line 47. Want me to add it?"
+
+9
+00:00:40,000 --> 00:00:42,000
+It didn't wait to be asked. It just... noticed.
+
+10
+00:00:42,000 --> 00:00:45,000
+[Developer]: "Yeah, go ahead."
+
+11
+00:00:45,000 --> 00:00:52,000
+[Overlay: Analyzing... Planning fix...
+Executing... Step 1/2]
+
+12
+00:00:52,000 --> 00:00:58,000
+guard let user = user else { return nil }
+
+13
+00:00:58,000 --> 00:01:03,000
+[VibeCat]: "Done! Null check added.
+Want me to run the tests?"
+
+14
+00:01:03,000 --> 00:01:07,000
+No silence. No mystery. Every step, narrated.
+
+15
+00:01:07,000 --> 00:01:12,000
+Proactive. Transparent. Yours.
+
+16
+00:01:15,000 --> 00:01:20,000
+[Developer]: "Hey, can you find some focus music?"
+
+17
+00:01:20,000 --> 00:01:25,000
+[Overlay: Focusing Chrome... [CDP]
+Opening YouTube...]
+
+18
+00:01:25,000 --> 00:01:32,000
+[Overlay: Searching "lo-fi focus music"
+Starting playback... [Keyboard: Space]]
+
+19
+00:01:32,000 --> 00:01:40,000
+Chrome. YouTube. Search. Play.
+Four apps, one sentence.
+
+20
+00:01:40,000 --> 00:01:48,000
+[Chrome opens, YouTube searches,
+first result selected, video starts]
+
+21
+00:01:48,000 --> 00:01:55,000
+[VibeCat]: "There you go - lo-fi beats to code by.
+I'll keep it going in the background."
+
+22
+00:01:55,000 --> 00:02:05,000
+It didn't open a dialog. It didn't ask for a URL.
+It just handled it.
+
+23
+00:02:05,000 --> 00:02:12,000
+Across every app. Without breaking your flow.
+
+24
+00:02:15,000 --> 00:02:22,000
+[Terminal - Developer just ran 'ls']
+
+25
+00:02:22,000 --> 00:02:28,000
+[VibeCat]: "ls -la would show hidden files
+and permissions too - want me to run it?"
+
+26
+00:02:28,000 --> 00:02:30,000
+[Developer]: "Do it."
+
+27
+00:02:30,000 --> 00:02:35,000
+[Overlay: Focusing Terminal... [AX]
+Typing command...]
+
+28
+00:02:35,000 --> 00:02:40,000
+[Overlay: Focus lost - wrong window]
+It missed. That happens. Here's what's different.
+
+29
+00:02:40,000 --> 00:02:48,000
+[Overlay: Retrying... [Attempt 2/3]
+Re-focusing Terminal [CDP fallback]]
+
+30
+00:02:48,000 --> 00:02:55,000
+[Overlay: Retyping: ls -la
+Executing... Verifying result... [Vision check]]
+
+31
+00:02:55,000 --> 00:03:00,000
+[VibeCat]: "Got it. Notice the dot-files now showing?
+There's a .env in there you might want to check."
+
+32
+00:03:00,000 --> 00:03:05,000
+It retried. It verified. It explained.
+No crash report, no silent failure.
+
+33
+00:03:05,000 --> 00:03:08,000
+It fails gracefully. Then it fixes itself.
+
+34
+00:03:08,000 --> 00:03:18,000
+Under the hood: a native Swift client on macOS
+captures your screen and voice.
+
+35
+00:03:18,000 --> 00:03:26,000
+It streams to a Go backend on Cloud Run.
+Gemini Live API handles the conversation
+and decides when to act.
+
+36
+00:03:26,000 --> 00:03:34,000
+Five precise navigator tools: text entry, hotkeys,
+app focus, URL open, type-and-submit.
+
+37
+00:03:34,000 --> 00:03:40,000
+Triple-source grounding: Accessibility tree,
+Chrome DevTools, and live screenshots.
+It doesn't guess. It confirms.
+
+38
+00:03:40,000 --> 00:03:45,000
+[GCP Console: Cloud Run services live]
+Deployed on Google Cloud Run.
+Always on. Zero cold-start drama.
+
+39
+00:03:48,000 --> 00:03:55,000
+[VibeCat]: "I'll be here when you need me.
+Or before you need me."
+
+40
+00:03:55,000 --> 00:04:00,000
+VibeCat - Your Proactive Desktop Companion
+github.com/Two-Weeks-Team/vibeCat
+Built for the Gemini Live Agent Challenge 2026
