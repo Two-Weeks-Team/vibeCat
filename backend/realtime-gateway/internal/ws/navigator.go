@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -56,6 +57,7 @@ type navigatorTargetDescriptor struct {
 	ClickX          float64 `json:"clickX,omitempty"`
 	ClickY          float64 `json:"clickY,omitempty"`
 	VerificationCue string  `json:"verificationCue,omitempty"`
+	ScreenBasisID   string  `json:"screenBasisId,omitempty"`
 }
 
 type navigatorStep struct {
@@ -261,6 +263,14 @@ func (s *navigatorSessionState) nextStep() (navigatorStep, bool) {
 
 func (s *navigatorSessionState) hasRemainingSteps() bool {
 	return s.nextStepIndex < len(s.steps)
+}
+
+func (s *navigatorSessionState) currentStepFallbackPolicy() string {
+	idx := s.nextStepIndex - 1
+	if idx >= 0 && idx < len(s.steps) {
+		return s.steps[idx].FallbackPolicy
+	}
+	return ""
 }
 
 func (s *navigatorSessionState) hasActiveTask() bool {
@@ -597,6 +607,10 @@ func planNavigatorCommand(command string, ctx navigatorContext, allowRisky bool)
 	switch {
 	case looksLikeSystemAction(command):
 		plan.Steps = buildSystemActionSteps(command, confidence)
+	case wantsAntigravityAction(command, ctx):
+		plan.Steps = buildAntigravityInlineSteps(command, ctx, confidence)
+	case wantsMediaPlayback(command, ctx):
+		plan.Steps = buildMediaPlaybackSteps(command, ctx, confidence)
 	case wantsTextEntry(command, ctx):
 		plan.Steps = buildTextEntrySteps(command, ctx, confidence)
 	case shouldUseDocsLookup(command):
@@ -607,8 +621,6 @@ func planNavigatorCommand(command string, ctx navigatorContext, allowRisky bool)
 		}
 	case canUseTerminalCommand(command, ctx):
 		plan.Steps = buildTerminalCommandSteps(command, ctx, confidence)
-	case wantsAntigravityAction(command, ctx):
-		plan.Steps = buildAntigravityInlineSteps(command, ctx, confidence)
 	case intentClass == navigatorIntentAnalyzeOnly:
 		plan.Steps = nil
 	default:
@@ -645,7 +657,9 @@ func classifyNavigatorIntent(command string) (navigatorIntentClass, float64, str
 		"apply", "do it", "run it", "rerun", "retry", "fix", "execute", "take care of",
 		"type", "enter", "paste", "fill", "write", "focus the input", "focus the field",
 		"volume", "mute", "unmute", "quieter", "louder",
-		"반영", "적용", "실행", "다시 돌려", "다시 실행", "수정", "해결", "처리해", "눌러", "입력", "붙여넣", "써", "쳐", "볼륨", "음량", "음소거", "소리",
+		"play", "pause", "resume", "stop playing", "start playing", "play music", "play video",
+		"반영", "적용", "실행", "다시 돌려", "다시 실행", "수정", "해결", "처리해", "눌러", "입력", "붙여넣", "써", "쳐", "구현", "볼륨", "음량", "음소거", "소리",
+		"재생", "일시정지", "음악 재생", "음악 틀어", "틀어", "틀어줘", "재생해", "재생되게",
 	})
 	openScore := keywordScore(lowered, []string{
 		"open", "go to", "take me", "bring me", "jump", "navigate", "show me",
@@ -668,7 +682,7 @@ func classifyNavigatorIntent(command string) (navigatorIntentClass, float64, str
 	}
 	if strings.Contains(lowered, "반영해") || strings.Contains(lowered, "적용해") || strings.Contains(lowered, "실행해") ||
 		strings.Contains(lowered, "처리해") || strings.Contains(lowered, "수정해") || strings.Contains(lowered, "눌러줘") ||
-		strings.Contains(lowered, "다시 돌려") {
+		strings.Contains(lowered, "구현해") || strings.Contains(lowered, "다시 돌려") {
 		executeScore = maxFloat(executeScore, 0.76)
 	}
 	if containsKeywordAny(lowered, "입력해 주세요", "넣어주세요", "쳐줘", "쳐 줘", "입력하자", "넣어보자") {
@@ -678,6 +692,9 @@ func classifyNavigatorIntent(command string) (navigatorIntentClass, float64, str
 		executeScore = maxFloat(executeScore, 0.88)
 	}
 	if containsKeywordAny(lowered, "volume", "mute", "unmute", "quieter", "louder", "볼륨", "음량", "음소거", "소리 줄", "소리 키") {
+		executeScore = maxFloat(executeScore, 0.82)
+	}
+	if containsKeywordAny(lowered, "play", "재생", "틀어", "재생해", "재생되게", "음악 재생", "음악 틀") {
 		executeScore = maxFloat(executeScore, 0.82)
 	}
 	if strings.Contains(lowered, "열어줘") || strings.Contains(lowered, "데려가") || strings.Contains(lowered, "가보자") {
@@ -902,6 +919,215 @@ func buildNextActionHint(toolName, text, target string) string {
 	}
 }
 
+func wantsMediaPlayback(command string, ctx navigatorContext) bool {
+	lowered := strings.ToLower(command)
+	hasPlayCue := containsKeywordAny(lowered,
+		"play", "재생", "틀어", "재생해", "재생되게", "음악 재생", "음악 틀",
+		"play music", "start music", "start playing",
+	)
+	if !hasPlayCue {
+		return false
+	}
+	app := strings.ToLower(ctx.AppName)
+	isBrowser := strings.Contains(app, "chrome") || strings.Contains(app, "safari") || strings.Contains(app, "firefox")
+	hasMusicContext := containsKeywordAny(lowered, "music", "youtube", "음악", "뮤직", "유튜브")
+	windowHasMusic := containsKeywordAny(strings.ToLower(ctx.WindowTitle), "music", "youtube", "음악", "뮤직")
+	return isBrowser || hasMusicContext || windowHasMusic
+}
+
+func buildMediaPlaybackSteps(command string, ctx navigatorContext, intentConfidence float64) []navigatorStep {
+	app := strings.ToLower(ctx.AppName)
+	windowLower := strings.ToLower(ctx.WindowTitle)
+
+	isBrowser := strings.Contains(app, "chrome") || strings.Contains(app, "safari")
+	isOnYTMusic := isBrowser &&
+		(strings.Contains(windowLower, "youtube music") || strings.Contains(windowLower, "music.youtube"))
+	isOnYouTube := isBrowser && strings.Contains(windowLower, "youtube")
+
+	steps := make([]navigatorStep, 0, 4)
+
+	if !isBrowser {
+		steps = append(steps, navigatorStep{
+			ID:               "focus_chrome_for_music",
+			ActionType:       "focus_app",
+			TargetApp:        "Chrome",
+			TargetDescriptor: navigatorTargetDescriptor{AppName: "Chrome"},
+			ExpectedOutcome:  "Chrome is frontmost for music playback",
+			Confidence:       0.95,
+			IntentConfidence: intentConfidence,
+			RiskLevel:        "low",
+			ExecutionPolicy:  navigatorExecutionPolicyLow,
+			FallbackPolicy:   "guided_mode",
+			Surface:          "chrome",
+			MacroID:          "focus_chrome_for_music",
+			Narration:        "Switching to Chrome.",
+			VerifyContract: &navigatorVerifyContract{
+				ExpectedBundleID:    "com.google.Chrome",
+				RequireFrontmostApp: true,
+				ProofStrategy:       "frontmost_app",
+			},
+			TimeoutMs:  900,
+			ProofLevel: "strong",
+		})
+	}
+
+	if isOnYTMusic || isOnYouTube {
+		steps = append(steps, navigatorStep{
+			ID:               "toggle_playback",
+			ActionType:       "hotkey",
+			TargetApp:        "Chrome",
+			TargetDescriptor: navigatorTargetDescriptor{AppName: "Chrome"},
+			Hotkey:           []string{"space"},
+			ExpectedOutcome:  "Music playback toggled via Space key",
+			Confidence:       0.93,
+			IntentConfidence: intentConfidence,
+			RiskLevel:        "low",
+			ExecutionPolicy:  navigatorExecutionPolicyLow,
+			FallbackPolicy:   "continue_next_step",
+			Surface:          "chrome",
+			MacroID:          "toggle_playback",
+			Narration:        "Starting music playback.",
+			TimeoutMs:        1500,
+			ProofLevel:       "none",
+		})
+	} else {
+		steps = append(steps, navigatorStep{
+			ID:               "open_youtube_music",
+			ActionType:       "open_url",
+			TargetApp:        "Chrome",
+			TargetDescriptor: navigatorTargetDescriptor{AppName: "Chrome"},
+			URL:              "https://music.youtube.com",
+			ExpectedOutcome:  "YouTube Music is open",
+			Confidence:       0.93,
+			IntentConfidence: intentConfidence,
+			RiskLevel:        "low",
+			ExecutionPolicy:  navigatorExecutionPolicyLow,
+			FallbackPolicy:   "guided_mode",
+			Surface:          "chrome",
+			MacroID:          "open_youtube_music",
+			Narration:        "Opening YouTube Music.",
+			VerifyContract: &navigatorVerifyContract{
+				ExpectedBundleID:       "com.google.Chrome",
+				ExpectedWindowContains: "YouTube Music",
+				RequireFrontmostApp:    true,
+				ProofStrategy:          "window_change",
+			},
+			MaxLocalRetries: 1,
+			TimeoutMs:       2000,
+			ProofLevel:      "strong",
+		})
+
+		searchQuery := extractMusicSearchQuery(command)
+		if searchQuery != "" {
+			steps = append(steps,
+				navigatorStep{
+					ID:               "activate_music_search",
+					ActionType:       "hotkey",
+					TargetApp:        "Chrome",
+					TargetDescriptor: navigatorTargetDescriptor{AppName: "Chrome"},
+					Hotkey:           []string{"/"},
+					ExpectedOutcome:  "Search field activated",
+					Confidence:       0.88,
+					IntentConfidence: intentConfidence,
+					RiskLevel:        "low",
+					ExecutionPolicy:  navigatorExecutionPolicyLow,
+					FallbackPolicy:   "guided_mode",
+					Surface:          "chrome",
+					MacroID:          "activate_music_search",
+					Narration:        "Activating search field.",
+					TimeoutMs:        800,
+					ProofLevel:       "basic",
+				},
+				navigatorStep{
+					ID:         "type_music_query",
+					ActionType: "paste_text",
+					TargetApp:  "Chrome",
+					TargetDescriptor: navigatorTargetDescriptor{
+						AppName: "Chrome",
+						Role:    "textfield",
+						Label:   "search",
+					},
+					InputText:        searchQuery,
+					ExpectedOutcome:  "Music search query entered",
+					Confidence:       0.88,
+					IntentConfidence: intentConfidence,
+					RiskLevel:        "low",
+					ExecutionPolicy:  navigatorExecutionPolicyLow,
+					FallbackPolicy:   "guided_mode",
+					Surface:          "chrome",
+					MacroID:          "type_music_query",
+					Narration:        "Typing music search query.",
+					MaxLocalRetries:  1,
+					TimeoutMs:        1200,
+					ProofLevel:       "strong",
+				},
+				navigatorStep{
+					ID:               "submit_music_search",
+					ActionType:       "hotkey",
+					TargetApp:        "Chrome",
+					TargetDescriptor: navigatorTargetDescriptor{AppName: "Chrome"},
+					Hotkey:           []string{"return"},
+					ExpectedOutcome:  "Music search submitted",
+					Confidence:       0.90,
+					IntentConfidence: intentConfidence,
+					RiskLevel:        "low",
+					ExecutionPolicy:  navigatorExecutionPolicyLow,
+					FallbackPolicy:   "guided_mode",
+					Surface:          "chrome",
+					MacroID:          "submit_music_search",
+					Narration:        "Submitting music search.",
+					TimeoutMs:        800,
+					ProofLevel:       "basic",
+				},
+			)
+		}
+
+		steps = append(steps, navigatorStep{
+			ID:               "play_music_result",
+			ActionType:       "hotkey",
+			TargetApp:        "Chrome",
+			TargetDescriptor: navigatorTargetDescriptor{AppName: "Chrome"},
+			Hotkey:           []string{"space"},
+			ExpectedOutcome:  "Music playback toggled via Space key",
+			Confidence:       0.93,
+			IntentConfidence: intentConfidence,
+			RiskLevel:        "low",
+			ExecutionPolicy:  navigatorExecutionPolicyLow,
+			FallbackPolicy:   "continue_next_step",
+			Surface:          "chrome",
+			MacroID:          "play_music_result",
+			Narration:        "Starting music playback.",
+			TimeoutMs:        1500,
+			ProofLevel:       "none",
+		})
+	}
+
+	return steps
+}
+
+func extractMusicSearchQuery(command string) string {
+	lowered := strings.ToLower(strings.TrimSpace(command))
+	if matches := quotedTextPattern.FindStringSubmatch(command); len(matches) > 0 {
+		for _, candidate := range matches[1:] {
+			if cleaned := cleanTopic(candidate); cleaned != "" {
+				return cleaned
+			}
+		}
+	}
+	for _, strip := range []string{
+		"여기서 바로 음악 재생되게 해줘", "여기서 바로 재생해줘", "음악 재생해줘", "음악 틀어줘",
+		"play music", "start playing", "play", "재생해줘", "재생해", "틀어줘", "틀어",
+		"여기서", "바로", "음악", "재생되게", "해줘", "재생",
+	} {
+		lowered = strings.ReplaceAll(lowered, strip, "")
+	}
+	cleaned := strings.TrimSpace(lowered)
+	if cleaned == "" || len(cleaned) < 2 {
+		return ""
+	}
+	return cleaned
+}
+
 func shouldUseDocsLookup(command string) bool {
 	lowered := strings.ToLower(command)
 	return strings.Contains(lowered, "official") ||
@@ -913,15 +1139,28 @@ func shouldUseDocsLookup(command string) bool {
 
 func wantsAntigravityAction(command string, ctx navigatorContext) bool {
 	lowered := strings.ToLower(command)
+
+	if strings.Contains(lowered, "antigravity") {
+		return true
+	}
+
 	app := strings.ToLower(ctx.AppName)
-	return strings.Contains(app, "antigravity") ||
-		strings.Contains(lowered, "antigravity") ||
-		strings.Contains(lowered, "apply") ||
-		strings.Contains(lowered, "반영") ||
-		strings.Contains(lowered, "fix") ||
-		strings.Contains(lowered, "수정") ||
-		strings.Contains(lowered, "move me") ||
-		strings.Contains(lowered, "데려가")
+	bundle := strings.ToLower(ctx.BundleID)
+	frontBundle := strings.ToLower(ctx.FrontmostBundleID)
+	isAntigravityApp := strings.Contains(app, "antigravity") ||
+		strings.Contains(bundle, "antigravity") ||
+		strings.Contains(bundle, "com.openai.codex") ||
+		strings.Contains(frontBundle, "antigravity") ||
+		strings.Contains(frontBundle, "com.openai.codex")
+
+	if !isAntigravityApp {
+		return false
+	}
+
+	return containsKeywordAny(lowered,
+		"apply", "반영", "fix", "수정", "구현", "고쳐", "implement",
+		"move me", "데려가", "inline", "인라인",
+	)
 }
 
 func canUseTerminalCommand(command string, ctx navigatorContext) bool {
@@ -1087,107 +1326,87 @@ func buildDocsSearchQuery(command string, ctx navigatorContext) string {
 }
 
 func buildAntigravityInlineSteps(command string, ctx navigatorContext, intentConfidence float64) []navigatorStep {
-	steps := make([]navigatorStep, 0, 3)
-	if !strings.Contains(strings.ToLower(ctx.AppName), "antigravity") {
-		steps = append(steps, navigatorStep{
-			ID:               "focus_antigravity",
-			ActionType:       "focus_app",
-			TargetApp:        "Antigravity",
-			TargetDescriptor: navigatorTargetDescriptor{AppName: "Antigravity"},
-			ExpectedOutcome:  "Antigravity is frontmost",
-			Confidence:       0.9,
-			IntentConfidence: intentConfidence,
-			RiskLevel:        "low",
-			ExecutionPolicy:  navigatorExecutionPolicyLow,
-			FallbackPolicy:   "guided_mode",
-			VerifyHint:       "antigravity",
-			Surface:          "antigravity",
-			MacroID:          "focus_antigravity",
-			Narration:        "Switching back to Antigravity.",
-			VerifyContract: &navigatorVerifyContract{
-				ExpectedBundleID:       "com.openai.codex",
-				ExpectedWindowContains: "Codex",
-				RequireFrontmostApp:    true,
-				ProofStrategy:          "frontmost_app",
-			},
-			TimeoutMs:  900,
-			ProofLevel: "strong",
-		})
-	}
+	antigravityBundleID := navigatorBundleIDForSurface("Antigravity")
+	steps := make([]navigatorStep, 0, 4)
+	steps = append(steps, navigatorStep{
+		ID:               "focus_antigravity",
+		ActionType:       "focus_app",
+		TargetApp:        "Antigravity",
+		TargetDescriptor: navigatorTargetDescriptor{AppName: "Antigravity"},
+		ExpectedOutcome:  "Antigravity is frontmost",
+		Confidence:       0.9,
+		IntentConfidence: intentConfidence,
+		RiskLevel:        "low",
+		ExecutionPolicy:  navigatorExecutionPolicyLow,
+		FallbackPolicy:   "continue_next_step",
+		VerifyHint:       "antigravity",
+		Surface:          "antigravity",
+		MacroID:          "focus_antigravity",
+		Narration:        "Switching to Antigravity.",
+		VerifyContract: &navigatorVerifyContract{
+			ExpectedBundleID:    antigravityBundleID,
+			RequireFrontmostApp: true,
+			ProofStrategy:       "frontmost_app",
+		},
+		TimeoutMs:  900,
+		ProofLevel: "none",
+	})
 
 	prompt := buildAntigravityPrompt(command, ctx)
 	steps = append(steps,
 		navigatorStep{
 			ID:               "open_antigravity_inline_prompt",
 			ActionType:       "hotkey",
-			TargetApp:        "Antigravity",
-			TargetDescriptor: navigatorTargetDescriptor{AppName: "Antigravity", WindowTitle: ctx.WindowTitle},
-			ExpectedOutcome:  "Antigravity is ready to receive an inline instruction",
-			Confidence:       0.82,
+			TargetApp:        "",
+			TargetDescriptor: navigatorTargetDescriptor{},
+			ExpectedOutcome:  "Antigravity inline prompt opened",
+			Confidence:       0.88,
 			IntentConfidence: intentConfidence,
 			RiskLevel:        "low",
 			ExecutionPolicy:  navigatorExecutionPolicyLow,
-			FallbackPolicy:   "guided_mode",
+			FallbackPolicy:   "continue_next_step",
 			Hotkey:           []string{"command", "i"},
 			Surface:          "antigravity",
 			MacroID:          "open_antigravity_inline_prompt",
 			Narration:        "Opening Antigravity inline prompt.",
-			VerifyContract: &navigatorVerifyContract{
-				ExpectedBundleID:    "com.openai.codex",
-				RequireFrontmostApp: true,
-				ProofStrategy:       "frontmost_app",
-			},
-			TimeoutMs:  900,
-			ProofLevel: "strong",
+			TimeoutMs:        500,
+			ProofLevel:       "none",
 		},
 		navigatorStep{
 			ID:               "paste_antigravity_instruction",
 			ActionType:       "paste_text",
-			TargetApp:        "Antigravity",
-			TargetDescriptor: navigatorTargetDescriptor{AppName: "Antigravity", WindowTitle: ctx.WindowTitle},
+			TargetApp:        "",
+			TargetDescriptor: navigatorTargetDescriptor{},
 			InputText:        prompt,
-			ExpectedOutcome:  "Antigravity receives the requested navigation or apply instruction",
-			Confidence:       0.8,
+			ExpectedOutcome:  "Instruction pasted into Antigravity inline prompt",
+			Confidence:       0.90,
 			IntentConfidence: intentConfidence,
 			RiskLevel:        "low",
 			ExecutionPolicy:  navigatorExecutionPolicyLow,
-			FallbackPolicy:   "guided_mode",
+			FallbackPolicy:   "continue_next_step",
 			Surface:          "antigravity",
 			MacroID:          "paste_antigravity_instruction",
-			Narration:        "Inserting the Antigravity instruction.",
-			VerifyContract: &navigatorVerifyContract{
-				ExpectedBundleID:          "com.openai.codex",
-				RequireFrontmostApp:       true,
-				RequireWritableTarget:     true,
-				MinCaptureConfidenceAfter: 0.6,
-				ProofStrategy:             "text_entry",
-			},
-			MaxLocalRetries: 1,
-			TimeoutMs:       1200,
-			ProofLevel:      "strict",
+			Narration:        "Inserting the instruction.",
+			TimeoutMs:        1200,
+			ProofLevel:       "none",
 		},
 		navigatorStep{
 			ID:               "submit_antigravity_instruction",
 			ActionType:       "hotkey",
-			TargetApp:        "Antigravity",
-			TargetDescriptor: navigatorTargetDescriptor{AppName: "Antigravity", WindowTitle: ctx.WindowTitle},
+			TargetApp:        "",
+			TargetDescriptor: navigatorTargetDescriptor{},
 			ExpectedOutcome:  "Antigravity starts the requested action",
-			Confidence:       0.76,
+			Confidence:       0.92,
 			IntentConfidence: intentConfidence,
 			RiskLevel:        "low",
 			ExecutionPolicy:  navigatorExecutionPolicyLow,
-			FallbackPolicy:   "guided_mode",
+			FallbackPolicy:   "continue_next_step",
 			Hotkey:           []string{"return"},
 			Surface:          "antigravity",
 			MacroID:          "submit_antigravity_instruction",
-			Narration:        "Submitting the Antigravity instruction.",
-			VerifyContract: &navigatorVerifyContract{
-				ExpectedBundleID:    "com.openai.codex",
-				RequireFrontmostApp: true,
-				ProofStrategy:       "post_submit",
-			},
-			TimeoutMs:  900,
-			ProofLevel: "strong",
+			Narration:        "Submitting the instruction.",
+			TimeoutMs:        900,
+			ProofLevel:       "none",
 		},
 	)
 	return steps
@@ -1360,11 +1579,37 @@ func wantsTextEntry(command string, ctx navigatorContext) bool {
 }
 
 func buildTextEntrySteps(command string, ctx navigatorContext, intentConfidence float64) []navigatorStep {
+	if isOpenCodeContext(command, ctx) {
+		text := extractTextEntryPayload(command)
+		if text == "" {
+			text = command
+		}
+		return buildToolCallTextEntrySteps(text, "Terminal", "prompt", true, true)
+	}
+
 	descriptor, ok := buildTextEntryDescriptor(command, ctx)
 	if !ok {
 		return nil
 	}
 	return buildTextEntryStepsForDescriptor(command, ctx, intentConfidence, descriptor, 0.82, "")
+}
+
+func isOpenCodeContext(command string, ctx navigatorContext) bool {
+	lowCmd := strings.ToLower(command)
+	lowApp := strings.ToLower(ctx.AppName)
+	lowWindow := strings.ToLower(ctx.WindowTitle)
+
+	hasOpenCodeMention := strings.Contains(lowCmd, "opencode") ||
+		strings.Contains(lowWindow, "opencode")
+	isTerminal := strings.Contains(lowApp, "terminal") || strings.Contains(lowApp, "iterm")
+
+	if hasOpenCodeMention {
+		return true
+	}
+	if isTerminal && strings.Contains(lowCmd, "프롬프트") && strings.Contains(lowCmd, "입력") {
+		return true
+	}
+	return false
 }
 
 func buildTextEntryDescriptor(command string, ctx navigatorContext) (navigatorTargetDescriptor, bool) {
@@ -2047,4 +2292,65 @@ func maxFloat(a, b float64) float64 {
 		return a
 	}
 	return b
+}
+
+// logNavigatorStepDispatch emits structured logging for step dispatch to client
+func logNavigatorStepDispatch(step navigatorStep, taskID string) {
+	slog.Info("navigator.step.dispatch",
+		"scenario", step.Surface,
+		"surface", step.Surface,
+		"macroID", step.MacroID,
+		"stepID", step.ID,
+		"actionType", step.ActionType,
+		"clickX", step.TargetDescriptor.ClickX,
+		"clickY", step.TargetDescriptor.ClickY,
+		"screenBasisID", step.TargetDescriptor.VerificationCue,
+		"verifyCue", step.VerifyHint,
+		"confidence", step.Confidence,
+		"taskID", taskID,
+	)
+}
+
+// logNavigatorStepResult emits structured logging for step result receipt
+func logNavigatorStepResult(step navigatorStep, status string, observedOutcome string, taskID string) {
+	slog.Info("navigator.step.result",
+		"scenario", step.Surface,
+		"surface", step.Surface,
+		"macroID", step.MacroID,
+		"stepID", step.ID,
+		"actionType", step.ActionType,
+		"clickX", step.TargetDescriptor.ClickX,
+		"clickY", step.TargetDescriptor.ClickY,
+		"screenBasisID", step.TargetDescriptor.VerificationCue,
+		"verifyCue", step.VerifyHint,
+		"verifyResult", status,
+		"observedOutcome", observedOutcome,
+		"confidence", step.Confidence,
+		"taskID", taskID,
+	)
+}
+
+// logNavigatorStepRetry emits structured logging for step retry
+func logNavigatorStepRetry(step navigatorStep, retryCount int, taskID string) {
+	slog.Info("navigator.step.retry",
+		"scenario", step.Surface,
+		"surface", step.Surface,
+		"macroID", step.MacroID,
+		"stepID", step.ID,
+		"actionType", step.ActionType,
+		"retryCount", retryCount,
+		"confidence", step.Confidence,
+		"taskID", taskID,
+	)
+}
+
+// logNavigatorTaskCompletion emits structured logging for task completion
+func logNavigatorTaskCompletion(taskID string, surface string, status string, stepCount int) {
+	slog.Info("navigator.task.completion",
+		"scenario", surface,
+		"surface", surface,
+		"taskID", taskID,
+		"status", status,
+		"stepCount", stepCount,
+	)
 }

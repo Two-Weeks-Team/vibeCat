@@ -51,41 +51,48 @@ type commandRequest struct {
 	Timeout   int    `json:"timeout,omitempty"`
 }
 
-// commandResponse is the response from POST /e2e/command.
 type commandResponse struct {
-	TaskID  string `json:"task_id"`
-	Status  string `json:"status"`
-	Message string `json:"message,omitempty"`
+	TaskID   string `json:"taskId"`
+	Accepted bool   `json:"accepted"`
 }
 
-// statusResponse is the response from GET /e2e/status.
 type statusResponse struct {
-	TaskID  string `json:"task_id"`
-	State   string `json:"state"`
-	Message string `json:"message,omitempty"`
-	Error   string `json:"error,omitempty"`
+	State          string             `json:"state"`
+	TaskID         string             `json:"taskId,omitempty"`
+	Command        string             `json:"command,omitempty"`
+	CurrentStep    *statusBridgeStep  `json:"currentStep,omitempty"`
+	CompletedSteps []statusBridgeStep `json:"completedSteps,omitempty"`
+	Error          string             `json:"error,omitempty"`
 }
 
-// screenshotResponse is the response from POST /e2e/screenshot.
+type statusBridgeStep struct {
+	ID              string `json:"id"`
+	ActionType      string `json:"actionType"`
+	TargetApp       string `json:"targetApp"`
+	ExpectedOutcome string `json:"expectedOutcome"`
+}
+
 type screenshotResponse struct {
-	Data      string `json:"data"` // base64-encoded PNG
-	Timestamp string `json:"timestamp"`
-	Format    string `json:"format"`
+	Image     string `json:"image"`
+	Width     int    `json:"width"`
+	Height    int    `json:"height"`
+	DisplayID string `json:"displayId"`
 }
 
 // visionVerifyRequest is the payload for POST /navigator/escalate used for vision verification.
 type visionVerifyRequest struct {
 	Command    string `json:"command"`
 	Screenshot string `json:"screenshot"`
-	Context    string `json:"context,omitempty"`
+	AppName    string `json:"appName,omitempty"`
+	Language   string `json:"language,omitempty"`
 }
 
 // visionVerifyResponse is the response from POST /navigator/escalate.
 type visionVerifyResponse struct {
-	Success    bool    `json:"success"`
-	Confidence float64 `json:"confidence"`
-	Summary    string  `json:"summary"`
-	Target     string  `json:"target,omitempty"`
+	Confidence             float64 `json:"confidence"`
+	FallbackRecommendation string  `json:"fallbackRecommendation"`
+	Goal                   string  `json:"goal,omitempty"`
+	VerificationCue        string  `json:"verificationCue,omitempty"`
 }
 
 // e2eEvent represents a single event from GET /e2e/events.
@@ -102,13 +109,15 @@ type eventsResponse struct {
 
 // scenarioArtifacts holds all collected artifacts for a scenario run.
 type scenarioArtifacts struct {
-	ScenarioName   string
-	Timestamp      string
-	PreScreenshot  string
-	PostScreenshot string
-	Events         []e2eEvent
-	VerifyResult   string
-	Passed         bool
+	ScenarioName     string
+	Timestamp        string
+	PreScreenshot    string
+	PostScreenshot   string
+	Events           []e2eEvent
+	VerifyResult     string
+	VisionConfidence float64
+	VisionRetried    bool
+	Passed           bool
 }
 
 // ---- Guard functions ----
@@ -172,6 +181,8 @@ func runDesktopScenario(t *testing.T, scenarioFile string) {
 	t.Logf("▶ scenario=%s surface=%s timeout=%v", scenario.Name, scenario.Surface, timeout)
 	t.Logf("  setup: %s", scenario.Setup.Description)
 
+	resetBridge(t, bridge)
+
 	// Step 1: pre-screenshot
 	t.Log("📸 capturing pre-screenshot")
 	pre, err := captureScreenshot(t, bridge)
@@ -208,23 +219,51 @@ func runDesktopScenario(t *testing.T, scenarioFile string) {
 		t.Logf("✅ post-screenshot captured (%d bytes base64)", len(post))
 	}
 
-	// Step 5: vision verification (optional — only if orchestrator is available)
+	// Step 5: vision verification — MANDATORY when ORCHESTRATOR_URL is set.
 	orchURL := orchestratorBaseURL()
-	if orchURL != "" && post != "" {
-		t.Log("🔍 verifying with Gemini Vision via ADK orchestrator")
-		ok, summary, vErr := verifyWithVision(t, orchURL, post, scenario.SuccessPrompt)
+	if orchURL != "" {
+		if post == "" {
+			t.Fatal("ORCHESTRATOR_URL is set but post-screenshot is empty — cannot run vision verification")
+		}
+		t.Log("🔍 running mandatory vision verification via ADK orchestrator")
+		passed, confidence, summary, vErr := verifyWithVision(t, orchURL, post, scenario.SuccessPrompt, scenario.Surface)
 		if vErr != nil {
-			t.Logf("⚠️  vision verification error (non-fatal): %v", vErr)
-		} else {
-			artifacts.VerifyResult = summary
-			if ok {
-				t.Logf("✅ vision verification PASSED: %s", summary)
+			t.Fatalf("vision verification error: %v", vErr)
+		}
+		artifacts.VerifyResult = summary
+		artifacts.VisionConfidence = confidence
+
+		if !passed {
+			t.Logf("❌ vision verification FAILED (confidence=%.2f): %s — retrying once", confidence, summary)
+			time.Sleep(2 * time.Second)
+
+			freshPost, freshErr := captureScreenshot(t, bridge)
+			if freshErr != nil {
+				t.Logf("⚠️  retry screenshot failed: %v", freshErr)
 			} else {
-				t.Logf("❌ vision verification FAILED: %s", summary)
+				post = freshPost
+				artifacts.PostScreenshot = post
 			}
+
+			passed, confidence, summary, vErr = verifyWithVision(t, orchURL, post, scenario.SuccessPrompt, scenario.Surface)
+			artifacts.VisionRetried = true
+			artifacts.VisionConfidence = confidence
+			if vErr != nil {
+				saveArtifacts(t, artifacts)
+				t.Fatalf("vision verification retry error: %v", vErr)
+			}
+			if !passed {
+				artifacts.VerifyResult = summary
+				saveArtifacts(t, artifacts)
+				t.Fatalf("scenario %s FAILED: vision verification failed after retry (confidence=%.2f): %s", scenario.Name, confidence, summary)
+			}
+			artifacts.VerifyResult = summary
+			t.Logf("✅ vision verification PASSED on retry (confidence=%.2f): %s", confidence, summary)
+		} else {
+			t.Logf("✅ vision verification PASSED (confidence=%.2f): %s", confidence, summary)
 		}
 	} else {
-		t.Log("ℹ️  ORCHESTRATOR_URL not set — skipping vision verification")
+		t.Log("ℹ️  ORCHESTRATOR_URL not set — skipping vision verification, using task completion status only")
 	}
 
 	// Step 6: collect events
@@ -243,7 +282,7 @@ func runDesktopScenario(t *testing.T, scenarioFile string) {
 	if err != nil {
 		t.Fatalf("scenario %s failed: execution error: %v", scenario.Name, err)
 	}
-	if finalState == "error" || finalState == "failed" {
+	if finalState == "error" || finalState == "failed" || finalState == "timeout" {
 		t.Fatalf("scenario %s failed: final state was %q", scenario.Name, finalState)
 	}
 
@@ -274,7 +313,18 @@ func loadScenario(t *testing.T, filename string) DesktopScenario {
 	return s
 }
 
-// captureScreenshot calls POST /e2e/screenshot and returns the base64 PNG data.
+func resetBridge(t *testing.T, bridgeBase string) {
+	t.Helper()
+	resp, err := http.Post(bridgeBase+"/e2e/reset", "application/json", nil)
+	if err != nil {
+		t.Logf("⚠️  bridge reset failed (non-fatal): %v", err)
+		return
+	}
+	resp.Body.Close()
+	t.Log("🔄 bridge state reset to idle")
+	time.Sleep(2 * time.Second)
+}
+
 func captureScreenshot(t *testing.T, bridgeBase string) (string, error) {
 	t.Helper()
 
@@ -293,7 +343,7 @@ func captureScreenshot(t *testing.T, bridgeBase string) (string, error) {
 	if err := json.Unmarshal(body, &r); err != nil {
 		return "", fmt.Errorf("decode screenshot response: %w", err)
 	}
-	return r.Data, nil
+	return r.Image, nil
 }
 
 // submitCommand sends a command to the VibeCat E2E control bridge and returns the task ID.
@@ -366,25 +416,28 @@ func waitForCompletion(t *testing.T, bridgeBase, taskID string, timeout time.Dur
 }
 
 // verifyWithVision sends the post-action screenshot to the ADK orchestrator for Gemini Vision
-// verification using the scenario's successPrompt. Returns (passed, summary, error).
-func verifyWithVision(t *testing.T, orchestratorBase, screenshot, successPrompt string) (bool, string, error) {
+// verification using the scenario's successPrompt.
+// Returns (passed, confidence, summary, error).
+// PASS condition: confidence >= 0.7 AND fallbackRecommendation != "guided_mode".
+func verifyWithVision(t *testing.T, orchestratorBase, screenshot, successPrompt, appName string) (bool, float64, string, error) {
 	t.Helper()
 
 	payload, _ := json.Marshal(visionVerifyRequest{
 		Command:    successPrompt,
 		Screenshot: screenshot,
-		Context:    "desktop_e2e_verification",
+		AppName:    appName,
+		Language:   "ko",
 	})
 
 	resp, err := http.Post(orchestratorBase+"/navigator/escalate", "application/json", bytes.NewReader(payload))
 	if err != nil {
-		return false, "", fmt.Errorf("POST /navigator/escalate: %w", err)
+		return false, 0, "", fmt.Errorf("POST /navigator/escalate: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return false, "", fmt.Errorf("POST /navigator/escalate returned %d: %s", resp.StatusCode, body)
+		return false, 0, "", fmt.Errorf("POST /navigator/escalate returned %d: %s", resp.StatusCode, body)
 	}
 
 	var r visionVerifyResponse
@@ -392,34 +445,68 @@ func verifyWithVision(t *testing.T, orchestratorBase, screenshot, successPrompt 
 		// Attempt a generic map decode in case the schema differs.
 		var generic map[string]any
 		if err2 := json.Unmarshal(body, &generic); err2 != nil {
-			return false, "", fmt.Errorf("decode vision response: %w", err)
+			return false, 0, "", fmt.Errorf("decode vision response: %w", err)
 		}
-		// Best-effort summary extraction.
+		// Best-effort summary extraction — treat as failure.
 		summary := fmt.Sprintf("%v", generic)
-		return false, summary, nil
+		return false, 0, summary, nil
 	}
 
-	return r.Success, r.Summary, nil
+	// PASS: confidence >= 0.7 AND not falling back to guided mode.
+	passed := r.Confidence >= 0.7 && r.FallbackRecommendation != "guided_mode"
+	summary := r.Goal
+	if r.VerificationCue != "" {
+		summary = r.VerificationCue
+	}
+	return passed, r.Confidence, summary, nil
 }
 
-// collectEvents calls GET /e2e/events and returns all collected events.
 func collectEvents(bridgeBase string) ([]e2eEvent, error) {
-	resp, err := http.Get(bridgeBase + "/e2e/events")
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get(bridgeBase + "/e2e/events")
 	if err != nil {
 		return nil, fmt.Errorf("GET /e2e/events: %w", err)
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("GET /e2e/events returned %d: %s", resp.StatusCode, body)
 	}
 
-	var r eventsResponse
-	if err := json.Unmarshal(body, &r); err != nil {
-		return nil, fmt.Errorf("decode events response: %w", err)
+	var events []e2eEvent
+	buf := make([]byte, 0, 4096)
+	tmp := make([]byte, 1024)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		n, readErr := resp.Body.Read(tmp)
+		if n > 0 {
+			buf = append(buf, tmp[:n]...)
+			for {
+				idx := bytes.Index(buf, []byte("\n\n"))
+				if idx < 0 {
+					break
+				}
+				chunk := string(buf[:idx])
+				buf = buf[idx+2:]
+				for _, line := range bytes.Split([]byte(chunk), []byte("\n")) {
+					lineStr := string(line)
+					if !bytes.HasPrefix(line, []byte("data: ")) {
+						continue
+					}
+					payload := lineStr[6:]
+					var evt e2eEvent
+					if err := json.Unmarshal([]byte(payload), &evt); err == nil {
+						events = append(events, evt)
+					}
+				}
+			}
+		}
+		if readErr != nil {
+			break
+		}
 	}
-	return r.Events, nil
+	return events, nil
 }
 
 // saveArtifacts writes scenario artifacts to tests/e2e/desktop_artifacts/{name}/{timestamp}/.
@@ -458,11 +545,14 @@ func saveArtifacts(t *testing.T, a *scenarioArtifacts) {
 
 	// Save summary
 	summary := map[string]any{
-		"scenario":      a.ScenarioName,
-		"timestamp":     a.Timestamp,
-		"passed":        a.Passed,
-		"verify_result": a.VerifyResult,
-		"event_count":   len(a.Events),
+		"scenario":           a.ScenarioName,
+		"timestamp":          a.Timestamp,
+		"passed":             a.Passed,
+		"verify_result":      a.VerifyResult,
+		"event_count":        len(a.Events),
+		"visionVerifyResult": a.VerifyResult,
+		"visionConfidence":   a.VisionConfidence,
+		"visionRetried":      a.VisionRetried,
 	}
 	summaryData, _ := json.MarshalIndent(summary, "", "  ")
 	if err := os.WriteFile(filepath.Join(base, "summary.json"), summaryData, 0644); err != nil {

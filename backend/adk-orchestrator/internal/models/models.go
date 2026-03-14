@@ -114,6 +114,7 @@ type NavigatorEscalationRequest struct {
 	Screenshot                 string  `json:"screenshot,omitempty"`
 	CaptureConfidence          float64 `json:"captureConfidence,omitempty"`
 	VisibleInputCandidateCount int     `json:"visibleInputCandidateCount,omitempty"`
+	ScreenBasisID              string  `json:"screenBasisID,omitempty"`
 	TraceID                    string  `json:"traceId,omitempty"`
 }
 
@@ -125,6 +126,7 @@ type NavigatorEscalationResult struct {
 	Reason                 string                     `json:"reason,omitempty"`
 	Goal                   string                     `json:"goal,omitempty"`
 	VerificationCue        string                     `json:"verificationCue,omitempty"`
+	ScreenBasisID          string                     `json:"screenBasisID,omitempty"`
 }
 
 type NavigatorBackgroundStep struct {

@@ -180,6 +180,7 @@ type liveSessionState struct {
 	pendingFCTarget         string
 	pendingFCSteps          []navigatorStep
 	pendingFCCurrentStep    string
+	pendingFCDispatchedStep *navigatorStep
 	pendingFCStepRetryCount int
 
 	pendingVMu    sync.Mutex
@@ -458,7 +459,7 @@ func (ls *liveSessionState) finishProactiveAnalyze(captureType string) {
 	ls.mu.Unlock()
 }
 
-func (ls *liveSessionState) setPendingFC(id, name, taskID, text, target, firstStepID string, remainingSteps []navigatorStep) {
+func (ls *liveSessionState) setPendingFC(id, name, taskID, text, target string, firstStep navigatorStep, remainingSteps []navigatorStep) {
 	ls.pendingFCMu.Lock()
 	defer ls.pendingFCMu.Unlock()
 	ls.pendingFCID = id
@@ -467,7 +468,8 @@ func (ls *liveSessionState) setPendingFC(id, name, taskID, text, target, firstSt
 	ls.pendingFCText = text
 	ls.pendingFCTarget = target
 	ls.pendingFCSteps = remainingSteps
-	ls.pendingFCCurrentStep = firstStepID
+	ls.pendingFCCurrentStep = firstStep.ID
+	ls.pendingFCDispatchedStep = &firstStep
 }
 
 func (ls *liveSessionState) hasPendingFCForTask(taskID, stepID string) bool {
@@ -485,7 +487,17 @@ func (ls *liveSessionState) advancePendingFCStep() (navigatorStep, bool) {
 	next := ls.pendingFCSteps[0]
 	ls.pendingFCSteps = ls.pendingFCSteps[1:]
 	ls.pendingFCCurrentStep = next.ID
+	ls.pendingFCDispatchedStep = &next
 	return next, true
+}
+
+func (ls *liveSessionState) getDispatchedStepFallbackPolicy() string {
+	ls.pendingFCMu.Lock()
+	defer ls.pendingFCMu.Unlock()
+	if ls.pendingFCDispatchedStep != nil {
+		return ls.pendingFCDispatchedStep.FallbackPolicy
+	}
+	return ""
 }
 
 func (ls *liveSessionState) clearPendingFC() (id, name, text, target string) {
@@ -502,6 +514,7 @@ func (ls *liveSessionState) clearPendingFC() (id, name, text, target string) {
 	ls.pendingFCTarget = ""
 	ls.pendingFCSteps = nil
 	ls.pendingFCCurrentStep = ""
+	ls.pendingFCDispatchedStep = nil
 	ls.pendingFCStepRetryCount = 0
 	return
 }
@@ -2163,6 +2176,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 								})
 								if step, ok := navState.nextStep(); ok {
 									persistNavigatorState()
+									logNavigatorStepDispatch(step, taskID)
 									sendProcessingState(c, "navigator", traceID, "planning_steps", "", "", "", 0, false)
 									sendProcessingState(c, "navigator", traceID, "executing_step", navigatorExecutingLabel(ls.getConfig().Language), step.ActionType, "", 0, true)
 									lockedSendJSON(c, map[string]any{
@@ -2223,6 +2237,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 						if step, ok := navState.nextStep(); ok {
 							persistNavigatorState()
 							recordFirstActionMetric()
+							logNavigatorStepDispatch(step, taskID)
 							sendProcessingState(c, "navigator", traceID, "planning_steps", "", "", "", 0, false)
 							sendProcessingState(c, "navigator", traceID, "executing_step", navigatorExecutingLabel(ls.getConfig().Language), step.ActionType, "", 0, true)
 							lockedSendJSON(c, map[string]any{
@@ -2486,6 +2501,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 					if isPendingFCRefresh {
 						switch refreshMsg.Status {
 						case "success":
+							logNavigatorStepResult(refreshMsg.Step, "success", refreshMsg.ObservedOutcome, refreshMsg.TaskID)
 							lockedSendJSON(c, map[string]any{
 								"type":            "navigator.stepVerified",
 								"taskId":          refreshMsg.TaskID,
@@ -2495,6 +2511,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 							})
 							sendProcessingState(c, "navigator", navigatorActiveTraceID, "verifying_result", "", "", "", 0, false)
 							if nextStep, hasNext := ls.advancePendingFCStep(); hasNext {
+								logNavigatorStepDispatch(nextStep, refreshMsg.TaskID)
 								if adkClient != nil && needsVisionCheckpoint(refreshMsg.Step, refreshMsg.ObservedOutcome) {
 									fcID, fcName, fcText, fcTarget := ls.getPendingFCInfo()
 									cp := &pendingVisionCheckpoint{
@@ -2756,6 +2773,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 									}
 								}
 								slog.Info("navigator FC self-healing retry", "conn_id", c.ID, "step_id", retryStep.ID, "retry", retryCount, "status", refreshMsg.Status)
+								logNavigatorStepRetry(retryStep, retryCount, refreshMsg.TaskID)
 								sendProcessingState(c, "navigator", navigatorActiveTraceID, "verifying_result", "", "", "", 0, false)
 								// Vision-first: observe screen after failure so Gemini sees what went wrong
 								sendProcessingState(c, "navigator", navigatorActiveTraceID, "observing_screen", navigatorObservingLabel(ls.getConfig().Language), "", "", 0, true)
@@ -2791,6 +2809,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 					}
 					switch refreshMsg.Status {
 					case "success":
+						logNavigatorStepResult(refreshMsg.Step, "success", refreshMsg.ObservedOutcome, refreshMsg.TaskID)
 						navState.recordStepResult(refreshMsg.Step, refreshMsg.Status, refreshMsg.ObservedOutcome)
 						navState.resetStepRetry()
 						navState.clearCurrentStep()
@@ -2809,6 +2828,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 						sendProcessingState(c, "navigator", navigatorActiveTraceID, "verifying_result", "", "", "", 0, false)
 						if next, ok := navState.nextStep(); ok {
 							persistNavigatorState()
+							logNavigatorStepDispatch(next, refreshMsg.TaskID)
 							sendProcessingState(c, "navigator", navigatorActiveTraceID, "executing_step", navigatorExecutingLabel(ls.getConfig().Language), next.ActionType, "", 0, true)
 							lockedSendJSON(c, map[string]any{
 								"type":    "navigator.stepPlanned",
@@ -2818,6 +2838,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 							})
 						} else {
 							sendProcessingState(c, "navigator", navigatorActiveTraceID, "completing", navigatorCompletingLabel(ls.getConfig().Language), "", "", 0, true)
+							logNavigatorTaskCompletion(refreshMsg.TaskID, navigatorSurfaceFromState(*navState), "completed", len(navState.stepHistory))
 							lockedSendJSON(c, map[string]any{
 								"type":    "navigator.completed",
 								"taskId":  refreshMsg.TaskID,
@@ -2827,18 +2848,71 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 							finalizeNavigatorTask("completed", refreshMsg.ObservedOutcome, "")
 						}
 					case "guided_mode":
+						logNavigatorStepResult(refreshMsg.Step, "guided_mode", refreshMsg.ObservedOutcome, refreshMsg.TaskID)
 						navState.recordStepResult(refreshMsg.Step, refreshMsg.Status, refreshMsg.ObservedOutcome)
 						navState.resetStepRetry()
-						recordGuidedMetrics("verification_guided_mode", &refreshMsg.Step, refreshMsg.ObservedOutcome, navigatorSurfaceFromState(*navState))
-						sendProcessingState(c, "navigator", navigatorActiveTraceID, "verifying_result", "", "", "", 0, false)
-						lockedSendJSON(c, map[string]any{
-							"type":        "navigator.guidedMode",
-							"taskId":      refreshMsg.TaskID,
-							"reason":      "verification_guided_mode",
-							"instruction": refreshMsg.ObservedOutcome,
-						})
-						finalizeNavigatorTask("guided_mode", refreshMsg.ObservedOutcome, "")
+
+						fallbackPolicy := ls.getDispatchedStepFallbackPolicy()
+						if fallbackPolicy == "" {
+							fallbackPolicy = navState.currentStepFallbackPolicy()
+						}
+						if fallbackPolicy == "continue_next_step" {
+							var nextStep navigatorStep
+							var hasNext bool
+							if lsNext, lsOk := ls.advancePendingFCStep(); lsOk {
+								nextStep, hasNext = lsNext, true
+							} else if nsNext, nsOk := navState.nextStep(); nsOk {
+								nextStep, hasNext = nsNext, true
+							}
+							if hasNext {
+								persistNavigatorState()
+								slog.Info("navigator guided_mode with continue_next_step, advancing",
+									"conn_id", c.ID,
+									"step_id", refreshMsg.Step.ID,
+									"next_step", nextStep.ActionType,
+									"task_id", refreshMsg.TaskID,
+								)
+								recordGuidedMetrics("verification_guided_mode_continued", &refreshMsg.Step, refreshMsg.ObservedOutcome, navigatorSurfaceFromState(*navState))
+								time.Sleep(300 * time.Millisecond)
+								sendProcessingState(c, "navigator", navigatorActiveTraceID, "executing_step", navigatorExecutingLabel(ls.getConfig().Language), nextStep.ActionType, "", 0, true)
+								lockedSendJSON(c, map[string]any{
+									"type":    "navigator.stepPlanned",
+									"taskId":  refreshMsg.TaskID,
+									"step":    nextStep,
+									"message": navigatorMessageForStep(nextStep),
+								})
+							} else {
+								recordGuidedMetrics("verification_guided_mode_all_steps_done", &refreshMsg.Step, refreshMsg.ObservedOutcome, navigatorSurfaceFromState(*navState))
+								slog.Info("navigator continue_next_step exhausted all steps, completing",
+									"conn_id", c.ID,
+									"step_id", refreshMsg.Step.ID,
+									"task_id", refreshMsg.TaskID,
+									"step_count", len(navState.stepHistory),
+								)
+								sendProcessingState(c, "navigator", navigatorActiveTraceID, "completing", navigatorCompletingLabel(ls.getConfig().Language), "", "", 0, true)
+								logNavigatorTaskCompletion(refreshMsg.TaskID, navigatorSurfaceFromState(*navState), "completed", len(navState.stepHistory))
+								lockedSendJSON(c, map[string]any{
+									"type":    "navigator.completed",
+									"taskId":  refreshMsg.TaskID,
+									"summary": refreshMsg.ObservedOutcome,
+								})
+								sendProcessingState(c, "navigator", navigatorActiveTraceID, "completing", "", "", "", 0, false)
+								finalizeNavigatorTask("completed", refreshMsg.ObservedOutcome, "")
+							}
+						} else {
+							recordGuidedMetrics("verification_guided_mode", &refreshMsg.Step, refreshMsg.ObservedOutcome, navigatorSurfaceFromState(*navState))
+							sendProcessingState(c, "navigator", navigatorActiveTraceID, "verifying_result", "", "", "", 0, false)
+							lockedSendJSON(c, map[string]any{
+								"type":        "navigator.guidedMode",
+								"taskId":      refreshMsg.TaskID,
+								"reason":      "verification_guided_mode",
+								"instruction": refreshMsg.ObservedOutcome,
+							})
+							logNavigatorTaskCompletion(refreshMsg.TaskID, navigatorSurfaceFromState(*navState), "guided_mode", len(navState.stepHistory))
+							finalizeNavigatorTask("guided_mode", refreshMsg.ObservedOutcome, "")
+						}
 					default:
+						logNavigatorStepResult(refreshMsg.Step, refreshMsg.Status, refreshMsg.ObservedOutcome, refreshMsg.TaskID)
 						navState.recordStepResult(refreshMsg.Step, refreshMsg.Status, refreshMsg.ObservedOutcome)
 						retryCount := navState.incrementStepRetry()
 						if retryCount <= 2 {
@@ -2865,6 +2939,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 								}
 							}
 							slog.Info("navigator self-healing retry", "conn_id", c.ID, "step_id", retryStep.ID, "retry", retryCount, "status", refreshMsg.Status)
+							logNavigatorStepRetry(retryStep, retryCount, refreshMsg.TaskID)
 							persistNavigatorState()
 							sendProcessingState(c, "navigator", navigatorActiveTraceID, "verifying_result", "", "", "", 0, false)
 							sendProcessingState(c, "navigator", navigatorActiveTraceID, "retrying_step", navigatorRetryingLabel(ls.getConfig().Language), "", "", 0, true)
@@ -3506,7 +3581,7 @@ func handleNavigateTextEntryToolCall(c *Conn, sess *live.Session, ls *liveSessio
 	runtime.setLastFCTargetApp(targetApp)
 	targetLabel := resolveToolCallTargetLabel(target)
 
-	steps := buildToolCallTextEntrySteps(text, targetApp, targetLabel, submit)
+	steps := buildToolCallTextEntrySteps(text, targetApp, targetLabel, submit, isOpenCodeTarget(target))
 	lockedSendJSON(c, map[string]any{
 		"type":             "navigator.commandAccepted",
 		"taskId":           taskID,
@@ -3528,7 +3603,7 @@ func handleNavigateTextEntryToolCall(c *Conn, sess *live.Session, ls *liveSessio
 		return
 	}
 
-	ls.setPendingFC(fc.ID, fc.Name, taskID, text, target, steps[0].ID, steps[1:])
+	ls.setPendingFC(fc.ID, fc.Name, taskID, text, target, steps[0], steps[1:])
 	lockedSendJSON(c, map[string]any{
 		"type":    "navigator.stepPlanned",
 		"taskId":  taskID,
@@ -3560,13 +3635,17 @@ func resolveToolCallTargetApp(target string) string {
 	switch {
 	case containsAny(lowered, []string{"chrome", "크롬", "browser", "브라우저", "youtube", "유튜브", "google", "구글"}):
 		return "Chrome"
-	case containsAny(lowered, []string{"terminal", "터미널", "iterm", "warp", "ghostty"}):
+	case containsAny(lowered, []string{"terminal", "터미널", "iterm", "warp", "ghostty", "opencode"}):
 		return "Terminal"
-	case containsAny(lowered, []string{"antigravity", "codex", "ide"}):
+	case containsAny(lowered, []string{"antigravity", "dev.antigravity.ide", "codex", "ide"}):
 		return "Antigravity"
 	default:
 		return ""
 	}
+}
+
+func isOpenCodeTarget(target string) bool {
+	return strings.Contains(strings.ToLower(target), "opencode")
 }
 
 func resolveToolCallTargetLabel(target string) string {
@@ -3585,7 +3664,7 @@ func resolveToolCallTargetLabel(target string) string {
 	}
 }
 
-func buildToolCallTextEntrySteps(text, targetApp, targetLabel string, submit bool) []navigatorStep {
+func buildToolCallTextEntrySteps(text, targetApp, targetLabel string, submit, isOpenCode bool) []navigatorStep {
 	descriptor := navigatorTargetDescriptor{
 		Role:    "textfield",
 		AppName: targetApp,
@@ -3601,6 +3680,12 @@ func buildToolCallTextEntrySteps(text, targetApp, targetLabel string, submit boo
 
 	var steps []navigatorStep
 	if targetApp != "" {
+		focusFallback := "guided_mode"
+		focusProof := "strong"
+		if isOpenCode {
+			focusFallback = "continue_next_step"
+			focusProof = "none"
+		}
 		steps = append(steps, navigatorStep{
 			ID:               "fc_focus_before_text_" + newConnID(),
 			ActionType:       "focus_app",
@@ -3611,7 +3696,7 @@ func buildToolCallTextEntrySteps(text, targetApp, targetLabel string, submit boo
 			IntentConfidence: 0.95,
 			RiskLevel:        "low",
 			ExecutionPolicy:  navigatorExecutionPolicyLow,
-			FallbackPolicy:   "guided_mode",
+			FallbackPolicy:   focusFallback,
 			Surface:          navigatorSurfaceValue(targetApp),
 			MacroID:          "fc_focus_before_text",
 			Narration:        "Switching to " + targetApp + " before typing.",
@@ -3621,8 +3706,69 @@ func buildToolCallTextEntrySteps(text, targetApp, targetLabel string, submit boo
 				ProofStrategy:       "frontmost_app",
 			},
 			TimeoutMs:  900,
-			ProofLevel: "strong",
+			ProofLevel: focusProof,
 		})
+	}
+
+	if isOpenCode {
+		steps = append(steps, navigatorStep{
+			ID:               "fc_opencode_select_all_" + newConnID(),
+			ActionType:       "hotkey",
+			TargetApp:        "",
+			TargetDescriptor: navigatorTargetDescriptor{},
+			Hotkey:           []string{"command", "a"},
+			ExpectedOutcome:  "OpenCode prompt content selected",
+			Confidence:       0.88,
+			IntentConfidence: 0.95,
+			RiskLevel:        "low",
+			ExecutionPolicy:  navigatorExecutionPolicyLow,
+			FallbackPolicy:   "continue_next_step",
+			Surface:          "terminal",
+			MacroID:          "fc_opencode_select_all",
+			Narration:        "Selecting existing prompt text.",
+			TimeoutMs:        500,
+			ProofLevel:       "none",
+		})
+		steps = append(steps, navigatorStep{
+			ID:               "fc_opencode_paste_text_" + newConnID(),
+			ActionType:       "paste_text",
+			TargetApp:        "",
+			TargetDescriptor: navigatorTargetDescriptor{Role: "textfield"},
+			InputText:        text,
+			ExpectedOutcome:  "Instruction pasted into OpenCode prompt",
+			Confidence:       0.90,
+			IntentConfidence: 0.95,
+			RiskLevel:        "low",
+			ExecutionPolicy:  navigatorExecutionPolicyLow,
+			FallbackPolicy:   "continue_next_step",
+			VerifyHint:       strings.ToLower(strings.TrimSpace(verifyHint)),
+			Surface:          "terminal",
+			MacroID:          "fc_opencode_paste_text",
+			Narration:        "Pasting instruction into OpenCode.",
+			TimeoutMs:        1200,
+			ProofLevel:       "none",
+		})
+		if submit {
+			steps = append(steps, navigatorStep{
+				ID:               "fc_opencode_submit_" + newConnID(),
+				ActionType:       "hotkey",
+				TargetApp:        "",
+				TargetDescriptor: navigatorTargetDescriptor{},
+				Hotkey:           []string{"return"},
+				ExpectedOutcome:  "OpenCode processes the submitted instruction",
+				Confidence:       0.92,
+				IntentConfidence: 0.95,
+				RiskLevel:        "low",
+				ExecutionPolicy:  navigatorExecutionPolicyLow,
+				FallbackPolicy:   "guided_mode",
+				Surface:          "terminal",
+				MacroID:          "fc_opencode_submit",
+				Narration:        "Submitting instruction to OpenCode.",
+				TimeoutMs:        900,
+				ProofLevel:       "none",
+			})
+		}
+		return steps
 	}
 
 	isBrowser := navigatorSurfaceValue(targetApp) == "chrome"
@@ -3891,7 +4037,7 @@ func dispatchFCSteps(c *Conn, sess *live.Session, ls *liveSessionState, metrics 
 		return
 	}
 
-	ls.setPendingFC(fc.ID, fc.Name, taskID, command, "", steps[0].ID, steps[1:])
+	ls.setPendingFC(fc.ID, fc.Name, taskID, command, "", steps[0], steps[1:])
 	lockedSendJSON(c, map[string]any{
 		"type":    "navigator.stepPlanned",
 		"taskId":  taskID,
@@ -4016,7 +4162,7 @@ func handleNavigateTypeAndSubmitToolCall(c *Conn, sess *live.Session, ls *liveSe
 	}
 	runtime.setLastFCTargetApp(targetApp)
 	targetLabel := resolveToolCallTargetLabel(target)
-	steps := buildToolCallTextEntrySteps(text, targetApp, targetLabel, submit)
+	steps := buildToolCallTextEntrySteps(text, targetApp, targetLabel, submit, isOpenCodeTarget(target))
 	lockedSendJSON(c, map[string]any{
 		"type":             "navigator.commandAccepted",
 		"taskId":           taskID,
@@ -4038,7 +4184,7 @@ func handleNavigateTypeAndSubmitToolCall(c *Conn, sess *live.Session, ls *liveSe
 		return
 	}
 
-	ls.setPendingFC(fc.ID, fc.Name, taskID, text, target, steps[0].ID, steps[1:])
+	ls.setPendingFC(fc.ID, fc.Name, taskID, text, target, steps[0], steps[1:])
 	lockedSendJSON(c, map[string]any{
 		"type":    "navigator.stepPlanned",
 		"taskId":  taskID,

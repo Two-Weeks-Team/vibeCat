@@ -6,7 +6,7 @@
     "requiredApp": "Antigravity",
     "requiredBundles": ["dev.antigravity.ide", "com.openai.codex"]
   },
-  "command": "현재 파일에서 TODO 주석을 찾아서 구현해줘",
+  "command": "Antigravity에서 현재 파일의 TODO 주석을 찾아서 구현해줘",
   "successPrompt": "Verify that Antigravity became frontmost, inline prompt opened, the request was inserted, and after submit the task-start UI is visible. Look for: task banner, diff pane, streaming state, prompt close with running UI.",
   "timeout": 45,
   "surface_id": "antigravity_inline",

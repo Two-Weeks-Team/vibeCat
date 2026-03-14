@@ -157,10 +157,21 @@ final class AccessibilityNavigator {
 
     func execute(step: NavigatorStep) async -> NavigatorExecutionResult {
         let before = currentContext()
+        let surfaceStr = step.surface?.rawValue ?? "unknown"
+        let macroIDStr = step.macroID ?? "unknown"
+        let targetStr = step.targetDescriptor.label ?? step.targetDescriptor.appName ?? "unknown"
+        let logMsg = "[NAV-STEP] surface=\(surfaceStr) macroID=\(macroIDStr) stepID=\(step.id) action=\(step.actionType.rawValue) target=\(targetStr) confidence=\(String(format: "%.2f", step.confidence))"
+        NSLog("%@", logMsg as NSString)
         if let frontApp = NSWorkspace.shared.frontmostApplication {
             enableEnhancedUIIfNeeded(for: frontApp)
         }
 
+        let result = await executeStep(step, before: before)
+        logNavigatorStepResult(step, result)
+        return result
+    }
+
+    private func executeStep(_ step: NavigatorStep, before: NavigatorContextPayload) async -> NavigatorExecutionResult {
         switch step.actionType {
         case .focusApp:
             let profile = NavigatorSurfaceProfile.detect(targetApp: step.targetApp)
@@ -218,10 +229,31 @@ final class AccessibilityNavigator {
                 if result.status != "success",
                    step.hotkey == ["space"],
                    NavigatorSurfaceProfile.detect(targetApp: step.targetApp, appName: before.appName, bundleID: before.bundleId).kind == .chrome {
-                    NSLog("[NAV-CHROME] Space verify failed, trying JS video.play() fallback")
-                    let jsResult = executeJavaScriptInChrome("var v=document.querySelector('video');if(v){v.paused?v.play():v.pause();'toggled'}else{'no_video'}")
-                    if let jsResult, jsResult.contains("toggled") {
-                        return .success("Toggled video playback via JavaScript", phase: .verifyOutcome)
+                    NSLog("[NAV-CHROME] Space verify failed, trying JS playback fallbacks")
+                    let ytMusicJS = """
+                    (function(){var pb=document.querySelector('ytmusic-player-bar');if(pb){var btn=pb.querySelector('#play-pause-button,tp-yt-paper-icon-button.play-pause-button');if(btn){btn.click();return 'clicked_play_pause'}}var v=document.querySelector('video');if(v){v.paused?v.play():v.pause();return 'toggled_video'}var playBtn=document.querySelector('[aria-label*="Play"],[aria-label*="play"],[aria-label*="재생"]');if(playBtn){playBtn.click();return 'clicked_aria_play'}return 'no_target'})()
+                    """
+                    let jsResult = executeJavaScriptInChrome(ytMusicJS)
+                    NSLog("[NAV-CHROME] JS fallback result: %@", jsResult ?? "nil")
+                    if let jsResult, jsResult.contains("clicked") || jsResult.contains("toggled") {
+                        return .success("Toggled playback via JavaScript", phase: .verifyOutcome)
+                    }
+
+                    NSLog("[NAV-CHROME] JS fallback failed, trying Escape+Space to defocus search")
+                    _ = sendHotkey(["escape"])
+                    try? await Task.sleep(nanoseconds: 200_000_000)
+                    if sendHotkey(["space"]) {
+                        try? await Task.sleep(nanoseconds: 500_000_000)
+                        let escSpaceResult = verify(step: step, before: before, defaultOutcome: "Toggled playback via Escape+Space")
+                        if escSpaceResult.status == "success" {
+                            return escSpaceResult
+                        }
+                    }
+
+                    NSLog("[NAV-CHROME] Escape+Space failed, trying MCP click on YouTube Music player bar")
+                    if await clickYouTubeMusicPlayButton() {
+                        try? await Task.sleep(nanoseconds: 500_000_000)
+                        return .success("Toggled playback via MCP click on player bar", phase: .verifyOutcome)
                     }
                 }
                 return result
@@ -369,6 +401,51 @@ final class AccessibilityNavigator {
                 return verify(step: step, before: before, defaultOutcome: defaultOutcome)
             }
             return .guided("The target was visible, but it was not safely pressable.", reason: .targetNotWritable, phase: .performAction)
+
+        case .clickCoordinates:
+            let cx = step.targetDescriptor.clickX.map { Float($0) }
+            let cy = step.targetDescriptor.clickY.map { Float($0) }
+            guard let clickX = cx, let clickY = cy else {
+                NSLog("[NAV-CLICK-COORDS] missing clickX/clickY in targetDescriptor")
+                return .failed("click_coordinates requires clickX and clickY in targetDescriptor", reason: .targetNotFound, phase: .preflight)
+            }
+            guard clickX >= 0.0, clickX <= 1.0, clickY >= 0.0, clickY <= 1.0 else {
+                NSLog("[NAV-CLICK-COORDS] coordinates out of range clickX=%.4f clickY=%.4f", clickX, clickY)
+                return .failed("click_coordinates: clickX and clickY must be in [0.0, 1.0]", reason: .targetNotFound, phase: .preflight)
+            }
+            let stepBasis = step.screenBasisId ?? ""
+            let currentBasis = lastKnownScreenBasisID
+            if !stepBasis.isEmpty && !currentBasis.isEmpty && stepBasis != currentBasis {
+                NSLog("[NAV-CLICK-COORDS] screenBasisID mismatch — aborting (step=%@ current=%@)", stepBasis, currentBasis)
+                return .failed(
+                    "Screen state changed since coordinates were calculated — aborting coordinate click",
+                    reason: .screenChanged,
+                    phase: .resolveTarget
+                )
+            }
+            let screen = screenForCoordinateClick()
+            let displayOrigin = screen.frame.origin
+            let displayWidth = screen.frame.width
+            let displayHeight = screen.frame.height
+            let absX = Int(displayOrigin.x + Double(clickX) * displayWidth)
+            let absY = Int(displayOrigin.y + Double(clickY) * displayHeight)
+            let clickPoint = CGPoint(x: absX, y: absY)
+            NSLog("[NAV-CLICK-COORDS] clickX=%.4f clickY=%.4f absX=%d absY=%d screenBasisID=%@ result=executing", clickX, clickY, absX, absY, stepBasis.isEmpty ? "(none)" : stepBasis)
+            animateCursorTo(clickPoint)
+            guard let source = CGEventSource(stateID: .hidSystemState),
+                  let down = CGEvent(mouseEventSource: source, mouseType: .leftMouseDown, mouseCursorPosition: clickPoint, mouseButton: .left),
+                  let up = CGEvent(mouseEventSource: source, mouseType: .leftMouseUp, mouseCursorPosition: clickPoint, mouseButton: .left) else {
+                NSLog("[NAV-CLICK-COORDS] failed to create CGEvents clickX=%.4f clickY=%.4f absX=%d absY=%d screenBasisID=%@ result=cgevent_error", clickX, clickY, absX, absY, stepBasis.isEmpty ? "(none)" : stepBasis)
+                return .failed("Could not create CGEvent for coordinate click", reason: .focusNotReady, phase: .performAction)
+            }
+            down.setIntegerValueField(.mouseEventClickState, value: 1)
+            up.setIntegerValueField(.mouseEventClickState, value: 1)
+            down.post(tap: .cghidEventTap)
+            usleep(15_000)
+            up.post(tap: .cghidEventTap)
+            NSLog("[NAV-CLICK-COORDS] clickX=%.4f clickY=%.4f absX=%d absY=%d screenBasisID=%@ result=success", clickX, clickY, absX, absY, stepBasis.isEmpty ? "(none)" : stepBasis)
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            return verify(step: step, before: before, defaultOutcome: "Clicked at coordinates (\(absX), \(absY))")
 
         case .systemAction:
             return performSystemAction(step)
@@ -1143,7 +1220,7 @@ final class AccessibilityNavigator {
         }
     }
 
-    private func runAppleScript(lines: [String]) -> String? {
+    private func runAppleScript(lines: [String], timeout: TimeInterval = 5) -> String? {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         task.arguments = lines.flatMap { ["-e", $0] }
@@ -1154,9 +1231,18 @@ final class AccessibilityNavigator {
 
         do {
             try task.run()
-            task.waitUntilExit()
         } catch {
             return nil
+        }
+
+        let deadline = Date().addingTimeInterval(timeout)
+        while task.isRunning {
+            if Date() > deadline {
+                NSLog("[NAV-AS] AppleScript timed out after %.0fs, terminating pid=%d", timeout, task.processIdentifier)
+                task.terminate()
+                return nil
+            }
+            Thread.sleep(forTimeInterval: 0.05)
         }
 
         guard task.terminationStatus == 0 else {
@@ -1173,7 +1259,18 @@ final class AccessibilityNavigator {
             "tell application \"Google Chrome\"",
             "execute front window's active tab javascript \"\(escaped)\"",
             "end tell"
-        ])
+        ], timeout: 3)
+    }
+
+    private func clickYouTubeMusicPlayButton() async -> Bool {
+        guard let windowRect = frontmostWindowFrame() else {
+            NSLog("[NAV-CHROME] Could not get window frame for MCP play button click")
+            return false
+        }
+        let x = Int(windowRect.origin.x + windowRect.width * 0.5)
+        let y = Int(windowRect.origin.y + windowRect.height - 36)
+        NSLog("[NAV-CHROME] MCP click at (%d, %d) for YouTube Music play button", x, y)
+        return await AutomationMCPClient.shared.mouseClick(x: x, y: y)
     }
 
     private func executeTerminalCommand(_ command: String) -> Bool {
@@ -1873,5 +1970,16 @@ final class AccessibilityNavigator {
 
         NSLog("[NAV-MCP] no AX element rect available for MCP click fallback")
         return false
+    }
+
+    private func logNavigatorStepResult(_ step: NavigatorStep, _ result: NavigatorExecutionResult) {
+        let logMsg = String(format: "[NAV-STEP-RESULT] stepID=%@ action=%@ result=%@ phase=%@ clickX=%.4f clickY=%.4f",
+            step.id,
+            step.actionType.rawValue,
+            result.status,
+            result.phase.rawValue,
+            step.targetDescriptor.clickX ?? 0.0,
+            step.targetDescriptor.clickY ?? 0.0)
+        NSLog("%@", logMsg)
     }
 }

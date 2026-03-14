@@ -488,15 +488,18 @@ func TestBuildAntigravityInlineStepsEmitExecutionContract(t *testing.T) {
 	if paste.MacroID != "paste_antigravity_instruction" {
 		t.Fatalf("macroID = %q, want paste_antigravity_instruction", paste.MacroID)
 	}
-	if paste.VerifyContract == nil || paste.VerifyContract.ExpectedBundleID != "com.openai.codex" {
-		t.Fatalf("verify contract = %#v, want Antigravity bundle", paste.VerifyContract)
+	if paste.FallbackPolicy != "continue_next_step" {
+		t.Fatalf("fallbackPolicy = %q, want continue_next_step", paste.FallbackPolicy)
 	}
-	if paste.ProofLevel != "strict" {
-		t.Fatalf("proofLevel = %q, want strict", paste.ProofLevel)
+	if paste.ProofLevel != "none" {
+		t.Fatalf("proofLevel = %q, want none", paste.ProofLevel)
 	}
 	submit := steps[3]
 	if submit.MacroID != "submit_antigravity_instruction" {
 		t.Fatalf("submit macroID = %q, want submit_antigravity_instruction", submit.MacroID)
+	}
+	if submit.FallbackPolicy != "continue_next_step" {
+		t.Fatalf("submit fallbackPolicy = %q, want continue_next_step", submit.FallbackPolicy)
 	}
 }
 

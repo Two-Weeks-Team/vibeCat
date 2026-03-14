@@ -153,6 +153,22 @@ final class E2EControlBridge {
         ])
     }
 
+    func notifyClarificationNeeded(command: String, question: String, responseMode: String) {
+        emitEvent([
+            "type": "navigator.intentClarificationNeeded",
+            "command": command,
+            "question": question,
+            "responseMode": responseMode
+        ])
+        NSLog("[E2E-BRIDGE] clarification received — auto-confirming command=%@", command)
+        let ctx = contextProvider?() ?? emptyContext()
+        gatewayClient?.sendNavigatorClarificationResponse(
+            originalCommand: command,
+            answer: "해줘",
+            context: ctx
+        )
+    }
+
     // MARK: - Server Startup
 
     private func startServer() {
@@ -248,6 +264,8 @@ final class E2EControlBridge {
             handleEvents(connection: connection)
         case ("POST", "/e2e/screenshot"):
             await handleScreenshot(connection: connection)
+        case ("POST", "/e2e/reset"):
+            handleReset(connection: connection)
         default:
             sendResponse(connection: connection, status: 404, body: #"{"error":"not found"}"#)
         }
@@ -292,6 +310,14 @@ final class E2EControlBridge {
             return
         }
         sendResponse(connection: connection, status: 200, body: responseBody)
+    }
+
+    // MARK: - POST /e2e/reset
+
+    private func handleReset(connection: NWConnection) {
+        navigatorStatus = BridgeStatus()
+        NSLog("[E2E-BRIDGE] /e2e/reset — bridge state cleared to idle")
+        sendResponse(connection: connection, status: 200, body: #"{"ok":true}"#)
     }
 
     // MARK: - GET /e2e/status

@@ -20,8 +20,8 @@
   },
   "expect": {
     "intentClass": "execute_now",
-    "stepCount": 3,
-    "firstAction": "hotkey",
+    "stepCount": 4,
+    "firstAction": "focus_app",
     "lastAction": "hotkey"
   }
 }

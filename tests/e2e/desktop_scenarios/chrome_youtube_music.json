@@ -2,7 +2,7 @@
   "name": "chrome_youtube_music_play",
   "surface": "chrome",
   "setup": {
-    "description": "Chrome is on music.youtube.com search results page with results visible",
+    "description": "Chrome is on YouTube or YouTube Music page with playable content visible",
     "requiredApp": "Google Chrome",
     "requiredBundles": ["com.google.Chrome"]
   },

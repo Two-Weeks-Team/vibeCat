@@ -2,7 +2,9 @@ package navigator
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -46,6 +48,14 @@ func (p *Processor) ResolveTarget(ctx context.Context, req models.NavigatorEscal
 		slog.Warn("navigator escalator: screenshot decode failed", "trace_id", req.TraceID, "error", err)
 		return fallback
 	}
+
+	// Generate deterministic screenBasisID from SHA-256 of first 4096 bytes
+	basisLen := len(decoded)
+	if basisLen > 4096 {
+		basisLen = 4096
+	}
+	basisHash := sha256.Sum256(decoded[:basisLen])
+	screenBasisID := hex.EncodeToString(basisHash[:])[:12]
 
 	prompt := buildEscalationPrompt(req)
 	resp, err := p.genaiClient.Models.GenerateContent(ctx, geminiconfig.VisionModel, []*genai.Content{
@@ -102,7 +112,9 @@ Rules:
 		return fallback
 	}
 
+	result.ScreenBasisID = screenBasisID
 	if result.Confidence < fallback.Confidence {
+		fallback.ScreenBasisID = screenBasisID
 		return fallback
 	}
 	return &result

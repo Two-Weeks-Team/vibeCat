@@ -43,6 +43,19 @@ func maybeEscalateNavigatorPlan(ctx context.Context, adkClient adkService, metri
 	}
 
 	switch {
+	case wantsMediaPlayback(command, navCtx):
+		if step, ok := buildEscalatedAXPressStep(navCtx, plan.IntentConfidence, result); ok {
+			step.FallbackActionType = "hotkey"
+			step.FallbackHotkey = []string{"space"}
+			plan.IntentClass = navigatorIntentExecuteNow
+			plan.ClarifyQuestion = ""
+			if len(plan.Steps) > 1 {
+				plan.Steps = append(plan.Steps[:len(plan.Steps)-1], step)
+			} else {
+				plan.Steps = []navigatorStep{step}
+			}
+			return plan
+		}
 	case wantsTextEntry(command, navCtx):
 		if steps := buildEscalatedTextEntrySteps(command, navCtx, plan.IntentConfidence, result); len(steps) > 0 {
 			plan.IntentClass = navigatorIntentExecuteNow
@@ -65,6 +78,9 @@ func maybeEscalateNavigatorPlan(ctx context.Context, adkClient adkService, metri
 func shouldAttemptConfidenceEscalation(command string, navCtx navigatorContext, plan navigatorPlan) bool {
 	if strings.TrimSpace(navCtx.Screenshot) == "" {
 		return false
+	}
+	if wantsMediaPlayback(command, navCtx) {
+		return true
 	}
 	if !(wantsTextEntry(command, navCtx) || looksLikeDirectClick(command)) {
 		return false
@@ -94,6 +110,7 @@ func buildEscalatedTextEntrySteps(command string, navCtx navigatorContext, inten
 			AppName:        cleanTopic(firstNonEmptyString(escalation.ResolvedDescriptor.AppName, navCtx.AppName)),
 			RelativeAnchor: cleanTopic(escalation.ResolvedDescriptor.RelativeAnchor),
 			RegionHint:     cleanTopic(escalation.ResolvedDescriptor.RegionHint),
+			ScreenBasisID:  firstNonEmptyString(escalation.ScreenBasisID, escalation.ResolvedDescriptor.ScreenBasisID),
 		}
 	} else if baseline, ok := buildTextEntryDescriptor(command, navCtx); ok {
 		descriptor = baseline
@@ -108,6 +125,7 @@ func buildEscalatedAXPressStep(navCtx navigatorContext, intentConfidence float64
 	if escalation == nil || escalation.ResolvedDescriptor == nil {
 		return navigatorStep{}, false
 	}
+	screenBasisID := firstNonEmptyString(escalation.ScreenBasisID, escalation.ResolvedDescriptor.ScreenBasisID)
 	descriptor := navigatorTargetDescriptor{
 		Role:           cleanTopic(escalation.ResolvedDescriptor.Role),
 		Label:          cleanTopic(escalation.ResolvedDescriptor.Label),
@@ -115,6 +133,9 @@ func buildEscalatedAXPressStep(navCtx navigatorContext, intentConfidence float64
 		AppName:        cleanTopic(firstNonEmptyString(escalation.ResolvedDescriptor.AppName, navCtx.AppName)),
 		RelativeAnchor: cleanTopic(escalation.ResolvedDescriptor.RelativeAnchor),
 		RegionHint:     cleanTopic(escalation.ResolvedDescriptor.RegionHint),
+		ClickX:         escalation.ResolvedDescriptor.ClickX,
+		ClickY:         escalation.ResolvedDescriptor.ClickY,
+		ScreenBasisID:  screenBasisID,
 	}
 	if descriptor.Role == "" && descriptor.Label == "" {
 		return navigatorStep{}, false
@@ -123,9 +144,17 @@ func buildEscalatedAXPressStep(navCtx navigatorContext, intentConfidence float64
 	if label == "" {
 		label = "target control"
 	}
+
+	actionType := "press_ax"
+	stepID := "press_ax_target"
+	if escalation.ResolvedDescriptor.ClickX > 0 && escalation.ResolvedDescriptor.ClickY > 0 {
+		actionType = "click_coordinates"
+		stepID = "click_coordinates_target"
+	}
+
 	return navigatorStep{
-		ID:               "press_ax_target",
-		ActionType:       "press_ax",
+		ID:               stepID,
+		ActionType:       actionType,
 		TargetApp:        firstNonEmptyString(descriptor.AppName, navCtx.AppName),
 		TargetDescriptor: descriptor,
 		ExpectedOutcome:  "Press the " + label,
@@ -241,7 +270,7 @@ func navigatorSurfaceFromNames(appName, command string) string {
 		return "Chrome"
 	case strings.Contains(lowered, "terminal"):
 		return "Terminal"
-	case strings.Contains(lowered, "antigravity"):
+	case strings.Contains(lowered, "antigravity") || strings.Contains(lowered, "codex"):
 		return "Antigravity"
 	default:
 		return "Other"
@@ -259,7 +288,7 @@ func navigatorBundleIDForSurface(appName string) string {
 	case "terminal":
 		return "com.apple.Terminal"
 	case "antigravity":
-		return "com.openai.codex"
+		return "dev.antigravity.ide"
 	default:
 		return ""
 	}

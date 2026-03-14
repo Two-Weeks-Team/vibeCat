@@ -120,6 +120,7 @@ type NavigatorTargetDescriptor struct {
 	ClickX          float64 `json:"clickX,omitempty"`
 	ClickY          float64 `json:"clickY,omitempty"`
 	VerificationCue string  `json:"verificationCue,omitempty"`
+	ScreenBasisID   string  `json:"screenBasisId,omitempty"`
 }
 
 type NavigatorEscalationRequest struct {
@@ -148,6 +149,7 @@ type NavigatorEscalationResult struct {
 	Reason                 string                     `json:"reason,omitempty"`
 	Goal                   string                     `json:"goal,omitempty"`
 	VerificationCue        string                     `json:"verificationCue,omitempty"`
+	ScreenBasisID          string                     `json:"screenBasisId,omitempty"`
 }
 
 type NavigatorBackgroundStep struct {

@@ -1084,6 +1084,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
                 self.activeNavigatorCommand = command
                 self.navigatorPromptState = .clarification(command: command, responseMode: responseMode)
+                E2EControlBridge.shared.notifyClarificationNeeded(
+                    command: command,
+                    question: question,
+                    responseMode: responseMode.rawValue
+                )
                 chatPanel?.updateLastAssistantMessage(question)
                 self.showStatusBubbleIfAllowed(
                     panel: panel,
@@ -1133,6 +1138,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 self.screenAnalyzer?.resume()
                 NSLog("[NAV-RESUME] resumed proactive screen analysis after guided mode")
+                E2EControlBridge.shared.notifyFailed(taskId: taskId, reason: "guided_mode: \(instruction)")
                 chatPanel?.updateLastAssistantMessage(instruction)
                 self.showStatusBubbleIfAllowed(
                     panel: panel,

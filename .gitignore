@@ -43,5 +43,8 @@ docs/ideas/
 tasks/
 scripts/task-complexity-report.json
 
+# E2E test artifacts (generated screenshots, events, summaries)
+tests/e2e/desktop_artifacts/
+
 # Tools (cloned and installed locally, not tracked)
 tools/automation-mcp/

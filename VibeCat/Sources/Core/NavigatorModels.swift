@@ -17,6 +17,7 @@ public enum NavigatorActionType: String, Sendable, Codable {
     case pressAX = "press_ax"
     case systemAction = "system_action"
     case waitFor = "wait_for"
+    case clickCoordinates = "click_coordinates"
 }
 
 public enum SurfaceKind: String, Sendable, Codable {
@@ -248,6 +249,8 @@ extension NavigatorActionType {
             return .system
         case .waitFor:
             return step.targetDescriptor.label != nil ? .ax : .system
+        case .clickCoordinates:
+            return .vision
         }
     }
 
@@ -261,6 +264,7 @@ extension NavigatorActionType {
         case .copySelection: return "\u{1F4CB}"
         case .systemAction: return "\u{2699}\u{FE0F}"
         case .waitFor: return "\u{23F3}"
+        case .clickCoordinates: return "\u{1F3AF}"
         }
     }
 }

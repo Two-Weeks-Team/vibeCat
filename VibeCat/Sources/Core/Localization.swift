@@ -711,6 +711,8 @@ public enum VibeCatL10n {
             return pick(lang, ko: "시스템: \(cmd)", en: "System: \(cmd)", ja: "システム: \(cmd)")
         case .waitFor:
             return pick(lang, ko: "대기 중...", en: "Waiting...", ja: "待機中...")
+        case .clickCoordinates:
+            return pick(lang, ko: "좌표 클릭 중", en: "Clicking coordinates", ja: "座標クリック中")
         }
     }
 
