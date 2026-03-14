@@ -1,0 +1,61 @@
+flowchart LR
+    subgraph Client["macOS Client (Swift 6.2)"]
+        UI["Cat UI + Chat"]
+        CAP["ScreenCaptureService"]
+        AX["AccessibilityNavigator\n80+ key codes"]
+        WORKER["NavigatorActionWorker"]
+        OVR["NavigatorOverlayPanel"]
+        GWCLIENT["GatewayClient\n/ws/live"]
+    end
+
+    subgraph Gateway["Realtime Gateway (Go 1.26.1 · Cloud Run)"]
+        HTTP["/health /readyz /api/v1/auth/* /ws/live"]
+        LIVE["Gemini Live session manager"]
+        PROMPT["Proactive Companion prompt"]
+        FC["5 Function Calling tools"]
+        PFC["pendingFC queue\none-step-at-a-time"]
+        VERIFY["Vision verification"]
+        HEAL["Self-healing\nmax 2 retries"]
+        CDP["chromedp Chrome controller"]
+        STATE["ActionStateStore\nin-memory + Firestore"]
+        METRICS["OTEL + replay metrics"]
+    end
+
+    subgraph ADK["ADK Orchestrator (Go 1.26.1 · Cloud Run)"]
+        ROUTER["/navigator/escalate\n/navigator/background\n/memory/* /search /tool /analyze"]
+        PROC["Navigator Processor"]
+        SEARCH["Search Agent"]
+        MEMORY["Memory Agent"]
+        REPLAY["Replay + Firestore store"]
+        GENAI["GenAI / ADK runtime"]
+    end
+
+    subgraph GCP["Google Cloud Platform"]
+        LIVEAPI["Gemini Live API"]
+        FIRE["Firestore"]
+        OTEL["Cloud Logging / Trace / Monitoring"]
+    end
+
+    UI --> GWCLIENT
+    CAP --> GWCLIENT
+    GWCLIENT --> HTTP
+    HTTP --> LIVE
+    LIVE --> PROMPT
+    LIVE --> LIVEAPI
+    LIVEAPI --> FC
+    FC --> PFC
+    PFC --> WORKER
+    WORKER --> AX
+    PFC --> CDP
+    HEAL --> PFC
+    VERIFY --> ROUTER
+    ROUTER --> PROC
+    PROC --> SEARCH
+    PROC --> MEMORY
+    PROC --> REPLAY
+    PROC --> GENAI
+    STATE --> FIRE
+    REPLAY --> FIRE
+    METRICS --> OTEL
+    GENAI --> OTEL
+    OVR --> UI

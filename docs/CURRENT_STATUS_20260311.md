@@ -91,8 +91,8 @@ Fixture location:
 
 - project: `vibecat-489105`
 - region: `asia-northeast3`
-- gateway URL: `https://realtime-gateway-a4akw2crra-du.a.run.app`
-- orchestrator URL: `https://adk-orchestrator-a4akw2crra-du.a.run.app`
+- gateway URL: `https://realtime-gateway-163070481841.asia-northeast3.run.app`
+- orchestrator URL: `https://adk-orchestrator-163070481841.asia-northeast3.run.app`
 - Firestore: `(default)` native database
 - required secrets: present
 

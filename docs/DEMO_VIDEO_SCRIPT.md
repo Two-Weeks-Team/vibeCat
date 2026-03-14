@@ -300,7 +300,7 @@ Your Proactive Desktop Companion
 
 **[TEXT ON SCREEN]**
 ```
-github.com/[your-handle]/vibeCat
+github.com/Two-Weeks-Team/vibeCat
 
 Built for the Gemini Live Agent Challenge 2026
 ```
