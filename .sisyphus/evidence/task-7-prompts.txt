@@ -1,4 +1,0 @@
-TASK 7: Prompts
-Build: PASS
-Test: PASS (10/10 tests)
-Commit: 1855bec

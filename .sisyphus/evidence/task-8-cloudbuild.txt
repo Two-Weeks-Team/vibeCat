@@ -1,4 +1,0 @@
-TASK 8: Cloud Build
-Gateway YAML valid: PASS
-Orchestrator YAML valid: PASS
-Commit: $(git log -1 --oneline -- backend/realtime-gateway/cloudbuild.yaml backend/adk-orchestrator/cloudbuild.yaml)

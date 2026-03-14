@@ -1,4 +1,0 @@
-interface:
-  display_name: "Gemini API Implementer"
-  short_description: "Use current Gemini docs and changelog before coding."
-  default_prompt: "Use $gemini-api-implementation to verify the latest Gemini docs, choose the right model/tools, and update this codebase safely."
