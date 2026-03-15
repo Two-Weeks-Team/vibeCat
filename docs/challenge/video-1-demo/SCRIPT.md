@@ -1,348 +1,170 @@
-# VibeCat — 4-Minute Demo Video Script
+# VibeCat — 4-Minute Demo Video Script (v3 — Reality-Based)
 
 **Total Runtime:** 4:00
-**Format:** Screen recording + voiceover + live cat overlay
-**Tone:** Conversational, slightly witty — like a smart colleague, not a product pitch
-**Key Identity:** OBSERVE → SUGGEST → WAIT → ACT → FEEDBACK
+**Format:** Screen recording + VibeCat voice + user voice
+**Language:** All English
+**Key Rule:** VibeCat ALWAYS speaks first. User only approves.
+
+> This script is based on VibeCat's **actual observed behavior** during testing.
+> VibeCat proactively spoke first 5/5 times, in English, recognizing code, errors, and app state.
 
 ---
 
-## PRE-ROLL (0:00–0:05)
+## CORE FLOW (every scenario)
 
-> *Black screen. Soft lo-fi beat fades in.*
-
-**TEXT ON SCREEN:**
 ```
-Every developer knows this feeling...
-```
-
----
-
-## ACT 1: THE HOOK — LOSING FLOW (0:05–0:25)
-
-**[SCREEN ACTION]**
-Fast-cut montage, ~3 seconds each:
-1. Code editor open — developer typing fast, in the zone
-2. Terminal pops up — runs a command, waits
-3. Browser opens — Googles an error message
-4. Slack notification — developer glances, loses focus
-5. Back to editor — cursor blinking, momentum gone
-
-**[NARRATION — V.O.]**
-> "Context switching. It's the silent killer of deep work. You're in the zone, then — terminal, browser, Slack, back to code. By the time you're back, the thought is gone."
-
-**[TEXT ON SCREEN — brief flash]**
-```
-What if your computer just... helped?
+VibeCat observes screen → VibeCat suggests action → User: "Yeah" → VibeCat executes
 ```
 
 ---
 
-## ACT 2: MAGIC MOMENT — "VIBECAT SPEAKS FIRST" (0:25–1:15) ⭐ PRIMARY WOW
+## ACT 1: GREETING + MUSIC (0:00–1:30) ⭐ First Impression
 
-### 0:25 — Setup
+### Setup
+- Antigravity IDE open with `demo/UserService.swift`
+- VibeCat cat character visible in corner
 
-**[SCREEN ACTION]**
-- Antigravity IDE fills the screen
-- Developer typing a function — `getUserData()` — looks normal
-- Cursor pauses on line 47
+### What Happens
+1. **VibeCat speaks first** (proactive, ~10-30s after launch):
+   - Expected: *"You've been working hard! Want me to play some chill music on YouTube?"*
+   - Or similar: VibeCat will observe the screen and suggest something helpful
 
-**[NARRATION — V.O.]**
-> "Meet VibeCat. It's been watching."
+2. **User responds** (one word):
+   - *"Yeah, play it."*
 
----
+3. **VibeCat executes** (multi-step, no more user input):
+   - Overlay shows: `Opening YouTube Music... [System]`
+   - Overlay shows: `Searching: "chill coding music"... [CDP]`
+   - Overlay shows: `Starting playback... [Hotkey: Space]`
+   - YouTube Music opens → search → music plays
 
-### 0:33 — VibeCat Appears
+4. **VibeCat confirms**:
+   - *"There you go! Music is playing."*
 
-**[SCREEN ACTION]**
-- Small cat character slides in from bottom-right corner of screen
-- Speech bubble appears with a soft *pop* sound
-- Grounding overlay badge **"AX"** glows in top-right of IDE window
-
-**[VIBECAT — spoken aloud, friendly voice]**
-> *"Hey — I noticed a potential null check missing on line 47. Want me to add it?"*
-
-**[NARRATION — V.O.]**
-> "It didn't wait to be asked. It just... noticed."
-
----
-
-### 0:42 — Developer Responds
-
-**[DEVELOPER — casual]**
-> *"Yeah, go ahead."*
+### What the Judges See
+- AI that speaks FIRST (not waiting for commands)
+- One approval → multi-step autonomous execution
+- Real browser automation (not a mock)
 
 ---
 
-### 0:45 — Transparent Execution
+## ACT 2: CODE FIX (1:30–2:45) ⭐ Technical Depth
 
-**[SCREEN ACTION]**
-Floating overlay panel appears (semi-transparent, top of screen):
-```
-● Analyzing...        [AX]
-● Planning fix...
-● Executing...        Step 1/2
-● Verifying...        ✓
-```
-- IDE cursor moves to line 47 — code is inserted:
-  ```swift
-  guard let user = user else { return nil }
-  ```
-- Overlay fades: **"✓ Done"**
+### Setup
+- Switch back to Antigravity (`Cmd+Tab`)
+- `demo/UserService.swift` visible — has intentional null check issues
 
-**[VIBECAT — spoken]**
-> *"Done! Null check added. Want me to run the tests?"*
+### What Happens
+1. **VibeCat speaks first** (proactive):
+   - Expected: *"I notice you're accessing properties on an optional without unwrapping. Want me to add a guard check?"*
+   - Or: *"You're adding caching to UserService! The logic for updating the cache before checking nulls could crash."*
 
-**[NARRATION — V.O.]**
-> "No silence. No mystery. Every step, narrated."
+2. **User responds**:
+   - *"Yeah, fix it."*
 
----
+3. **VibeCat executes**:
+   - Overlay shows: `Focusing Antigravity... [AX]`
+   - Overlay shows: `Opening inline prompt... [Hotkey: Cmd+I]`
+   - VibeCat uses Antigravity's inline AI to suggest the fix
 
-### 1:10 — Beat
+4. **VibeCat confirms**:
+   - *"Done! Added the null check."*
 
-**[TEXT ON SCREEN — 3 seconds]**
-```
-Proactive. Transparent. Yours.
-```
+### What the Judges See
+- VibeCat reads and understands code on screen
+- Proactive bug detection (not just responding to errors)
+- Real IDE integration
 
 ---
 
-## ACT 3: CROSS-APP FLOW — CHROME + YOUTUBE (1:15–2:15) ⭐ BREADTH WOW
+## ACT 3: TERMINAL COMMAND (2:45–3:30) ⭐ Self-Healing
 
-### 1:15 — Developer Asks
+### Setup
+- Open Terminal
+- Type `ls` and press Enter (basic output visible)
 
-**[SCREEN ACTION]**
-- Developer still in IDE, cat still visible in corner
+### What Happens
+1. **VibeCat speaks first** (proactive):
+   - Expected: *"By the way, ls -la would show hidden files and permissions too. Want me to run it?"*
 
-**[DEVELOPER — casual]**
-> *"Hey, can you find some focus music?"*
+2. **User responds**:
+   - *"Do it."*
 
----
+3. **VibeCat executes**:
+   - Overlay shows: `Focusing Terminal... [AX]`
+   - Overlay shows: `Typing: ls -la... [Text Entry]`
+   - If first attempt fails → Overlay shows: `Retrying... [Attempt 2/3]`
+   - Terminal runs `ls -la` → output appears
 
-### 1:20 — VibeCat Takes Over
+4. **VibeCat confirms**:
+   - *"Got it! Notice the hidden files now showing?"*
 
-**[SCREEN ACTION]**
-Overlay panel appears:
-```
-● Focusing Chrome...   [CDP]
-● Opening YouTube...
-● Searching: "lo-fi focus music"
-● Starting playback... [⌨ Space]
-```
-
-**[NARRATION — V.O.]**
-> "Chrome. YouTube. Search. Play. Four apps, one sentence."
-
-Step-by-step on screen:
-1. Chrome comes to foreground — **CDP badge** glows
-2. YouTube opens — search bar fills: *"lo-fi focus music"*
-3. First result selected
-4. Video starts — **Keyboard badge** flashes as Space is pressed
+### What the Judges See
+- Proactive suggestion for better workflow
+- Real terminal automation
+- Self-healing if first attempt fails (retry with alternative grounding)
 
 ---
 
-### 1:50 — VibeCat Reports Back
+## ACT 4: ARCHITECTURE + CLOSE (3:30–4:00)
 
-**[VIBECAT — spoken]**
-> *"There you go — lo-fi beats to code by. I'll keep it going in the background."*
+### What Happens
+1. Show `architecture.png` in Preview (already open)
+2. Flash GCP Console tab in Chrome (5 seconds — Cloud Run services green)
+3. VibeCat waves goodbye:
+   - *"I'll be here when you need me. Or before you need me."*
 
-**[SCREEN ACTION]**
-- Music playing in Chrome (minimized)
-- Developer back in IDE, cat still in corner
-- Subtle music waveform animation on cat character
-
-**[NARRATION — V.O.]**
-> "It didn't open a dialog. It didn't ask for a URL. It just handled it."
-
----
-
-### 2:10 — Beat
-
-**[TEXT ON SCREEN — 3 seconds]**
+### Closing Text on Screen
 ```
-Across every app. Without breaking your flow.
-```
-
----
-
-## ACT 4: SELF-HEALING — TERMINAL SCENE (2:15–3:00) ⭐ TECHNICAL WOW
-
-### 2:15 — Terminal Scene
-
-**[SCREEN ACTION]**
-- Terminal window in focus
-- Developer has just run `ls` — basic output visible
-
-**[VIBECAT — proactive, spoken]**
-> *"ls -la would show hidden files and permissions too — want me to run it?"*
-
-**[DEVELOPER]**
-> *"Do it."*
-
----
-
-### 2:25 — First Attempt Fails
-
-**[SCREEN ACTION]**
-Overlay panel:
-```
-● Focusing Terminal...  [AX]
-● Typing command...
-✗ Focus lost — wrong window
-```
-- Command appears in wrong app (e.g., IDE search bar)
-
-**[NARRATION — V.O.]**
-> "It missed. That happens. Here's what's different."
-
----
-
-### 2:35 — Self-Healing Kicks In
-
-**[SCREEN ACTION]**
-Overlay panel updates:
-```
-● Retrying...           [Attempt 2/3]
-● Re-focusing Terminal  [CDP fallback]
-● Retyping: ls -la
-● Executing...
-● Verifying result...   [Vision ✓]
-```
-- Terminal correctly focused
-- `ls -la` typed and executed
-- Output appears — hidden files visible
-
-**[VIBECAT — spoken]**
-> *"Got it. Notice the dot-files now showing? There's a .env in there you might want to check."*
-
-**[NARRATION — V.O.]**
-> "It retried. It verified. It explained. No crash report, no silent failure."
-
----
-
-### 2:58 — Beat
-
-**[TEXT ON SCREEN — 2 seconds]**
-```
-It fails gracefully. Then it fixes itself.
-```
-
----
-
-## ACT 5: ARCHITECTURE + CLOSE (3:00–4:00)
-
-### 3:00 — Architecture Diagram (50 seconds max)
-
-**[SCREEN ACTION]**
-Clean dark-background diagram animates in, component by component:
-
-```
-[macOS Swift Client]
-        ↓  voice + screen
-[WebSocket · Cloud Run]
-        ↓
-[Gemini Live API]
-        ↓  function calls
-[5 Navigator Tools]
-        ↓
-[Your Desktop]
-```
-
-**[NARRATION — V.O., brisk]**
-> "Under the hood: a native Swift client on macOS captures your screen and voice. It streams to a Go backend on Cloud Run. Gemini Live API handles the conversation and decides when to act. When it does, it calls one of five precise navigator tools — text entry, hotkeys, app focus, URL open, or type-and-submit."
-
-As each is mentioned, highlight on diagram:
-- **"Native Swift"** — Swift badge glows
-- **"Self-healing"** — retry arrows animate
-- **"Triple-source grounding"** — AX + CDP + Vision badges appear together
-- **"Vision verification"** — screenshot thumbnail with checkmark
-
-**[NARRATION — V.O.]**
-> "Triple-source grounding means it checks the accessibility tree, Chrome DevTools, and a live screenshot before every action. It doesn't guess. It confirms."
-
----
-
-### 3:40 — GCP Console Flash
-
-**[SCREEN ACTION]**
-Brief 5-second shot: GCP Cloud Run console showing two services live:
-- `realtime-gateway` — green status
-- `adk-orchestrator` — green status
-- Cloud Logging trace visible in background
-
-**[NARRATION — V.O.]**
-> "Deployed on Google Cloud Run. Always on. Zero cold-start drama."
-
----
-
-### 3:48 — Cat Waves Goodbye
-
-**[SCREEN ACTION]**
-- Full screen fades to soft gradient background
-- VibeCat cat character centered, does a little wave animation
-- Speech bubble appears
-
-**[VIBECAT — spoken, warm]**
-> *"I'll be here when you need me. Or before you need me."*
-
-**[TEXT ON SCREEN — fades in]**
-```
-VibeCat
-Your Proactive Desktop Companion
-```
-
-**[NARRATION — V.O.]**
-> "VibeCat. It watches, it suggests, it acts — and it always waits for you to say yes."
-
----
-
-### 3:55 — GitHub URL
-
-**[TEXT ON SCREEN]**
-```
+VibeCat — Your Proactive Desktop Companion
 github.com/Two-Weeks-Team/vibeCat
-
 Built for the Gemini Live Agent Challenge 2026
 ```
 
-> *Music fades out softly at 4:00.*
+---
+
+## FALLBACK STRATEGIES
+
+VibeCat is a real AI — it may not say exactly what's scripted. Here's how to handle:
+
+| Situation | Response |
+|-----------|----------|
+| VibeCat doesn't suggest music | Say: *"Hey VibeCat, can you play some focus music?"* |
+| VibeCat suggests something unexpected | Go with it! Approve whatever it suggests — shows authenticity |
+| VibeCat's action fails | Great! Shows self-healing. Say: *"Try again?"* |
+| VibeCat is quiet for >30s | Switch apps or scroll code to trigger screen analysis |
+| VibeCat speaks Korean | This shouldn't happen (language=en), but if so, reply in English |
+
+**The best demo is AUTHENTIC.** Don't fight VibeCat — follow its suggestions.
 
 ---
 
-## PRODUCTION NOTES
+## OBSERVED VIBECAT BEHAVIORS (from testing)
 
-### Voice Direction
-- **VibeCat voice:** Warm, slightly playful. Think "smart intern who's really good." Not robotic, not over-eager.
-- **Narration V.O.:** Calm, confident. Conversational pace — not a product ad read.
-- **Developer voice:** Casual, minimal. One or two words per response.
+These are things VibeCat **actually said** during our tests:
 
-### Visual Style
-- Dark IDE theme throughout (matches Antigravity IDE aesthetic)
-- Cat character: small, non-intrusive, bottom-right corner
-- Overlay panel: semi-transparent dark glass, monospace font, subtle glow on status changes
-- Grounding badges: small pill labels — `AX` (blue), `CDP` (orange), `⌨` (green), `Vision` (purple)
+- *"You've been working hard! Want me to play some chill music on YouTube?"*
+- *"You're adding caching to UserService! The logic for updating the cache..."*
+- *"A Tavily MCP connection error appeared! Want me to look up the configuration?"*
+- *"You're setting up a multi-output device! Should we test the sound?"*
+- *"You're on the GDG profile page! Want to complete your developer profile?"*
 
-### WOW Markers Summary
-
-| Timecode | Moment | Why It Lands |
-|----------|--------|--------------|
-| **0:33** | VibeCat speaks first, unprompted | Breaks expectation — AI that initiates |
-| **0:45** | Transparent overlay during execution | Shows the "thinking" — no black box |
-| **1:20** | Cross-app flow in one sentence | Demonstrates breadth without a tutorial |
-| **2:25** | First attempt fails visibly | Honesty builds trust |
-| **2:35** | Self-healing retry + vision verify | Technical depth without jargon |
-| **3:48** | Cat waves, speaks last line | Personality close — memorable |
-
-### Key Differentiators (Show, Don't Tell)
-
-| # | Differentiator | Where It Appears |
-|---|---------------|-----------------|
-| 1 | **Proactive** — VibeCat speaks first | Acts 2, 3, 4 |
-| 2 | **Voice-native** — all interactions spoken | Throughout |
-| 3 | **Transparent** — overlay shows every step | Acts 2, 3, 4 |
-| 4 | **Self-healing** — failure shown and recovered | Act 4 |
-| 5 | **Native macOS Swift** — AX tree, real app focus | Act 5 diagram |
+Pattern: VibeCat always observes → describes what it sees → asks permission.
 
 ---
 
-*Script version: 2.0 — 2026-03-12*
+## SCORING TARGETS
+
+| Criteria (Weight) | How This Demo Hits It |
+|---|---|
+| **Innovation & Multimodal UX (40%)** | Voice-first, proactive AI that speaks before asked. Triple-source grounding (AX+CDP+Vision). No text boxes. |
+| **Technical Implementation (30%)** | GenAI SDK + ADK on Cloud Run. 5 FC tools. Self-healing with vision verification. |
+| **Demo & Presentation (30%)** | Real working software. Architecture diagram. GCP Console proof. Clear problem→solution narrative. |
+| **Blog Bonus (+0.6)** | 15 posts on dev.to/combba |
+| **Auto Deploy (+0.2)** | infra/deploy.sh |
+| **GDG (+0.2)** | gdg.community.dev/u/m5n58q/ |
+
+---
+
+*Script version: 3.0 — Reality-based, 2026-03-15*
+*Based on 5 observed proactive VibeCat utterances during live testing*
