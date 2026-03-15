@@ -145,6 +145,18 @@ func main() {
 	mux.HandleFunc("/api/v1/auth/register", auth.RegisterHandler(jwtMgr))
 	mux.HandleFunc("/api/v1/auth/refresh", auth.RefreshHandler(jwtMgr))
 	mux.Handle("/ws/live", auth.Middleware(jwtMgr, ws.Handler(registry, liveMgr, adkClient, ttsClient, wsMetrics, actionStateStore)))
+	mux.HandleFunc("/debug/inject-text", func(w http.ResponseWriter, r *http.Request) {
+		text := r.URL.Query().Get("text")
+		if text == "" {
+			http.Error(w, "text required", http.StatusBadRequest)
+			return
+		}
+		if err := registry.InjectText(text); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Write([]byte("ok"))
+	})
 
 	addr := ":" + portOrDefault("8080")
 	slog.Info("starting server", "service", serviceName, "addr", addr)

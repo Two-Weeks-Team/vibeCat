@@ -375,6 +375,16 @@ final class AccessibilityNavigator {
                     }
                     NSLog("[NAV-VISION] vision-based MCP click failed, falling back to guided mode")
                 }
+                if step.macroID == "fc_play_result",
+                   NavigatorSurfaceProfile.detect(targetApp: step.targetApp, appName: before.appName, bundleID: before.bundleId).kind == .chrome {
+                    let clickJS = "(function(){var btns=document.querySelectorAll('ytmusic-play-button-renderer[aria-label]');for(var i=0;i<btns.length;i++){var lbl=btns[i].getAttribute('aria-label')||'';if(lbl.length>5&&lbl.indexOf('재생목록')<0){btns[i].click();return 'clicked:'+lbl.substring(0,40);}}return 'none';})()"
+                    if let result = executeJavaScriptInChrome(clickJS), result.contains("clicked") {
+                        NSLog("[NAV-YTMUSIC] JS play button click succeeded: %@", result)
+                        try? await Task.sleep(nanoseconds: 1_500_000_000)
+                        return .success("Started music playback via JavaScript", phase: .verifyOutcome)
+                    }
+                    NSLog("[NAV-YTMUSIC] JS play button click failed, falling back to guided mode")
+                }
                 return .guided("I found the likely target, but I should not click blindly here.", reason: .targetNotFound, phase: .resolveTarget)
             }
             let didAct: Bool

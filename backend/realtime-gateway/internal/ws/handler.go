@@ -1978,9 +1978,23 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 						continue
 					}
 					ls.setSession(sess)
+					reg.SetSession(c.ID, sess)
 					slog.Info("device registered", "conn_id", c.ID, "device_id", cfg.DeviceID)
 					lockedSendJSON(c, setupCompleteMsg{Type: "setupComplete", SessionID: c.ID})
 					go receiveFromGemini(ctx, c, sess, ls, adkClient, ttsClient, metrics, runtime)
+
+					// Startup greeting: VibeCat proactively suggests music on first connection
+					go func() {
+						time.Sleep(3 * time.Second)
+						if s := ls.getSession(); s != nil {
+							greeting := "You just started a new session. Greet the user warmly and suggest playing some relaxing background music. Only SUGGEST it — do NOT execute any tools yet. Wait for the user to respond with approval before taking any action."
+							if err := s.SendText(greeting); err != nil {
+								slog.Warn("startup greeting failed", "conn_id", c.ID, "error", err)
+							} else {
+								slog.Info("startup greeting sent", "conn_id", c.ID)
+							}
+						}
+					}()
 
 					if !reconnectStarted {
 						reconnectStarted = true
@@ -2023,6 +2037,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 										}
 
 										ls.setSession(newSess)
+										reg.SetSession(c.ID, newSess)
 										ls.setReconnecting(false)
 										go receiveFromGemini(ctx, c, newSess, ls, adkClient, ttsClient, metrics, runtime)
 										lockedSendJSON(c, map[string]any{"type": "liveSessionReconnected"})
@@ -2747,10 +2762,107 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 									}
 								}
 							}
+						case "guided_mode":
+							if dispatched := ls.pendingFCDispatchedStep; dispatched != nil && dispatched.FallbackPolicy == "continue_next_step" {
+								slog.Info("pendingFC guided_mode with continue_next_step, advancing", "conn_id", c.ID, "step_id", refreshMsg.Step.ID, "task_id", refreshMsg.TaskID)
+								if nextStep, ok := ls.advancePendingFCStep(); ok {
+									if adkClient != nil && needsVisionCheckpoint(refreshMsg.Step, refreshMsg.ObservedOutcome) && nextStep.MacroID == "fc_play_result" {
+										fcID, fcName, fcText, fcTarget := ls.getPendingFCInfo()
+										cp := &pendingVisionCheckpoint{
+											taskID:        refreshMsg.TaskID,
+											completedStep: refreshMsg.Step,
+											nextStep:      nextStep,
+											fcID:          fcID,
+											fcName:        fcName,
+											fcText:        fcText,
+											fcTarget:      fcTarget,
+											imgCh:         make(chan visionCapturePayload, 1),
+										}
+										ls.setPendingCheckpoint(cp)
+										sendProcessingState(c, "navigator", navigatorActiveTraceID, "observing_screen", navigatorObservingLabel(ls.getConfig().Language), "", "", 0, true)
+										lockedSendJSON(c, map[string]any{
+											"type":   "requestScreenCapture",
+											"reason": "mid_step_checkpoint",
+										})
+										slog.Info("pendingFC guided_mode triggering vision checkpoint for play_result", "conn_id", c.ID, "task_id", refreshMsg.TaskID)
+										continue
+									}
+									time.Sleep(300 * time.Millisecond)
+									sendProcessingState(c, "navigator", navigatorActiveTraceID, "executing_step", navigatorExecutingLabel(ls.getConfig().Language), nextStep.ActionType, "", 0, true)
+									lockedSendJSON(c, map[string]any{
+										"type":    "navigator.stepPlanned",
+										"taskId":  refreshMsg.TaskID,
+										"step":    nextStep,
+										"message": navigatorMessageForStep(nextStep),
+									})
+									continue
+								}
+								fcID, fcName, fcText, fcTarget := ls.clearPendingFC()
+								sendProcessingState(c, "navigator", navigatorActiveTraceID, "completing", "", "", "", 0, false)
+								if fcSess := ls.getSession(); fcSess != nil {
+									resp := map[string]any{"status": "completed", "text": fcText, "target": fcTarget}
+									if hint := buildNextActionHint(fcName, fcText, fcTarget); hint != "" {
+										resp["next_action_hint"] = hint
+									}
+									_ = fcSess.SendToolResponse([]*genai.FunctionResponse{{ID: fcID, Name: fcName, Response: resp}})
+								}
+								continue
+							}
+							fallthrough
 						default:
 							retryCount := ls.incrementFCStepRetry()
 							if retryCount <= 2 {
 								retryStep := refreshMsg.Step
+								if retryCount == 2 && retryStep.MacroID == "fc_play_result" && adkClient != nil {
+									slog.Info("[NAV-VISION] fc_play_result retry 2: requesting screenshot for vision escalation", "conn_id", c.ID)
+									lockedSendJSON(c, map[string]any{"type": "requestScreenCapture", "reason": "play_button_vision"})
+									visionCh := make(chan visionCapturePayload, 1)
+									visionPV := &pendingVisionVerification{fcID: "", fcName: "", imgCh: visionCh}
+									ls.setPendingVision(visionPV)
+									go func() {
+										select {
+										case cap := <-visionCh:
+											escCtx, escCancel := context.WithTimeout(ctx, 6*time.Second)
+											escResult, escErr := adkClient.NavigatorEscalate(escCtx, adk.NavigatorEscalationRequest{
+												Command:    "Find the play button (재생 or ▶) for the FIRST music result on this YouTube Music search results page. Return normalized click coordinates (0.0-1.0) for the play button.",
+												AppName:    "Google Chrome",
+												Screenshot: cap.image,
+												TraceID:    refreshMsg.TaskID,
+											})
+											escCancel()
+											if escErr == nil && escResult != nil && escResult.ResolvedDescriptor != nil {
+												cx := escResult.ResolvedDescriptor.ClickX
+												cy := escResult.ResolvedDescriptor.ClickY
+												if cx > 0 && cy > 0 {
+													slog.Info("[NAV-VISION] play button found via vision", "conn_id", c.ID, "x", cx, "y", cy, "confidence", escResult.Confidence)
+													clickStep := retryStep
+													clickStep.ActionType = "click_coordinates"
+													clickStep.TargetDescriptor.ClickX = cx
+													clickStep.TargetDescriptor.ClickY = cy
+													clickStep.Confidence = escResult.Confidence
+													clickStep.Narration = "Clicking play button found by vision analysis"
+													clickStep.ProofLevel = "none"
+													lockedSendJSON(c, map[string]any{
+														"type":    "navigator.stepPlanned",
+														"taskId":  refreshMsg.TaskID,
+														"step":    clickStep,
+														"message": "Clicking play via vision",
+													})
+													return
+												}
+											}
+											slog.Warn("[NAV-VISION] play button vision escalation failed", "conn_id", c.ID, "err", escErr)
+										case <-time.After(5 * time.Second):
+											slog.Warn("[NAV-VISION] screenshot timeout for play button", "conn_id", c.ID)
+										}
+										fcID, fcName, _, _ := ls.clearPendingFC()
+										lockedSendJSON(c, map[string]any{"type": "navigator.failed", "taskId": refreshMsg.TaskID, "reason": "vision escalation failed"})
+										if fcSess := ls.getSession(); fcSess != nil {
+											_ = fcSess.SendToolResponse([]*genai.FunctionResponse{{ID: fcID, Name: fcName, Response: map[string]any{"error": "play button not found"}}})
+										}
+									}()
+									continue
+								}
 								if retryCount == 2 && retryStep.FallbackActionType != "" {
 									retryStep.ActionType = retryStep.FallbackActionType
 									if len(retryStep.FallbackHotkey) > 0 {
@@ -3680,10 +3792,9 @@ func buildToolCallTextEntrySteps(text, targetApp, targetLabel string, submit, is
 
 	var steps []navigatorStep
 	if targetApp != "" {
-		focusFallback := "guided_mode"
-		focusProof := "strong"
+		focusFallback := "continue_next_step"
+		focusProof := "basic"
 		if isOpenCode {
-			focusFallback = "continue_next_step"
 			focusProof = "none"
 		}
 		steps = append(steps, navigatorStep{
@@ -3791,12 +3902,12 @@ func buildToolCallTextEntrySteps(text, targetApp, targetLabel string, submit, is
 			IntentConfidence: 0.95,
 			RiskLevel:        "low",
 			ExecutionPolicy:  navigatorExecutionPolicyLow,
-			FallbackPolicy:   "guided_mode",
+			FallbackPolicy:   "continue_next_step",
 			Surface:          navigatorSurfaceValue(targetApp),
 			MacroID:          "fc_search_activate",
 			Narration:        "Activating search field.",
 			TimeoutMs:        800,
-			ProofLevel:       "basic",
+			ProofLevel:       "none",
 		})
 	}
 
@@ -3853,6 +3964,8 @@ func buildToolCallTextEntrySteps(text, targetApp, targetLabel string, submit, is
 	})
 
 	if submit {
+		submitFallback := "continue_next_step"
+		submitProof := "none"
 		steps = append(steps, navigatorStep{
 			ID:               "fc_submit_enter_" + newConnID(),
 			ActionType:       "hotkey",
@@ -3864,12 +3977,12 @@ func buildToolCallTextEntrySteps(text, targetApp, targetLabel string, submit, is
 			IntentConfidence: 0.95,
 			RiskLevel:        "low",
 			ExecutionPolicy:  navigatorExecutionPolicyLow,
-			FallbackPolicy:   "guided_mode",
+			FallbackPolicy:   submitFallback,
 			Surface:          navigatorSurfaceValue(targetApp),
 			MacroID:          "fc_submit_enter",
 			Narration:        "Pressing Enter to submit.",
 			TimeoutMs:        800,
-			ProofLevel:       "basic",
+			ProofLevel:       submitProof,
 		})
 	}
 
@@ -3880,11 +3993,11 @@ func buildToolCallTextEntrySteps(text, targetApp, targetLabel string, submit, is
 			TargetApp:  targetApp,
 			TargetDescriptor: navigatorTargetDescriptor{
 				AppName:    targetApp,
-				Role:       "link",
-				Label:      "first music result",
+				Role:       "button",
+				Label:      "재생",
 				RegionHint: "search_results",
 			},
-			ExpectedOutcome:  "Click the first search result to start playback",
+			ExpectedOutcome:  "Click the play button on the first search result to start playback",
 			Confidence:       0.60,
 			IntentConfidence: 0.90,
 			RiskLevel:        "low",
@@ -3892,8 +4005,8 @@ func buildToolCallTextEntrySteps(text, targetApp, targetLabel string, submit, is
 			FallbackPolicy:   "guided_mode",
 			Surface:          navigatorSurfaceValue(targetApp),
 			MacroID:          "fc_play_result",
-			Narration:        "Clicking the first result to play music.",
-			TimeoutMs:        2000,
+			Narration:        "Clicking play on the first result.",
+			TimeoutMs:        3000,
 			ProofLevel:       "basic",
 		})
 	}
@@ -4101,6 +4214,21 @@ func handleNavigateOpenURLToolCall(c *Conn, sess *live.Session, ls *liveSessionS
 			runtime.setLastFCTargetApp("Chrome")
 			slog.Info("[CDP] navigate_open_url executed via CDP", "conn_id", c.ID, "url", truncateText(rawURL, 80))
 			runtime.appendExecution(fmt.Sprintf("tool_call[navigate_open_url via CDP]: %s", truncateText(rawURL, 80)))
+
+			isYTMusicSearch := strings.Contains(rawURL, "music.youtube.com/search")
+			if isYTMusicSearch {
+				go func() {
+					time.Sleep(3 * time.Second)
+					clickJS := `(function(){var items=document.querySelectorAll('ytmusic-responsive-list-item-renderer, ytmusic-card-shelf-renderer a.yt-simple-endpoint');if(items.length>0){items[0].click();return 'clicked_'+items.length;}var shelf=document.querySelector('ytmusic-shelf-renderer a');if(shelf){shelf.click();return 'clicked_shelf';}return 'no_results';})()`
+					result, jsErr := ctrl.EvaluateJS(clickJS)
+					if jsErr != nil {
+						slog.Warn("[CDP] YouTube Music auto-play JS failed", "conn_id", c.ID, "error", jsErr)
+					} else {
+						slog.Info("[CDP] YouTube Music auto-play result", "conn_id", c.ID, "result", result)
+					}
+				}()
+			}
+
 			taskID := "fc_" + newConnID()
 			lockedSendJSON(c, map[string]any{
 				"type":             "navigator.commandAccepted",
@@ -4110,12 +4238,16 @@ func handleNavigateOpenURLToolCall(c *Conn, sess *live.Session, ls *liveSessionS
 				"intentConfidence": 0.98,
 				"source":           "function_call_cdp",
 			})
+			hint := "Opened URL"
+			if isYTMusicSearch {
+				hint = "Opened YouTube Music search results. Auto-clicking first result to start playback."
+			}
 			lockedSendJSON(c, map[string]any{
 				"type":    "navigator.completed",
 				"taskId":  taskID,
-				"summary": "Navigated to " + truncateText(rawURL, 60) + " via CDP",
+				"summary": hint,
 			})
-			sendFCToolResponse(sess, fc, c.ID, map[string]any{"url": rawURL, "via": "cdp"})
+			sendFCToolResponse(sess, fc, c.ID, map[string]any{"url": rawURL, "via": "cdp", "auto_play": isYTMusicSearch})
 			return
 		} else {
 			slog.Warn("[CDP] navigate failed, falling back to AX steps", "conn_id", c.ID, "url", truncateText(rawURL, 80), "error", err)
@@ -4125,7 +4257,34 @@ func handleNavigateOpenURLToolCall(c *Conn, sess *live.Session, ls *liveSessionS
 	runtime.setLastFCTargetApp("Chrome")
 	taskID := "fc_" + newConnID()
 	step := buildToolCallOpenURLStep(rawURL)
-	dispatchFCSteps(c, sess, ls, metrics, runtime, fc, taskID, rawURL, "function_call_open_url", []navigatorStep{step}, map[string]any{"url": rawURL})
+	steps := []navigatorStep{step}
+
+	if strings.Contains(rawURL, "music.youtube.com/search") {
+		steps = append(steps, navigatorStep{
+			ID:         "fc_play_result_" + newConnID(),
+			ActionType: "press_ax",
+			TargetApp:  "Google Chrome",
+			TargetDescriptor: navigatorTargetDescriptor{
+				AppName:    "Google Chrome",
+				Role:       "button",
+				Label:      "재생",
+				RegionHint: "top_result",
+			},
+			ExpectedOutcome:  "Click the play button on the first search result to start playback",
+			Confidence:       0.60,
+			IntentConfidence: 0.90,
+			RiskLevel:        "low",
+			ExecutionPolicy:  navigatorExecutionPolicyLow,
+			FallbackPolicy:   "guided_mode",
+			Surface:          "chrome",
+			MacroID:          "fc_play_result",
+			Narration:        "Playing the first search result.",
+			TimeoutMs:        3000,
+			ProofLevel:       "basic",
+		})
+	}
+
+	dispatchFCSteps(c, sess, ls, metrics, runtime, fc, taskID, rawURL, "function_call_open_url", steps, map[string]any{"url": rawURL})
 }
 
 func handleNavigateTypeAndSubmitToolCall(c *Conn, sess *live.Session, ls *liveSessionState, metrics *Metrics, runtime *sessionRuntime, fc *genai.FunctionCall) {

@@ -3,19 +3,21 @@ package ws
 import (
 	"sync"
 	"sync/atomic"
+
+	"vibecat/realtime-gateway/internal/live"
 )
 
-// Registry tracks active WebSocket connections.
 type Registry struct {
-	mu    sync.RWMutex
-	conns map[string]*Conn
-	count atomic.Int64
+	mu       sync.RWMutex
+	conns    map[string]*Conn
+	sessions map[string]*live.Session
+	count    atomic.Int64
 }
 
-// NewRegistry creates a new connection registry.
 func NewRegistry() *Registry {
 	return &Registry{
-		conns: make(map[string]*Conn),
+		conns:    make(map[string]*Conn),
+		sessions: make(map[string]*live.Session),
 	}
 }
 
@@ -39,7 +41,27 @@ func (r *Registry) Remove(id string) {
 	r.mu.Unlock()
 }
 
-// Count returns the number of active connections.
 func (r *Registry) Count() int64 {
 	return r.count.Load()
+}
+
+func (r *Registry) SetSession(id string, s *live.Session) {
+	r.mu.Lock()
+	r.sessions[id] = s
+	r.mu.Unlock()
+}
+
+func (r *Registry) RemoveSession(id string) {
+	r.mu.Lock()
+	delete(r.sessions, id)
+	r.mu.Unlock()
+}
+
+func (r *Registry) InjectText(text string) error {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, s := range r.sessions {
+		return s.SendText(text)
+	}
+	return nil
 }
