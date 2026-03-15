@@ -214,13 +214,43 @@ final class AccessibilityNavigator {
                 }
                 if rawURL.contains("music.youtube.com/search") {
                     try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    _ = runAppleScript(lines: ["tell application \"Google Chrome\" to activate"], timeout: 2)
+                    try? await Task.sleep(nanoseconds: 500_000_000)
                     let clickJS = "(function(){var btns=document.querySelectorAll('ytmusic-play-button-renderer[aria-label]');for(var i=0;i<btns.length;i++){var lbl=btns[i].getAttribute('aria-label')||'';if(lbl.length>5&&lbl.indexOf('재생목록')<0){btns[i].click();return 'clicked:'+lbl.substring(0,40);}}return 'none';})()"
-                    if let result = executeJavaScriptInChrome(clickJS), result.contains("clicked") {
-                        NSLog("[NAV-YTMUSIC] Auto-play after open_url succeeded: %@", result)
-                        try? await Task.sleep(nanoseconds: 1_000_000_000)
-                    } else {
-                        let jsResult = executeJavaScriptInChrome(clickJS)
-                        NSLog("[NAV-YTMUSIC] Auto-play JS returned: %@", jsResult ?? "nil")
+                    let clickResult = executeJavaScriptInChrome(clickJS)
+                    NSLog("[NAV-YTMUSIC] First result click: %@", clickResult ?? "nil")
+                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    let rectJS = "(function(){var v=document.querySelector('video');if(!v)return '';var r=v.getBoundingClientRect();var oY=window.outerHeight-window.innerHeight;return window.screenX+','+window.screenY+','+Math.round(r.x)+','+Math.round(r.y)+','+Math.round(r.width)+','+Math.round(r.height)+','+oY})()"
+                    if let rectStr = executeJavaScriptInChrome(rectJS), !rectStr.isEmpty {
+                        let parts = rectStr.split(separator: ",").compactMap { Int($0) }
+                        if parts.count == 7 {
+                            let winX = parts[0], winY = parts[1]
+                            let vx = parts[2], vy = parts[3], vw = parts[4], vh = parts[5]
+                            let contentOffset = parts[6]
+                            let clickX = winX + vx + vw / 2
+                            let clickY = winY + contentOffset + max(vy, 0) + vh / 2
+                            let point = CGPoint(x: clickX, y: clickY)
+                            NSLog("[NAV-YTMUSIC] Video rect: x=%d y=%d w=%d h=%d → click at (%d,%d)", vx, vy, vw, vh, clickX, clickY)
+                            animateCursorTo(point)
+                            try? await Task.sleep(nanoseconds: 300_000_000)
+                            if let source = CGEventSource(stateID: .hidSystemState),
+                               let down = CGEvent(mouseEventSource: source, mouseType: .leftMouseDown, mouseCursorPosition: point, mouseButton: .left),
+                               let up = CGEvent(mouseEventSource: source, mouseType: .leftMouseUp, mouseCursorPosition: point, mouseButton: .left) {
+                                down.setIntegerValueField(.mouseEventClickState, value: 1)
+                                up.setIntegerValueField(.mouseEventClickState, value: 1)
+                                down.post(tap: .cghidEventTap)
+                                usleep(15_000)
+                                up.post(tap: .cghidEventTap)
+                                NSLog("[NAV-YTMUSIC] Vision click at (%d,%d) — mouse animated + clicked", clickX, clickY)
+                            }
+                            try? await Task.sleep(nanoseconds: 1_500_000_000)
+                            let checkJS = "(function(){var v=document.querySelector('video');return v&&!v.paused?'playing':'paused'})()"
+                            let status = executeJavaScriptInChrome(checkJS)
+                            if status != "playing" {
+                                NSLog("[NAV-YTMUSIC] Still paused after click, calling video.play()")
+                                _ = executeJavaScriptInChrome("document.querySelector('video')?.play()")
+                            }
+                        }
                     }
                 }
                 return .success("Opened \(url.absoluteString)", phase: .verifyOutcome)
@@ -1276,9 +1306,16 @@ final class AccessibilityNavigator {
 
     private func executeJavaScriptInChrome(_ js: String) -> String? {
         let escaped = js.replacingOccurrences(of: "\"", with: "\\\"")
-        return runAppleScript(lines: [
+        if let result = runAppleScript(lines: [
             "tell application \"Google Chrome\"",
             "execute front window's active tab javascript \"\(escaped)\"",
+            "end tell"
+        ], timeout: 3) {
+            return result
+        }
+        return runAppleScript(lines: [
+            "tell application \"Google Chrome\"",
+            "execute active tab of window 1 javascript \"\(escaped)\"",
             "end tell"
         ], timeout: 3)
     }

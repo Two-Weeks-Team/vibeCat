@@ -64,34 +64,46 @@ func (r *Registry) InjectText(text string) error {
 	return fmt.Errorf("no active session")
 }
 
-func (r *Registry) DispatchStep(step map[string]any) error {
+func (r *Registry) DispatchStep(url, text, target string) error {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	for _, conn := range r.conns {
-		lockedSendJSON(conn, step)
+		taskID := "debug_" + fmt.Sprintf("%d", time.Now().UnixMilli())
+		command := "navigate_open_url: " + url
+		actionType := "open_url"
+		if url == "" {
+			command = "navigate_text_entry: " + text
+			actionType = "paste_text"
+		}
+		lockedSendJSON(conn, map[string]any{
+			"type":             "navigator.commandAccepted",
+			"taskId":           taskID,
+			"command":          command,
+			"intentClass":      "execute_now",
+			"intentConfidence": 0.95,
+			"source":           "debug_execute",
+		})
+		stepID := taskID + "_step"
+		step := map[string]any{
+			"id": stepID, "actionType": actionType, "targetApp": "Chrome",
+			"proofLevel": "none", "macroID": "fc_open_url",
+			"narration": "Opening URL", "timeoutMs": 3000,
+		}
+		if url != "" {
+			step["url"] = url
+		} else {
+			step["targetApp"] = target
+			step["inputText"] = text
+			step["actionType"] = "paste_text"
+			step["targetDescriptor"] = map[string]any{"appName": target}
+		}
+		lockedSendJSON(conn, map[string]any{
+			"type":    "navigator.stepPlanned",
+			"taskId":  taskID,
+			"step":    step,
+			"message": command,
+		})
 		return nil
 	}
 	return fmt.Errorf("no active connection")
-}
-
-func BuildDebugStep(url, text, target string) map[string]any {
-	taskID := "debug_" + fmt.Sprintf("%d", time.Now().UnixMilli())
-	if url != "" {
-		return map[string]any{
-			"type":    "navigator.stepPlanned",
-			"taskId":  taskID,
-			"step":    map[string]any{"id": taskID + "_open", "actionType": "open_url", "targetApp": "Chrome", "url": url, "proofLevel": "none"},
-			"message": "Opening URL",
-		}
-	}
-	return map[string]any{
-		"type":   "navigator.stepPlanned",
-		"taskId": taskID,
-		"step": map[string]any{
-			"id": taskID + "_text", "actionType": "paste_text", "targetApp": target,
-			"inputText": text, "proofLevel": "none",
-			"targetDescriptor": map[string]any{"appName": target},
-		},
-		"message": "Typing text",
-	}
 }

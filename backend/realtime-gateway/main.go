@@ -165,8 +165,7 @@ func main() {
 			http.Error(w, "url or text required", http.StatusBadRequest)
 			return
 		}
-		step := ws.BuildDebugStep(url, text, target)
-		if err := registry.DispatchStep(step); err != nil {
+		if err := registry.DispatchStep(url, text, target); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
