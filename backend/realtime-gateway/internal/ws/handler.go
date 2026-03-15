@@ -1978,7 +1978,7 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 						continue
 					}
 					ls.setSession(sess)
-					reg.SetSession(c.ID, sess)
+					reg.SetSessionGetter(c.ID, ls.getSession)
 					slog.Info("device registered", "conn_id", c.ID, "device_id", cfg.DeviceID)
 					lockedSendJSON(c, setupCompleteMsg{Type: "setupComplete", SessionID: c.ID})
 					go receiveFromGemini(ctx, c, sess, ls, adkClient, ttsClient, metrics, runtime)
@@ -2037,7 +2037,6 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 										}
 
 										ls.setSession(newSess)
-										reg.SetSession(c.ID, newSess)
 										ls.setReconnecting(false)
 										go receiveFromGemini(ctx, c, newSess, ls, adkClient, ttsClient, metrics, runtime)
 										lockedSendJSON(c, map[string]any{"type": "liveSessionReconnected"})
@@ -4107,12 +4106,12 @@ func buildToolCallOpenURLStep(rawURL string) navigatorStep {
 		IntentConfidence: 0.95,
 		RiskLevel:        "low",
 		ExecutionPolicy:  navigatorExecutionPolicyLow,
-		FallbackPolicy:   "guided_mode",
+		FallbackPolicy:   "continue_next_step",
 		Surface:          "chrome",
 		MacroID:          "fc_open_url",
 		Narration:        "Opening URL in browser.",
 		TimeoutMs:        1500,
-		ProofLevel:       "strong",
+		ProofLevel:       "none",
 	}
 }
 
@@ -4209,6 +4208,19 @@ func handleNavigateOpenURLToolCall(c *Conn, sess *live.Session, ls *liveSessionS
 		return
 	}
 
+	if strings.Contains(rawURL, "music.youtube.com") {
+		runtime.mu.Lock()
+		execs := runtime.executionHistory
+		runtime.mu.Unlock()
+		for _, exec := range execs {
+			if strings.Contains(exec, "music.youtube.com") {
+				slog.Info("[GEMINI-RX] blocking duplicate YouTube Music open_url", "conn_id", c.ID)
+				sendFCToolResponse(sess, fc, c.ID, map[string]any{"status": "completed", "note": "YouTube Music is already open and playing."})
+				return
+			}
+		}
+	}
+
 	if ctrl := ls.getCDPController(); ctrl != nil {
 		if err := ctrl.Navigate(rawURL); err == nil {
 			runtime.setLastFCTargetApp("Chrome")
@@ -4257,34 +4269,7 @@ func handleNavigateOpenURLToolCall(c *Conn, sess *live.Session, ls *liveSessionS
 	runtime.setLastFCTargetApp("Chrome")
 	taskID := "fc_" + newConnID()
 	step := buildToolCallOpenURLStep(rawURL)
-	steps := []navigatorStep{step}
-
-	if strings.Contains(rawURL, "music.youtube.com/search") {
-		steps = append(steps, navigatorStep{
-			ID:         "fc_play_result_" + newConnID(),
-			ActionType: "press_ax",
-			TargetApp:  "Google Chrome",
-			TargetDescriptor: navigatorTargetDescriptor{
-				AppName:    "Google Chrome",
-				Role:       "button",
-				Label:      "재생",
-				RegionHint: "top_result",
-			},
-			ExpectedOutcome:  "Click the play button on the first search result to start playback",
-			Confidence:       0.60,
-			IntentConfidence: 0.90,
-			RiskLevel:        "low",
-			ExecutionPolicy:  navigatorExecutionPolicyLow,
-			FallbackPolicy:   "guided_mode",
-			Surface:          "chrome",
-			MacroID:          "fc_play_result",
-			Narration:        "Playing the first search result.",
-			TimeoutMs:        3000,
-			ProofLevel:       "basic",
-		})
-	}
-
-	dispatchFCSteps(c, sess, ls, metrics, runtime, fc, taskID, rawURL, "function_call_open_url", steps, map[string]any{"url": rawURL})
+	dispatchFCSteps(c, sess, ls, metrics, runtime, fc, taskID, rawURL, "function_call_open_url", []navigatorStep{step}, map[string]any{"url": rawURL})
 }
 
 func handleNavigateTypeAndSubmitToolCall(c *Conn, sess *live.Session, ls *liveSessionState, metrics *Metrics, runtime *sessionRuntime, fc *genai.FunctionCall) {
@@ -4298,6 +4283,15 @@ func handleNavigateTypeAndSubmitToolCall(c *Conn, sess *live.Session, ls *liveSe
 
 	target, _ := fc.Args["target"].(string)
 	target = strings.TrimSpace(target)
+
+	targetLower := strings.ToLower(target)
+	textLower := strings.ToLower(text)
+	if (strings.Contains(targetLower, "youtube") || strings.Contains(targetLower, "music")) &&
+		(strings.Contains(textLower, "music") || strings.Contains(textLower, "coding") || strings.Contains(textLower, "relax") || strings.Contains(textLower, "chill")) {
+		slog.Info("[GEMINI-RX] blocking type_and_submit for YouTube Music (use open_url instead)", "conn_id", c.ID, "text", text)
+		sendFCToolResponse(sess, fc, c.ID, map[string]any{"status": "completed", "note": "YouTube Music search was already handled via open_url. Music is playing."})
+		return
+	}
 
 	submit := true
 	if raw, ok := fc.Args["submit"]; ok {

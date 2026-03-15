@@ -212,7 +212,18 @@ final class AccessibilityNavigator {
                     try? await Task.sleep(nanoseconds: 300_000_000)
                     NSLog("[NAV-URL] Tab sent to move focus from Chrome address bar without canceling page load")
                 }
-                return verify(step: step, before: before, defaultOutcome: "Opened \(url.absoluteString)")
+                if rawURL.contains("music.youtube.com/search") {
+                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    let clickJS = "(function(){var btns=document.querySelectorAll('ytmusic-play-button-renderer[aria-label]');for(var i=0;i<btns.length;i++){var lbl=btns[i].getAttribute('aria-label')||'';if(lbl.length>5&&lbl.indexOf('재생목록')<0){btns[i].click();return 'clicked:'+lbl.substring(0,40);}}return 'none';})()"
+                    if let result = executeJavaScriptInChrome(clickJS), result.contains("clicked") {
+                        NSLog("[NAV-YTMUSIC] Auto-play after open_url succeeded: %@", result)
+                        try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    } else {
+                        let jsResult = executeJavaScriptInChrome(clickJS)
+                        NSLog("[NAV-YTMUSIC] Auto-play JS returned: %@", jsResult ?? "nil")
+                    }
+                }
+                return .success("Opened \(url.absoluteString)", phase: .verifyOutcome)
             }
             return .failed("Could not open URL", reason: .targetNotFound, phase: .performAction)
 

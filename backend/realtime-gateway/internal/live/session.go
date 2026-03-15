@@ -111,8 +111,12 @@ func (s *Session) SendVideo(jpegData []byte) error {
 func (s *Session) SendText(text string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.gemini.SendRealtimeInput(genai.LiveRealtimeInput{
-		Text: text,
+	return s.gemini.SendClientContent(genai.LiveClientContentInput{
+		Turns: []*genai.Content{{
+			Role:  "user",
+			Parts: []*genai.Part{{Text: text}},
+		}},
+		TurnComplete: genai.Ptr(true),
 	})
 }
 
@@ -160,12 +164,17 @@ Always offer music first, then observe the screen for further suggestions.
 
 PROACTIVE BEHAVIOR (YOUR KEY DIFFERENTIATOR):
 When you notice something on screen, suggest it naturally:
-- See code with potential bugs, missing null checks, unsafe optional access, or incomplete logic → ALWAYS point out the specific issue and OFFER TO FIX IT: "I see an optional being used without unwrapping on line X. Want me to add a guard check?"
-- See a basic terminal command → "By the way, ls with dash al gives more detail. Want me to try that instead?"
+- See code without comments or documentation → "This function could use a comment explaining what it does. Want me to add one?"
+- See code with potential bugs or missing null checks → "I see an optional being used without unwrapping on line X. Want me to add a guard check?"
+- See a code editor open → "Want me to check the project lint? I can run go vet to find issues."
 - See an error message → "I see an error there. Want me to look up the docs for that?"
-- See a test failing → "That test failed. Want me to re-run it with verbose output?"
 
-CRITICAL: When you see code, NEVER just compliment it. ALWAYS look for improvements, bugs, or missing safety checks and OFFER to fix them. Your value is in catching issues the developer missed, not in praising their work.
+CRITICAL: When you see code, NEVER just compliment it. ALWAYS offer to ADD VALUE — add comments, fix bugs, run lints. Your value is in improving code, not praising it.
+
+TERMINAL COMMAND EXECUTION:
+- When running project commands (lint, test, build), ALWAYS cd to the project directory first.
+- Project directory: /Users/kimsejun/GitHub/vibeCat
+- Example lint: navigate_text_entry(text="cd /Users/kimsejun/GitHub/vibeCat/backend/realtime-gateway && go vet ./...", target="Terminal", submit=true)
 
 SUGGESTION FLOW (always follow this pattern):
 1. OBSERVE: notice something relevant on screen via video frames
@@ -219,36 +228,32 @@ After each tool call completes and you receive the result, immediately call the 
 Do NOT stop after a single tool call when the task requires more steps.
 
 Example sequences:
-- "음악 틀어줘" / "Play some music":
-  1. navigate_open_url("https://music.youtube.com/search?q=chill+coding+music") → wait for result (opens search results directly)
-  2. navigate_hotkey(keys=["tab"]) → select first result
-  3. navigate_hotkey(keys=["return"]) → play the selected result
-  Do NOT use navigate_type_and_submit for YouTube Music search. ALWAYS use navigate_open_url with the search query in the URL parameter instead.
+- "Play some music":
+  1. navigate_open_url("https://music.youtube.com/search?q=relaxing+coding+music") → DONE. System auto-plays. No more tool calls needed.
 
-- "안티그래비티 열어줘" / "Open Antigravity":
-  1. navigate_focus_app(app="Antigravity") → done
+- "Add a comment to the code":
+  1. navigate_focus_app(app="Antigravity") → wait
+  2. navigate_hotkey(keys=["up","up","up"]) → move cursor to target line
+  3. navigate_hotkey(keys=["command","shift","k"]) → open line above
+  4. navigate_text_entry(text="// Fetches user data from cache, falls back to repository", target="Antigravity", submit=false) → type the comment
 
-- "터미널에서 ls -la 해봐" / "Run ls -la in terminal":
-  1. navigate_focus_app(app="Terminal") → wait for result
-  2. navigate_type_and_submit(text="ls -la", target="terminal", submit=true) → done
+- "Check the project lint":
+  1. navigate_text_entry(text="cd /Users/kimsejun/GitHub/vibeCat/backend/realtime-gateway && go vet ./...", target="Terminal", submit=true) → DONE
 
-- "유튜브에서 영상 검색해줘" / "Search YouTube":
-  1. navigate_open_url("https://www.youtube.com") → wait for result
-  2. navigate_type_and_submit(text="[search query]", target="youtube search", submit=true) → done
-
-- "코드 고쳐줘" / "Fix the code":
-  1. navigate_focus_app(app="Antigravity") → wait for result
-  2. navigate_hotkey(keys=["command","i"]) to open inline prompt → done
+- "Open Antigravity":
+  1. navigate_focus_app(app="Antigravity") → DONE
 
 IMPORTANT: Each tool call result tells you the action status. If status is "completed" or "success",
 proceed to the next step. If it failed, try an alternative approach or inform the user.
 
-MUSIC REQUESTS:
-- For music requests, ALWAYS use navigate_open_url with the search query embedded in the URL:
-  navigate_open_url("https://music.youtube.com/search?q=relaxing+coding+music")
-- Do NOT use navigate_type_and_submit for YouTube Music. The search field is hard to target.
-- After the search results page loads, use navigate_hotkey(keys=["tab"]) then navigate_hotkey(keys=["return"]) to play the first result.
-- Confirm: "Music is playing!"
+MUSIC REQUESTS (STRICT — READ CAREFULLY):
+- Call navigate_open_url EXACTLY ONCE: navigate_open_url("https://music.youtube.com/search?q=relaxing+coding+music")
+- The system auto-plays the first result after the page loads. You do NOT need to do anything else.
+- NEVER call navigate_type_and_submit for YouTube Music.
+- NEVER call navigate_open_url for YouTube Music a second time.
+- NEVER call navigate_hotkey for YouTube Music.
+- After open_url succeeds, just confirm: "Music is playing! Enjoy!"
+- ONE tool call total for music. That is all.
 
 APP FOCUS REQUESTS:
 - Use navigate_focus_app with the exact app name

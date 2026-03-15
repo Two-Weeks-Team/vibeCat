@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -8,20 +9,19 @@ import (
 )
 
 type Registry struct {
-	mu       sync.RWMutex
-	conns    map[string]*Conn
-	sessions map[string]*live.Session
-	count    atomic.Int64
+	mu        sync.RWMutex
+	conns     map[string]*Conn
+	sessGetFn map[string]func() *live.Session
+	count     atomic.Int64
 }
 
 func NewRegistry() *Registry {
 	return &Registry{
-		conns:    make(map[string]*Conn),
-		sessions: make(map[string]*live.Session),
+		conns:     make(map[string]*Conn),
+		sessGetFn: make(map[string]func() *live.Session),
 	}
 }
 
-// Add registers a connection.
 func (r *Registry) Add(c *Conn) {
 	r.mu.Lock()
 	r.conns[c.ID] = c
@@ -29,11 +29,11 @@ func (r *Registry) Add(c *Conn) {
 	r.count.Add(1)
 }
 
-// Remove unregisters a connection.
 func (r *Registry) Remove(id string) {
 	r.mu.Lock()
 	if _, ok := r.conns[id]; ok {
 		delete(r.conns, id)
+		delete(r.sessGetFn, id)
 		r.mu.Unlock()
 		r.count.Add(-1)
 		return
@@ -45,23 +45,20 @@ func (r *Registry) Count() int64 {
 	return r.count.Load()
 }
 
-func (r *Registry) SetSession(id string, s *live.Session) {
+func (r *Registry) SetSessionGetter(id string, fn func() *live.Session) {
 	r.mu.Lock()
-	r.sessions[id] = s
-	r.mu.Unlock()
-}
-
-func (r *Registry) RemoveSession(id string) {
-	r.mu.Lock()
-	delete(r.sessions, id)
+	r.sessGetFn[id] = fn
 	r.mu.Unlock()
 }
 
 func (r *Registry) InjectText(text string) error {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	for _, s := range r.sessions {
-		return s.SendText(text)
+	for _, fn := range r.sessGetFn {
+		s := fn()
+		if s != nil {
+			return s.SendText(text)
+		}
 	}
-	return nil
+	return fmt.Errorf("no active session")
 }
