@@ -157,6 +157,21 @@ func main() {
 		}
 		w.Write([]byte("ok"))
 	})
+	mux.HandleFunc("/debug/execute", func(w http.ResponseWriter, r *http.Request) {
+		url := r.URL.Query().Get("url")
+		text := r.URL.Query().Get("text")
+		target := r.URL.Query().Get("target")
+		if url == "" && text == "" {
+			http.Error(w, "url or text required", http.StatusBadRequest)
+			return
+		}
+		step := ws.BuildDebugStep(url, text, target)
+		if err := registry.DispatchStep(step); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Write([]byte("ok"))
+	})
 
 	addr := ":" + portOrDefault("8080")
 	slog.Info("starting server", "service", serviceName, "addr", addr)

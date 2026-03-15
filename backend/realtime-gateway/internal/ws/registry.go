@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"vibecat/realtime-gateway/internal/live"
 )
@@ -61,4 +62,36 @@ func (r *Registry) InjectText(text string) error {
 		}
 	}
 	return fmt.Errorf("no active session")
+}
+
+func (r *Registry) DispatchStep(step map[string]any) error {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, conn := range r.conns {
+		lockedSendJSON(conn, step)
+		return nil
+	}
+	return fmt.Errorf("no active connection")
+}
+
+func BuildDebugStep(url, text, target string) map[string]any {
+	taskID := "debug_" + fmt.Sprintf("%d", time.Now().UnixMilli())
+	if url != "" {
+		return map[string]any{
+			"type":    "navigator.stepPlanned",
+			"taskId":  taskID,
+			"step":    map[string]any{"id": taskID + "_open", "actionType": "open_url", "targetApp": "Chrome", "url": url, "proofLevel": "none"},
+			"message": "Opening URL",
+		}
+	}
+	return map[string]any{
+		"type":   "navigator.stepPlanned",
+		"taskId": taskID,
+		"step": map[string]any{
+			"id": taskID + "_text", "actionType": "paste_text", "targetApp": target,
+			"inputText": text, "proofLevel": "none",
+			"targetDescriptor": map[string]any{"appName": target},
+		},
+		"message": "Typing text",
+	}
 }
