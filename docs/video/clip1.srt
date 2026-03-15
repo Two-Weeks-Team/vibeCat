@@ -1,0 +1,43 @@
+1
+00:00:00,500 --> 00:00:03,500
+VibeCat — Your Proactive Desktop Companion
+
+2
+00:00:04,000 --> 00:00:08,000
+VibeCat observes your screen and suggests actions
+
+3
+00:00:08,500 --> 00:00:13,000
+"Hey! How about some relaxing music while you work?"
+
+4
+00:00:13,500 --> 00:00:16,000
+User: "Yeah, play it."
+
+5
+00:00:16,500 --> 00:00:19,500
+LOOK: Capturing screen for vision analysis...
+
+6
+00:00:20,000 --> 00:00:23,000
+Opening YouTube Music search results
+
+7
+00:00:23,500 --> 00:00:27,500
+DECIDE: First result detected — MOVE: Cursor animating...
+
+8
+00:00:28,000 --> 00:00:31,500
+CLICK: Vision-based mouse click on search result
+
+9
+00:00:32,000 --> 00:00:36,000
+Music is playing! "Coding Lofi" on YouTube Music
+
+10
+00:00:36,500 --> 00:00:40,000
+Music continues in background throughout demo...
+
+11
+00:00:40,500 --> 00:00:45,000
+VibeCat keeps observing — ready for next task

@@ -1,0 +1,59 @@
+1
+00:00:00,500 --> 00:00:04,000
+ACT 2: Proactive Code Enhancement
+
+2
+00:00:04,500 --> 00:00:08,000
+VibeCat reads your code in Antigravity IDE
+
+3
+00:00:08,500 --> 00:00:13,000
+Suggests code improvements — "Accept Changes"
+
+4
+00:00:18,000 --> 00:00:22,000
+LOOK: Analyzing Antigravity window layout...
+
+5
+00:00:22,500 --> 00:00:26,000
+MOVE: Cursor glides to Gemini Chat panel
+
+6
+00:00:26,500 --> 00:00:30,000
+TYPE: "Enhance the comments for this code"
+
+7
+00:00:30,500 --> 00:00:34,000
+Gemini AI processes the enhancement request
+
+8
+00:00:38,000 --> 00:00:42,000
+ACT 3: Terminal Automation
+
+9
+00:00:42,500 --> 00:00:46,000
+LOOK: Capturing Terminal screen state...
+
+10
+00:00:46,500 --> 00:00:50,000
+MOVE: Cursor animates to Terminal input
+
+11
+00:00:50,500 --> 00:00:54,500
+TYPE: go vet ./... — Lint check running
+
+12
+00:00:55,000 --> 00:00:59,000
+VERIFY: Lint passed — no issues found
+
+13
+00:01:02,000 --> 00:01:06,000
+Gemini enhances code with Apple-style documentation
+
+14
+00:01:06,500 --> 00:01:10,500
+Vision-Based Control: LOOK  DECIDE  MOVE  CLICK  VERIFY
+
+15
+00:01:11,000 --> 00:01:15,000
+github.com/Two-Weeks-Team/vibeCat

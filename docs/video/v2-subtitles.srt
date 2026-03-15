@@ -1,0 +1,52 @@
+1
+00:00:00,500 --> 00:00:03,500
+VibeCat — Technical Architecture & GCP Deployment
+
+2
+00:00:04,000 --> 00:00:08,000
+Swift Client → Realtime Gateway → Gemini Live API
+
+3
+00:00:08,500 --> 00:00:13,000
+macOS Client: Screen Capture + Accessibility Navigator (80+ key codes)
+
+4
+00:00:13,500 --> 00:00:18,000
+Realtime Gateway: WebSocket + 5 FC Tools + pendingFC Queue
+
+5
+00:00:18,500 --> 00:00:23,000
+Self-Healing Engine: Max 2 retries with alternative grounding
+
+6
+00:00:23,500 --> 00:00:28,000
+ADK Orchestrator: Vision Verification + Navigator Escalation
+
+7
+00:00:28,500 --> 00:00:33,000
+Google Cloud Run — Live Production Services
+
+8
+00:00:33,500 --> 00:00:38,000
+realtime-gateway: WebSocket + Gemini Live session management
+
+9
+00:00:38,500 --> 00:00:43,000
+adk-orchestrator: Vision analysis + confidence escalation
+
+10
+00:00:43,500 --> 00:00:48,000
+Firestore: Session state + Action replay persistence
+
+11
+00:00:48,500 --> 00:00:53,000
+Cloud Logging: Real-time observability + OTEL traces
+
+12
+00:00:53,500 --> 00:00:58,000
+Secret Manager: Gemini API keys + secure configuration
+
+13
+00:00:58,500 --> 00:01:04,000
+OBSERVE → SUGGEST → WAIT → ACT → VERIFY
+Built on Google Cloud with Gemini Live API
