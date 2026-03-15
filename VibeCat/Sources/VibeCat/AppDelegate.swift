@@ -677,8 +677,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let panel = CatPanel(catViewModel: viewModel, spriteAnimator: sprite)
         self.catPanel = panel
-        capture.probePointProvider = { [weak panel] in
-            panel?.currentGlobalProbePoint() ?? NSEvent.mouseLocation
+        capture.probePointProvider = {
+            NSEvent.mouseLocation
         }
         panel.applySpriteSize(presetSize: initialPreset.size)
         panel.setSmartHideReferences(audioPlayer: audio, screenAnalyzer: analyzer)

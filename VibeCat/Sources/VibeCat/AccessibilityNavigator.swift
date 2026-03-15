@@ -213,45 +213,130 @@ final class AccessibilityNavigator {
                     NSLog("[NAV-URL] Tab sent to move focus from Chrome address bar without canceling page load")
                 }
                 if rawURL.contains("music.youtube.com/search") {
-                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    // PHASE 1: WAIT — let page fully render
+                    NSLog("[NAV-VISION] Phase 1 WAIT: Letting YouTube Music search results load...")
+                    try? await Task.sleep(nanoseconds: 4_500_000_000)
                     _ = runAppleScript(lines: ["tell application \"Google Chrome\" to activate"], timeout: 2)
                     try? await Task.sleep(nanoseconds: 500_000_000)
-                    let clickJS = "(function(){var btns=document.querySelectorAll('ytmusic-play-button-renderer[aria-label]');for(var i=0;i<btns.length;i++){var lbl=btns[i].getAttribute('aria-label')||'';if(lbl.length>5&&lbl.indexOf('재생목록')<0){btns[i].click();return 'clicked:'+lbl.substring(0,40);}}return 'none';})()"
-                    let clickResult = executeJavaScriptInChrome(clickJS)
-                    NSLog("[NAV-YTMUSIC] First result click: %@", clickResult ?? "nil")
-                    try? await Task.sleep(nanoseconds: 3_000_000_000)
-                    let rectJS = "(function(){var v=document.querySelector('video');if(!v)return '';var r=v.getBoundingClientRect();var oY=window.outerHeight-window.innerHeight;return window.screenX+','+window.screenY+','+Math.round(r.x)+','+Math.round(r.y)+','+Math.round(r.width)+','+Math.round(r.height)+','+oY})()"
-                    if let rectStr = executeJavaScriptInChrome(rectJS), !rectStr.isEmpty {
-                        let parts = rectStr.split(separator: ",").compactMap { Int($0) }
-                        if parts.count == 7 {
-                            let winX = parts[0], winY = parts[1]
-                            let vx = parts[2], vy = parts[3], vw = parts[4], vh = parts[5]
-                            let contentOffset = parts[6]
-                            let clickX = winX + vx + vw / 2
-                            let clickY = winY + contentOffset + max(vy, 0) + vh / 2
-                            let point = CGPoint(x: clickX, y: clickY)
-                            NSLog("[NAV-YTMUSIC] Video rect: x=%d y=%d w=%d h=%d → click at (%d,%d)", vx, vy, vw, vh, clickX, clickY)
-                            animateCursorTo(point)
-                            try? await Task.sleep(nanoseconds: 300_000_000)
-                            if let source = CGEventSource(stateID: .hidSystemState),
-                               let down = CGEvent(mouseEventSource: source, mouseType: .leftMouseDown, mouseCursorPosition: point, mouseButton: .left),
-                               let up = CGEvent(mouseEventSource: source, mouseType: .leftMouseUp, mouseCursorPosition: point, mouseButton: .left) {
+
+                    // PHASE 2: LOOK — capture screen state
+                    NSLog("[NAV-VISION] Phase 2 LOOK: Capturing screen for vision analysis...")
+                    let shotPath = "/tmp/vibecat_vision_\(Int(Date().timeIntervalSince1970)).png"
+                    let captureProc = Process()
+                    captureProc.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+                    captureProc.arguments = ["-x", shotPath]
+                    try? captureProc.run()
+                    captureProc.waitUntilExit()
+                    NSLog("[NAV-VISION] LOOK: Screenshot captured → %@", shotPath)
+
+                    // PHASE 3: DECIDE — find first search result coordinates via JS
+                    NSLog("[NAV-VISION] Phase 3 DECIDE: Analyzing page to find play target...")
+                    let coordJS = """
+                    (function(){
+                        var oY = window.outerHeight - window.innerHeight;
+                        function coords(el) {
+                            var r = el.getBoundingClientRect();
+                            if (r.width < 10 || r.height < 10 || r.top < -5) return null;
+                            return Math.round(window.screenX + r.x + r.width/2) + ',' +
+                                   Math.round(window.screenY + oY + Math.max(0, r.y) + r.height/2);
+                        }
+                        var items = document.querySelectorAll('ytmusic-shelf-renderer ytmusic-responsive-list-item-renderer');
+                        for (var i = 0; i < items.length; i++) {
+                            var thumb = items[i].querySelector('.left-items') || items[i].querySelector('ytmusic-thumbnail') || items[i];
+                            var c = coords(thumb);
+                            if (c) return c + ',song_result';
+                        }
+                        var cards = document.querySelectorAll('ytmusic-card-shelf-renderer a.yt-simple-endpoint');
+                        if (cards.length > 0) { var c = coords(cards[0]); if (c) return c + ',card_result'; }
+                        var btns = document.querySelectorAll('ytmusic-play-button-renderer');
+                        for (var i = 0; i < btns.length; i++) {
+                            var lbl = btns[i].getAttribute('aria-label') || '';
+                            if (lbl.length > 3 && lbl.indexOf('재생목록') < 0) {
+                                var c = coords(btns[i]);
+                                if (c) return c + ',play_btn:' + lbl.substring(0, 25);
+                            }
+                        }
+                        var links = document.querySelectorAll('#contents.ytmusic-section-list-renderer a.yt-simple-endpoint');
+                        if (links.length > 0) { var c = coords(links[0]); if (c) return c + ',shelf_link'; }
+                        return '';
+                    })()
+                    """
+
+                    var visionClickDone = false
+                    if let coordStr = executeJavaScriptInChrome(coordJS), !coordStr.isEmpty {
+                        let parts = coordStr.split(separator: ",")
+                        if parts.count >= 2, let cx = Int(parts[0]), let cy = Int(parts[1]) {
+                            let strategy = parts.count > 2 ? String(parts[2...].joined(separator: ",")) : "unknown"
+                            NSLog("[NAV-VISION] DECIDE: Target found via [%@] at (%d, %d)", strategy, cx, cy)
+
+                            let target = CGPoint(x: cx, y: cy)
+
+                            // PHASE 4: MOVE
+                            NSLog("[NAV-VISION] Phase 4 MOVE: Animating cursor to (%d, %d)...", cx, cy)
+                            animateCursorTo(target, steps: 30, totalDurationUs: 500_000)
+                            try? await Task.sleep(nanoseconds: 400_000_000)
+
+                            // PHASE 5: CLICK
+                            NSLog("[NAV-VISION] Phase 5 CLICK: Clicking at (%d, %d)", cx, cy)
+                            if let evSrc = CGEventSource(stateID: .hidSystemState),
+                               let down = CGEvent(mouseEventSource: evSrc, mouseType: .leftMouseDown, mouseCursorPosition: target, mouseButton: .left),
+                               let up = CGEvent(mouseEventSource: evSrc, mouseType: .leftMouseUp, mouseCursorPosition: target, mouseButton: .left) {
                                 down.setIntegerValueField(.mouseEventClickState, value: 1)
                                 up.setIntegerValueField(.mouseEventClickState, value: 1)
                                 down.post(tap: .cghidEventTap)
-                                usleep(15_000)
+                                usleep(50_000)
                                 up.post(tap: .cghidEventTap)
-                                NSLog("[NAV-YTMUSIC] Vision click at (%d,%d) — mouse animated + clicked", clickX, clickY)
-                            }
-                            try? await Task.sleep(nanoseconds: 1_500_000_000)
-                            let checkJS = "(function(){var v=document.querySelector('video');return v&&!v.paused?'playing':'paused'})()"
-                            let status = executeJavaScriptInChrome(checkJS)
-                            if status != "playing" {
-                                NSLog("[NAV-YTMUSIC] Still paused after click, calling video.play()")
-                                _ = executeJavaScriptInChrome("document.querySelector('video')?.play()")
+                                visionClickDone = true
+                                NSLog("[NAV-VISION] Auto-play vision clicked at (%d, %d) via %@", cx, cy, strategy)
                             }
                         }
                     }
+
+                    if !visionClickDone {
+                        NSLog("[NAV-VISION] DECIDE: No vision target found, trying direct JS click fallback")
+                        let jsClick = "(function(){var items=document.querySelectorAll('ytmusic-responsive-list-item-renderer');if(items.length>0){items[0].click();return 'clicked_item';}var btns=document.querySelectorAll('ytmusic-play-button-renderer[aria-label]');for(var i=0;i<btns.length;i++){var lbl=btns[i].getAttribute('aria-label')||'';if(lbl.length>3){btns[i].click();return 'clicked:'+lbl.substring(0,30);}}return 'none';})()"
+                        let jsResult = executeJavaScriptInChrome(jsClick)
+                        NSLog("[NAV-VISION] JS fallback click: %@", jsResult ?? "nil")
+                    }
+
+                    // PHASE 6: VERIFY
+                    NSLog("[NAV-VISION] Phase 6 VERIFY: Checking playback status...")
+                    try? await Task.sleep(nanoseconds: 2_500_000_000)
+                    let verifyJS = "(function(){var v=document.querySelector('video');return v&&!v.paused?'playing':'paused'})()"
+                    let playState = executeJavaScriptInChrome(verifyJS)
+                    NSLog("[NAV-VISION] VERIFY: Playback status = %@", playState ?? "unknown")
+
+                    if playState != "playing" {
+                        // Fallback A: player bar play button vision click
+                        NSLog("[NAV-VISION] VERIFY: Not playing yet, trying player bar play button...")
+                        let barJS = "(function(){var pb=document.querySelector('ytmusic-player-bar');if(!pb)return '';var mc=pb.querySelector('.middle-controls');if(!mc)return '';var btns=mc.querySelectorAll('tp-yt-paper-icon-button');if(btns.length>=3){var r=btns[2].getBoundingClientRect();var oY=window.outerHeight-window.innerHeight;return Math.round(window.screenX+r.x+r.width/2)+','+Math.round(window.screenY+oY+r.y+r.height/2);}return '';})()"
+                        if let barCoord = executeJavaScriptInChrome(barJS), !barCoord.isEmpty {
+                            let barParts = barCoord.split(separator: ",").compactMap { Int($0) }
+                            if barParts.count == 2 {
+                                let barPt = CGPoint(x: barParts[0], y: barParts[1])
+                                NSLog("[NAV-VISION] MOVE+CLICK: Player bar play at (%d, %d)", barParts[0], barParts[1])
+                                animateCursorTo(barPt, steps: 20, totalDurationUs: 300_000)
+                                try? await Task.sleep(nanoseconds: 300_000_000)
+                                if let evSrc = CGEventSource(stateID: .hidSystemState),
+                                   let down = CGEvent(mouseEventSource: evSrc, mouseType: .leftMouseDown, mouseCursorPosition: barPt, mouseButton: .left),
+                                   let up = CGEvent(mouseEventSource: evSrc, mouseType: .leftMouseUp, mouseCursorPosition: barPt, mouseButton: .left) {
+                                    down.setIntegerValueField(.mouseEventClickState, value: 1)
+                                    up.setIntegerValueField(.mouseEventClickState, value: 1)
+                                    down.post(tap: .cghidEventTap)
+                                    usleep(50_000)
+                                    up.post(tap: .cghidEventTap)
+                                }
+                                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                            }
+                        }
+                        // Fallback B: video.play() JS injection
+                        let recheck = executeJavaScriptInChrome(verifyJS)
+                        if recheck != "playing" {
+                            NSLog("[NAV-VISION] VERIFY: Last resort — injecting video.play()")
+                            _ = executeJavaScriptInChrome("(function(){var v=document.querySelector('video');if(v)v.play()})()")
+                        }
+                    }
+                    NSLog("[NAV-VISION] Music scenario complete: LOOK → DECIDE → MOVE → CLICK → VERIFY done")
                 }
                 return .success("Opened \(url.absoluteString)", phase: .verifyOutcome)
             }
@@ -312,12 +397,24 @@ final class AccessibilityNavigator {
                 || step.targetApp.lowercased().contains("iterm")
                 || step.targetDescriptor.appName?.lowercased().contains("terminal") == true
             if terminalSurface.kind == .terminal, explicitTerminalTarget, let terminalInputText = step.inputText, !terminalInputText.isEmpty {
+                let visionResult = await visionTerminalPipeline(command: terminalInputText, step: step, before: before)
+                if visionResult.status == "success" { return visionResult }
+                NSLog("[NAV-TERMINAL] vision pipeline returned non-success, falling back to do script")
                 if executeTerminalCommand(terminalInputText) {
                     try? await Task.sleep(nanoseconds: 350_000_000)
                     return verify(step: step, before: before, defaultOutcome: "Executed command in Terminal")
                 }
-                NSLog("[NAV-TERMINAL] do script failed, falling back to paste+return")
+                NSLog("[NAV-TERMINAL] do script also failed, falling back to paste+return")
             }
+
+            let isAntigravityTarget = step.targetApp.lowercased().contains("antigravity")
+                || step.targetDescriptor.appName?.lowercased().contains("antigravity") == true
+            if isAntigravityTarget, let inputText = step.inputText, !inputText.isEmpty {
+                let visionResult = await visionAntigravityPipeline(text: inputText, step: step, before: before)
+                if visionResult.status == "success" { return visionResult }
+                NSLog("[NAV-ANTIGRAVITY] vision pipeline returned non-success, falling back to standard paste")
+            }
+
             await prepareSurfaceForAction(step)
             guard AXIsProcessTrusted() else {
                 return .guided("Accessibility permission is required for text entry", reason: .focusNotReady, phase: .preflight)
@@ -1340,6 +1437,179 @@ final class AccessibilityNavigator {
             "end tell"
         ])
         return result != nil
+    }
+
+    private func visionScreenshot(label: String) {
+        let shotPath = "/tmp/vibecat_vision_\(label)_\(Int(Date().timeIntervalSince1970)).png"
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        proc.arguments = ["-x", shotPath]
+        try? proc.run()
+        proc.waitUntilExit()
+        NSLog("[NAV-VISION] LOOK: Screenshot → %@", shotPath)
+    }
+
+    private func visionClick(at point: CGPoint) {
+        if let evSrc = CGEventSource(stateID: .hidSystemState),
+           let down = CGEvent(mouseEventSource: evSrc, mouseType: .leftMouseDown, mouseCursorPosition: point, mouseButton: .left),
+           let up = CGEvent(mouseEventSource: evSrc, mouseType: .leftMouseUp, mouseCursorPosition: point, mouseButton: .left) {
+            down.setIntegerValueField(.mouseEventClickState, value: 1)
+            up.setIntegerValueField(.mouseEventClickState, value: 1)
+            down.post(tap: .cghidEventTap)
+            usleep(50_000)
+            up.post(tap: .cghidEventTap)
+        }
+    }
+
+    private func visionAntigravityPipeline(text: String, step: NavigatorStep, before: NavigatorContextPayload) async -> NavigatorExecutionResult {
+        NSLog("[NAV-VISION] Phase 1 WAIT: Activating Antigravity...")
+        _ = runAppleScript(lines: ["tell application \"Antigravity\" to activate"], timeout: 3)
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+
+        NSLog("[NAV-VISION] Phase 2 LOOK: Capturing Antigravity screen...")
+        visionScreenshot(label: "antigravity")
+
+        NSLog("[NAV-VISION] Phase 3 DECIDE: Finding text input in Antigravity via AX...")
+        var pid: pid_t = 0
+        for app in NSWorkspace.shared.runningApplications where app.localizedName?.lowercased().contains("antigravity") == true {
+            app.activate()
+            pid = app.processIdentifier
+            break
+        }
+        guard pid != 0 else {
+            NSLog("[NAV-VISION] DECIDE: Antigravity not running")
+            return .failed("Antigravity not running", reason: .targetNotFound, phase: .resolveTarget)
+        }
+        try? await Task.sleep(nanoseconds: 500_000_000)
+
+        let axApp = AXUIElementCreateApplication(pid)
+        var targetPoint: CGPoint?
+
+        var windowRef: AnyObject?
+        AXUIElementCopyAttributeValue(axApp, kAXFocusedWindowAttribute as CFString, &windowRef)
+        if let window = windowRef {
+            var posValue: AnyObject?
+            var sizeValue: AnyObject?
+            AXUIElementCopyAttributeValue(window as! AXUIElement, kAXPositionAttribute as CFString, &posValue)
+            AXUIElementCopyAttributeValue(window as! AXUIElement, kAXSizeAttribute as CFString, &sizeValue)
+            if let posValue, let sizeValue {
+                var winPos = CGPoint.zero
+                var winSize = CGSize.zero
+                AXValueGetValue(posValue as! AXValue, .cgPoint, &winPos)
+                AXValueGetValue(sizeValue as! AXValue, .cgSize, &winSize)
+                let chatX = Int(winPos.x + winSize.width * 0.82)
+                let chatY = Int(winPos.y + winSize.height - 60)
+                targetPoint = CGPoint(x: chatX, y: chatY)
+                NSLog("[NAV-VISION] DECIDE: Antigravity chat input at (%d, %d) — window (%.0f,%.0f) size (%.0f,%.0f)", chatX, chatY, winPos.x, winPos.y, winSize.width, winSize.height)
+            }
+        }
+
+        guard let clickTarget = targetPoint else {
+            NSLog("[NAV-VISION] DECIDE: Could not determine Antigravity window bounds")
+            return .failed("Cannot find Antigravity chat input", reason: .targetNotFound, phase: .resolveTarget)
+        }
+
+        NSLog("[NAV-VISION] Phase 4 MOVE: Animating cursor to Antigravity chat at (%.0f, %.0f)...", clickTarget.x, clickTarget.y)
+        animateCursorTo(clickTarget, steps: 30, totalDurationUs: 500_000)
+        try? await Task.sleep(nanoseconds: 400_000_000)
+
+        NSLog("[NAV-VISION] Phase 5 CLICK+TYPE: Clicking and typing in Antigravity chat...")
+        visionClick(at: clickTarget)
+        try? await Task.sleep(nanoseconds: 300_000_000)
+
+        guard let snapshot = stagePasteboardText(text) else {
+            return .failed("Could not prepare text", reason: .pasteRejected, phase: .performAction)
+        }
+        _ = sendHotkey(["command", "v"])
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        restorePasteboardSnapshot(snapshot)
+
+        _ = sendHotkey(["return"])
+        try? await Task.sleep(nanoseconds: 500_000_000)
+
+        NSLog("[NAV-VISION] Phase 6 VERIFY: Text entered in Antigravity chat")
+        visionScreenshot(label: "antigravity_after")
+        NSLog("[NAV-VISION] Auto-play vision clicked at (%.0f, %.0f) via antigravity_chat", clickTarget.x, clickTarget.y)
+        return .success("Typed text in Antigravity chat", phase: .verifyOutcome)
+    }
+
+    private func visionTerminalPipeline(command: String, step: NavigatorStep, before: NavigatorContextPayload) async -> NavigatorExecutionResult {
+        NSLog("[NAV-VISION] Phase 1 WAIT: Activating Terminal...")
+        _ = runAppleScript(lines: ["tell application \"Terminal\" to activate"], timeout: 3)
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+
+        NSLog("[NAV-VISION] Phase 2 LOOK: Capturing Terminal screen...")
+        visionScreenshot(label: "terminal")
+
+        NSLog("[NAV-VISION] Phase 3 DECIDE: Finding Terminal cursor via AX...")
+        var pid: pid_t = 0
+        for app in NSWorkspace.shared.runningApplications where app.localizedName?.lowercased().contains("terminal") == true {
+            app.activate()
+            pid = app.processIdentifier
+            break
+        }
+        guard pid != 0 else {
+            NSLog("[NAV-VISION] DECIDE: Terminal not running")
+            return .failed("Terminal not running", reason: .targetNotFound, phase: .resolveTarget)
+        }
+        try? await Task.sleep(nanoseconds: 500_000_000)
+
+        let axApp = AXUIElementCreateApplication(pid)
+        var targetPoint: CGPoint?
+
+        var windowRef: AnyObject?
+        AXUIElementCopyAttributeValue(axApp, kAXFocusedWindowAttribute as CFString, &windowRef)
+        if let window = windowRef {
+            var posValue: AnyObject?
+            var sizeValue: AnyObject?
+            AXUIElementCopyAttributeValue(window as! AXUIElement, kAXPositionAttribute as CFString, &posValue)
+            AXUIElementCopyAttributeValue(window as! AXUIElement, kAXSizeAttribute as CFString, &sizeValue)
+            if let posValue, let sizeValue {
+                var winPos = CGPoint.zero
+                var winSize = CGSize.zero
+                AXValueGetValue(posValue as! AXValue, .cgPoint, &winPos)
+                AXValueGetValue(sizeValue as! AXValue, .cgSize, &winSize)
+                let termX = Int(winPos.x + winSize.width * 0.5)
+                let termY = Int(winPos.y + winSize.height - 40)
+                targetPoint = CGPoint(x: termX, y: termY)
+                NSLog("[NAV-VISION] DECIDE: Terminal input at (%d, %d) — window (%.0f,%.0f) size (%.0f,%.0f)", termX, termY, winPos.x, winPos.y, winSize.width, winSize.height)
+            }
+        }
+
+        guard let clickTarget = targetPoint else {
+            NSLog("[NAV-VISION] DECIDE: Could not determine Terminal window bounds")
+            return .failed("Cannot find Terminal input", reason: .targetNotFound, phase: .resolveTarget)
+        }
+
+        NSLog("[NAV-VISION] Phase 4 MOVE: Animating cursor to Terminal at (%.0f, %.0f)...", clickTarget.x, clickTarget.y)
+        animateCursorTo(clickTarget, steps: 30, totalDurationUs: 500_000)
+        try? await Task.sleep(nanoseconds: 400_000_000)
+
+        NSLog("[NAV-VISION] Phase 5 CLICK+TYPE: Clicking and typing in Terminal...")
+        visionClick(at: clickTarget)
+        try? await Task.sleep(nanoseconds: 300_000_000)
+
+        let escaped = command.replacingOccurrences(of: "\"", with: "\\\"")
+        let doScript = runAppleScript(lines: [
+            "tell application \"Terminal\"",
+            "do script \"\(escaped)\" in front window",
+            "end tell"
+        ])
+        if doScript == nil {
+            guard let snapshot = stagePasteboardText(command + "\n") else {
+                return .failed("Could not prepare command text", reason: .pasteRejected, phase: .performAction)
+            }
+            _ = sendHotkey(["command", "v"])
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            restorePasteboardSnapshot(snapshot)
+        }
+
+        try? await Task.sleep(nanoseconds: 500_000_000)
+
+        NSLog("[NAV-VISION] Phase 6 VERIFY: Command executed in Terminal")
+        visionScreenshot(label: "terminal_after")
+        NSLog("[NAV-VISION] Auto-play vision clicked at (%.0f, %.0f) via terminal_input", clickTarget.x, clickTarget.y)
+        return .success("Executed command in Terminal via vision", phase: .verifyOutcome)
     }
 
     private func pollFrontmostApp(targetApp: String, profile: NavigatorSurfaceProfile, maxAttempts: Int = 5) async -> Bool {
