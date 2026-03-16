@@ -563,6 +563,8 @@ These feed Cloud Logging, Cloud Trace, and Cloud Monitoring. Completed task repl
 | Deployment evidence | `docs/evidence/DEPLOYMENT_EVIDENCE.md` |
 | GCP proof | `docs/deployment/PROOF_OF_GCP_DEPLOYMENT.md` |
 | Architecture research | `docs/AGENT_ARCHITECTURE_RESEARCH_20260312.md` |
+| GDG profile | [gdg.community.dev/u/m5n58q/](https://gdg.community.dev/u/m5n58q/) |
+| Auto deploy | `infra/deploy.sh` |
 
 ### Dev.to Blog Posts
 
