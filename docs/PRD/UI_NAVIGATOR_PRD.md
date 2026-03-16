@@ -58,11 +58,9 @@ Hero workflow:
 
 The implementation plan is tracked in:
 
-- `docs/PRD/DETAILS/UI_NAVIGATOR_IMPLEMENTATION_PLAN_20260311.md`
-- `docs/PRD/DETAILS/UI_NAVIGATOR_EXECUTION_CONTROL_PLANE_DESIGN_20260312.md`
-- `docs/PRD/DETAILS/UI_NAVIGATOR_WINNING_STRATEGY_20260312.md`
-- `docs/PRD/DETAILS/UI_NAVIGATOR_JUDGE_PROOF_MATRIX_20260312.md`
-- `docs/analysis/GOOGLE_CLOUD_AGENTIC_ARCHITECTURE_REVIEW_20260311.md`
+- `docs/FINAL_ARCHITECTURE.md` — Authoritative architecture reference
+- `docs/evidence/DEPLOYMENT_EVIDENCE.md` — Live deployment proof
+- `docs/CURRENT_STATUS_20260316.md` — Current project status
 
 Implementation status against that plan:
 

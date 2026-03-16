@@ -571,10 +571,9 @@ These feed Cloud Logging, Cloud Trace, and Cloud Monitoring. Completed task repl
 | Architecture diagram | This README (Mermaid) + `docs/FINAL_ARCHITECTURE.md` |
 | Demo video script | `docs/challenge/video-1-demo/SCRIPT.md` |
 | Devpost submission text | `docs/DEVPOST_SUBMISSION.md` |
-| Current status | `docs/CURRENT_STATUS_20260312.md` |
+| Current status | `docs/CURRENT_STATUS_20260316.md` |
 | Deployment evidence | `docs/evidence/DEPLOYMENT_EVIDENCE.md` |
 | GCP proof | `docs/deployment/PROOF_OF_GCP_DEPLOYMENT.md` |
-| Architecture research | `docs/AGENT_ARCHITECTURE_RESEARCH_20260312.md` |
 | GDG profile | [gdg.community.dev/u/m5n58q/](https://gdg.community.dev/u/m5n58q/) |
 | Auto deploy | `infra/deploy.sh` |
 

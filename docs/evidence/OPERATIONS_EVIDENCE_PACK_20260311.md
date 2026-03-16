@@ -10,10 +10,9 @@ The current submission truth is:
 
 ## Primary Documents
 
-- current snapshot: `docs/CURRENT_STATUS_20260311.md`
+- current snapshot: `docs/CURRENT_STATUS_20260316.md`
 - deployment evidence: `docs/evidence/DEPLOYMENT_EVIDENCE.md`
 - concise proof view: `docs/deployment/PROOF_OF_GCP_DEPLOYMENT.md`
-- issue baseline: `docs/ISSUE_TRIAGE_20260311.md`
 
 ## Collected Live Artifacts
 

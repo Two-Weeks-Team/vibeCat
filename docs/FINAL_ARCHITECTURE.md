@@ -4,7 +4,7 @@
 **Submission Track:** UI Navigator
 **Core Identity:** Proactive Desktop Companion — OBSERVE → SUGGEST → WAIT → ACT → FEEDBACK
 
-Current deployment and proof assets should be cross-checked with `docs/CURRENT_STATUS_20260312.md`, `docs/evidence/DEPLOYMENT_EVIDENCE.md`, and `docs/deployment/PROOF_OF_GCP_DEPLOYMENT.md`.
+Current deployment and proof assets should be cross-checked with `docs/evidence/DEPLOYMENT_EVIDENCE.md` and `docs/deployment/PROOF_OF_GCP_DEPLOYMENT.md`.
 
 ## System Overview
 
