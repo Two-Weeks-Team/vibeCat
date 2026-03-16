@@ -2590,11 +2590,13 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 												if visionText != "" {
 													resp["vision"] = visionText
 												}
-												_ = fcSess.SendToolResponse([]*genai.FunctionResponse{{
+												if err := fcSess.SendToolResponse([]*genai.FunctionResponse{{
 													ID:       abortID,
 													Name:     abortName,
 													Response: resp,
-												}})
+												}}); err != nil {
+													slog.Warn("[HANDLER] checkpoint abort SendToolResponse failed", "conn_id", c.ID, "error", err)
+												}
 											}
 											return
 										}
@@ -2803,7 +2805,9 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 									if hint := buildNextActionHint(fcName, fcText, fcTarget); hint != "" {
 										resp["next_action_hint"] = hint
 									}
-									_ = fcSess.SendToolResponse([]*genai.FunctionResponse{{ID: fcID, Name: fcName, Response: resp}})
+									if err := fcSess.SendToolResponse([]*genai.FunctionResponse{{ID: fcID, Name: fcName, Response: resp}}); err != nil {
+										slog.Warn("[HANDLER] guided mode SendToolResponse failed", "conn_id", c.ID, "error", err)
+									}
 								}
 								continue
 							}
@@ -2857,7 +2861,9 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 										fcID, fcName, _, _ := ls.clearPendingFC()
 										lockedSendJSON(c, map[string]any{"type": "navigator.failed", "taskId": refreshMsg.TaskID, "reason": "vision escalation failed"})
 										if fcSess := ls.getSession(); fcSess != nil {
-											_ = fcSess.SendToolResponse([]*genai.FunctionResponse{{ID: fcID, Name: fcName, Response: map[string]any{"error": "play button not found"}}})
+											if err := fcSess.SendToolResponse([]*genai.FunctionResponse{{ID: fcID, Name: fcName, Response: map[string]any{"error": "play button not found"}}}); err != nil {
+												slog.Warn("[HANDLER] vision escalation SendToolResponse failed", "conn_id", c.ID, "error", err)
+											}
 										}
 									}()
 									continue
@@ -2909,11 +2915,13 @@ func Handler(reg *Registry, liveMgr *live.Manager, adkClient adkService, ttsClie
 								"reason": refreshMsg.ObservedOutcome,
 							})
 							if fcSess := ls.getSession(); fcSess != nil {
-								_ = fcSess.SendToolResponse([]*genai.FunctionResponse{{
+								if err := fcSess.SendToolResponse([]*genai.FunctionResponse{{
 									ID:       fcID,
 									Name:     fcName,
 									Response: map[string]any{"error": "step failed: " + refreshMsg.ObservedOutcome},
-								}})
+								}}); err != nil {
+									slog.Warn("[HANDLER] step failed SendToolResponse failed", "conn_id", c.ID, "error", err)
+								}
 							}
 						}
 						continue
