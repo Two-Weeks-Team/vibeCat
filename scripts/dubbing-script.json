@@ -1,0 +1,33 @@
+{
+  "voices": {
+    "cat": { "name": "Zephyr", "model": "gemini-2.5-flash-preview-tts", "lang": "en-US" },
+    "narrator": { "name": "Charon", "model": "gemini-2.5-flash-preview-tts", "lang": "en-US" },
+    "user": { "name": "Puck", "model": "gemini-2.5-flash-preview-tts", "lang": "en-US" }
+  },
+  "lines": [
+    { "id": "01-title",           "start_ms": 500,    "voice": "narrator", "text": "VibeCat. Your Proactive Desktop Companion." },
+    { "id": "03-cat-music",       "start_ms": 5000,   "voice": "cat",      "text": "Hey! Good to see you. How about we set the vibe with some relaxing background music while you work?" },
+    { "id": "03b-user-approve",   "start_ms": 11500,  "voice": "user",     "text": "Yes, play it." },
+    { "id": "06-vision-control",  "start_ms": 16000,  "voice": "narrator", "text": "Using vision-based control. Look, decide, move, click, verify." },
+
+    { "id": "07-cat-playing",     "start_ms": 23000,  "voice": "cat",      "text": "Meow! Music is playing! Enjoy your coding session." },
+    { "id": "08-bg-music",        "start_ms": 37000,  "voice": "narrator", "text": "Music continues in the background throughout the entire demo." },
+
+    { "id": "09-act2-title",      "start_ms": 51500,  "voice": "narrator", "text": "Act two. Proactive Code Enhancement." },
+    { "id": "10-reads-code",      "start_ms": 55500,  "voice": "narrator", "text": "VibeCat reads your code in Antigravity IDE." },
+    { "id": "12-click-type",      "start_ms": 60000,  "voice": "narrator", "text": "Clicking Gemini Chat and typing: Enhance the comments for this code." },
+    { "id": "11-cat-done",        "start_ms": 64000,  "voice": "cat",      "text": "Done! I've typed 'Enhance the comments for this code' into Antigravity." },
+    { "id": "14-cat-cache",       "start_ms": 70000,  "voice": "cat",      "text": "Nya! You're working on getUserData. Don't forget to add logic to save the data to sessionCache afterwards!" },
+    { "id": "13-gemini-process",  "start_ms": 81000,  "voice": "narrator", "text": "Gemini AI analyzes and improves code documentation." },
+    { "id": "15-enhancement-done","start_ms": 87000,  "voice": "narrator", "text": "Gemini completes enhancement with detailed documentation." },
+
+    { "id": "16-act3-title",      "start_ms": 98500,  "voice": "narrator", "text": "Act three. Terminal Automation." },
+    { "id": "17-terminal-open",   "start_ms": 101000, "voice": "narrator", "text": "VibeCat switches to Terminal and reads the screen." },
+    { "id": "19-lint-pass",       "start_ms": 106000, "voice": "narrator", "text": "Typing go vet, verifying the result. Lint check passed." },
+    { "id": "18-cat-govet",      "start_ms": 110000, "voice": "cat",      "text": "Running go vet! Checking for lint issues for you." },
+
+    { "id": "20-architecture",    "start_ms": 115500, "voice": "narrator", "text": "Architecture overview. Swift client connects to Cloud Run gateway, powered by Gemini Live API." },
+    { "id": "21-gcp-proof",       "start_ms": 124000, "voice": "narrator", "text": "Running live on Google Cloud Platform. Cloud Run, Firestore, and Cloud Logging." },
+    { "id": "22-closing-motto",   "start_ms": 132000, "voice": "narrator", "text": "VibeCat by Two Weeks Team. Observe, suggest, wait, act, verify. Built for the Gemini Live Agent Challenge 2026." }
+  ]
+}

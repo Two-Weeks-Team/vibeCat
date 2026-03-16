@@ -1,0 +1,102 @@
+[
+  {
+    "id": "01-title",
+    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/01-title.wav",
+    "duration_ms": 3810
+  },
+  {
+    "id": "03-cat-music",
+    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/03-cat-music.wav",
+    "duration_ms": 6210
+  },
+  {
+    "id": "03b-user-approve",
+    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/03b-user-approve.wav",
+    "duration_ms": 1010
+  },
+  {
+    "id": "06-vision-control",
+    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/06-vision-control.wav",
+    "duration_ms": 6450
+  },
+  {
+    "id": "07-cat-playing",
+    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/07-cat-playing.wav",
+    "duration_ms": 3490
+  },
+  {
+    "id": "08-bg-music",
+    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/08-bg-music.wav",
+    "duration_ms": 4010
+  },
+  {
+    "id": "09-act2-title",
+    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/09-act2-title.wav",
+    "duration_ms": 3130
+  },
+  {
+    "id": "10-reads-code",
+    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/10-reads-code.wav",
+    "duration_ms": 3810
+  },
+  {
+    "id": "12-click-type",
+    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/12-click-type.wav",
+    "duration_ms": 4970
+  },
+  {
+    "id": "11-cat-done",
+    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/11-cat-done.wav",
+    "duration_ms": 5530
+  },
+  {
+    "id": "14-cat-cache",
+    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/14-cat-cache.wav",
+    "duration_ms": 7130
+  },
+  {
+    "id": "13-gemini-process",
+    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/13-gemini-process.wav",
+    "duration_ms": 5610
+  },
+  {
+    "id": "15-enhancement-done",
+    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/15-enhancement-done.wav",
+    "duration_ms": 3890
+  },
+  {
+    "id": "16-act3-title",
+    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/16-act3-title.wav",
+    "duration_ms": 2930
+  },
+  {
+    "id": "17-terminal-open",
+    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/17-terminal-open.wav",
+    "duration_ms": 4090
+  },
+  {
+    "id": "19-lint-pass",
+    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/19-lint-pass.wav",
+    "duration_ms": 5090
+  },
+  {
+    "id": "18-cat-govet",
+    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/18-cat-govet.wav",
+    "duration_ms": 2970
+  },
+  {
+    "id": "20-architecture",
+    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/20-architecture.wav",
+    "duration_ms": 6210
+  },
+  {
+    "id": "21-gcp-proof",
+    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/21-gcp-proof.wav",
+    "duration_ms": 5610
+  },
+  {
+    "id": "22-closing-motto",
+    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/22-closing-motto.wav",
+    "duration_ms": 10850
+  }
+]
