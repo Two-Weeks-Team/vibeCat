@@ -1,102 +1,222 @@
-[
-  {
-    "id": "01-title",
-    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/01-title.wav",
-    "duration_ms": 3810
+{
+  "voices": {
+    "cat": {
+      "name": "Zephyr",
+      "model": "gemini-2.5-flash-preview-tts",
+      "lang": "en-US"
+    },
+    "narrator": {
+      "name": "Charon",
+      "model": "gemini-2.5-flash-preview-tts",
+      "lang": "en-US"
+    },
+    "user": {
+      "name": "Puck",
+      "model": "gemini-2.5-flash-preview-tts",
+      "lang": "en-US"
+    }
   },
-  {
-    "id": "03-cat-music",
-    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/03-cat-music.wav",
-    "duration_ms": 6210
-  },
-  {
-    "id": "03b-user-approve",
-    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/03b-user-approve.wav",
-    "duration_ms": 1010
-  },
-  {
-    "id": "06-vision-control",
-    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/06-vision-control.wav",
-    "duration_ms": 6450
-  },
-  {
-    "id": "07-cat-playing",
-    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/07-cat-playing.wav",
-    "duration_ms": 3490
-  },
-  {
-    "id": "08-bg-music",
-    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/08-bg-music.wav",
-    "duration_ms": 4010
-  },
-  {
-    "id": "09-act2-title",
-    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/09-act2-title.wav",
-    "duration_ms": 3130
-  },
-  {
-    "id": "10-reads-code",
-    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/10-reads-code.wav",
-    "duration_ms": 3810
-  },
-  {
-    "id": "12-click-type",
-    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/12-click-type.wav",
-    "duration_ms": 4970
-  },
-  {
-    "id": "11-cat-done",
-    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/11-cat-done.wav",
-    "duration_ms": 5530
-  },
-  {
-    "id": "14-cat-cache",
-    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/14-cat-cache.wav",
-    "duration_ms": 7130
-  },
-  {
-    "id": "13-gemini-process",
-    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/13-gemini-process.wav",
-    "duration_ms": 5610
-  },
-  {
-    "id": "15-enhancement-done",
-    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/15-enhancement-done.wav",
-    "duration_ms": 3890
-  },
-  {
-    "id": "16-act3-title",
-    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/16-act3-title.wav",
-    "duration_ms": 2930
-  },
-  {
-    "id": "17-terminal-open",
-    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/17-terminal-open.wav",
-    "duration_ms": 4090
-  },
-  {
-    "id": "19-lint-pass",
-    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/19-lint-pass.wav",
-    "duration_ms": 5090
-  },
-  {
-    "id": "18-cat-govet",
-    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/18-cat-govet.wav",
-    "duration_ms": 2970
-  },
-  {
-    "id": "20-architecture",
-    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/20-architecture.wav",
-    "duration_ms": 6210
-  },
-  {
-    "id": "21-gcp-proof",
-    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/21-gcp-proof.wav",
-    "duration_ms": 5610
-  },
-  {
-    "id": "22-closing-motto",
-    "file": "/Users/kimsejun/Documents/GitHub/vibeCat/scripts/../docs/video/tts/22-closing-motto.wav",
-    "duration_ms": 10850
-  }
-]
+  "tts_model": "gemini-2.5-flash-preview-tts",
+  "lines": [
+    {
+      "id": "01-title",
+      "file": "01-title.wav",
+      "voice": "narrator",
+      "voice_model": "Charon",
+      "start_ms": 500,
+      "start_display": "00:00.50",
+      "duration_ms": 3810,
+      "text": "VibeCat. Your Proactive Desktop Companion."
+    },
+    {
+      "id": "03-cat-music",
+      "file": "03-cat-music.wav",
+      "voice": "cat",
+      "voice_model": "Zephyr",
+      "start_ms": 5000,
+      "start_display": "00:05.00",
+      "duration_ms": 6210,
+      "text": "Hey! Good to see you. How about we set the vibe with some relaxing background music while you work?"
+    },
+    {
+      "id": "03b-user-approve",
+      "file": "03b-user-approve.wav",
+      "voice": "user",
+      "voice_model": "Puck",
+      "start_ms": 11500,
+      "start_display": "00:11.50",
+      "duration_ms": 1010,
+      "text": "Yes, play it."
+    },
+    {
+      "id": "06-vision-control",
+      "file": "06-vision-control.wav",
+      "voice": "narrator",
+      "voice_model": "Charon",
+      "start_ms": 16000,
+      "start_display": "00:16.00",
+      "duration_ms": 6450,
+      "text": "Using vision-based control. Look, decide, move, click, verify."
+    },
+    {
+      "id": "07-cat-playing",
+      "file": "07-cat-playing.wav",
+      "voice": "cat",
+      "voice_model": "Zephyr",
+      "start_ms": 23000,
+      "start_display": "00:23.00",
+      "duration_ms": 3490,
+      "text": "Meow! Music is playing! Enjoy your coding session."
+    },
+    {
+      "id": "08-bg-music",
+      "file": "08-bg-music.wav",
+      "voice": "narrator",
+      "voice_model": "Charon",
+      "start_ms": 37000,
+      "start_display": "00:37.00",
+      "duration_ms": 4010,
+      "text": "Music continues in the background throughout the entire demo."
+    },
+    {
+      "id": "09-act2-title",
+      "file": "09-act2-title.wav",
+      "voice": "narrator",
+      "voice_model": "Charon",
+      "start_ms": 51500,
+      "start_display": "00:51.50",
+      "duration_ms": 3130,
+      "text": "Act two. Proactive Code Enhancement."
+    },
+    {
+      "id": "10-reads-code",
+      "file": "10-reads-code.wav",
+      "voice": "narrator",
+      "voice_model": "Charon",
+      "start_ms": 55500,
+      "start_display": "00:55.50",
+      "duration_ms": 3810,
+      "text": "VibeCat reads your code in Antigravity IDE."
+    },
+    {
+      "id": "12-click-type",
+      "file": "12-click-type.wav",
+      "voice": "narrator",
+      "voice_model": "Charon",
+      "start_ms": 60000,
+      "start_display": "01:00.00",
+      "duration_ms": 4970,
+      "text": "Clicking Gemini Chat and typing: Enhance the comments for this code."
+    },
+    {
+      "id": "11-cat-done",
+      "file": "11-cat-done.wav",
+      "voice": "cat",
+      "voice_model": "Zephyr",
+      "start_ms": 64000,
+      "start_display": "01:04.00",
+      "duration_ms": 5530,
+      "text": "Done! I've typed 'Enhance the comments for this code' into Antigravity."
+    },
+    {
+      "id": "14-cat-cache",
+      "file": "14-cat-cache.wav",
+      "voice": "cat",
+      "voice_model": "Zephyr",
+      "start_ms": 70000,
+      "start_display": "01:10.00",
+      "duration_ms": 7130,
+      "text": "Nya! You're working on getUserData. Don't forget to add logic to save the data to sessionCache afterwards!"
+    },
+    {
+      "id": "13-gemini-process",
+      "file": "13-gemini-process.wav",
+      "voice": "narrator",
+      "voice_model": "Charon",
+      "start_ms": 81000,
+      "start_display": "01:21.00",
+      "duration_ms": 5610,
+      "text": "Gemini AI analyzes and improves code documentation."
+    },
+    {
+      "id": "15-enhancement-done",
+      "file": "15-enhancement-done.wav",
+      "voice": "narrator",
+      "voice_model": "Charon",
+      "start_ms": 87000,
+      "start_display": "01:27.00",
+      "duration_ms": 3890,
+      "text": "Gemini completes enhancement with detailed documentation."
+    },
+    {
+      "id": "16-act3-title",
+      "file": "16-act3-title.wav",
+      "voice": "narrator",
+      "voice_model": "Charon",
+      "start_ms": 98500,
+      "start_display": "01:38.50",
+      "duration_ms": 2930,
+      "text": "Act three. Terminal Automation."
+    },
+    {
+      "id": "17-terminal-open",
+      "file": "17-terminal-open.wav",
+      "voice": "narrator",
+      "voice_model": "Charon",
+      "start_ms": 101000,
+      "start_display": "01:41.00",
+      "duration_ms": 4090,
+      "text": "VibeCat switches to Terminal and reads the screen."
+    },
+    {
+      "id": "19-lint-pass",
+      "file": "19-lint-pass.wav",
+      "voice": "narrator",
+      "voice_model": "Charon",
+      "start_ms": 106000,
+      "start_display": "01:46.00",
+      "duration_ms": 5090,
+      "text": "Typing go vet, verifying the result. Lint check passed."
+    },
+    {
+      "id": "18-cat-govet",
+      "file": "18-cat-govet.wav",
+      "voice": "cat",
+      "voice_model": "Zephyr",
+      "start_ms": 110000,
+      "start_display": "01:50.00",
+      "duration_ms": 2970,
+      "text": "Running go vet! Checking for lint issues for you."
+    },
+    {
+      "id": "20-architecture",
+      "file": "20-architecture.wav",
+      "voice": "narrator",
+      "voice_model": "Charon",
+      "start_ms": 115500,
+      "start_display": "01:55.50",
+      "duration_ms": 6210,
+      "text": "Architecture overview. Swift client connects to Cloud Run gateway, powered by Gemini Live API."
+    },
+    {
+      "id": "21-gcp-proof",
+      "file": "21-gcp-proof.wav",
+      "voice": "narrator",
+      "voice_model": "Charon",
+      "start_ms": 124000,
+      "start_display": "02:04.00",
+      "duration_ms": 5610,
+      "text": "Running live on Google Cloud Platform. Cloud Run, Firestore, and Cloud Logging."
+    },
+    {
+      "id": "22-closing-motto",
+      "file": "22-closing-motto.wav",
+      "voice": "narrator",
+      "voice_model": "Charon",
+      "start_ms": 132000,
+      "start_display": "02:12.00",
+      "duration_ms": 10850,
+      "text": "VibeCat by Two Weeks Team. Observe, suggest, wait, act, verify. Built for the Gemini Live Agent Challenge 2026."
+    }
+  ]
+}
