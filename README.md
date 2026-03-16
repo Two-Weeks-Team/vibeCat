@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <a href="https://youtu.be/csR-gjEoWp8">▶ Watch the 4-minute demo video</a>
+  <a href="https://youtu.be/j1zzfoDr7qA">▶ Watch the 4-minute demo video</a>
 </p>
 
 ---

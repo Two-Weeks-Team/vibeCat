@@ -45,7 +45,7 @@
 
 ## Submission Assets
 
-- Demo video: https://youtu.be/csR-gjEoWp8 (3:59)
+- Demo video: https://youtu.be/j1zzfoDr7qA (3:59)
 - Blog series: 18 posts on dev.to/combba
 - Auto deploy: infra/deploy.sh
 - GCP proof: docs/evidence/DEPLOYMENT_EVIDENCE.md
