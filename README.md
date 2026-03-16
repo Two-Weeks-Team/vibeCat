@@ -15,10 +15,13 @@
   <img src="https://img.shields.io/badge/Swift-6.2-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift">
   <img src="https://img.shields.io/badge/Go-1.26.1-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go">
   <img src="https://img.shields.io/badge/GCP-Cloud_Run-4285F4?style=flat-square&logo=googlecloud&logoColor=white" alt="GCP">
+  <img src="https://img.shields.io/badge/tests-131_passing-brightgreen?style=flat-square" alt="Tests">
+  <a href="https://dev.to/combba"><img src="https://img.shields.io/badge/dev.to-18_posts-0A0A0A?style=flat-square&logo=devdotto&logoColor=white" alt="Blog"></a>
 </p>
 
 <p align="center">
-  <a href="https://youtu.be/j1zzfoDr7qA">▶ Watch the 4-minute demo video</a>
+  <a href="https://youtu.be/j1zzfoDr7qA">▶ Watch the 4-minute demo video</a> &nbsp;|&nbsp;
+  <a href="https://github.com/Two-Weeks-Team/vibeCat/releases/latest">⬇ Download DMG</a>
 </p>
 
 ---
