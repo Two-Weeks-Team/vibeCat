@@ -1,0 +1,37 @@
+flowchart TB
+    subgraph ROW1["Receive & Target"]
+        direction LR
+        T1["Gemini Issues\nFunction Call"] --> T2["pendingFC Queue\nMulti-step Plan"] --> G{"Grounding\nSource"}
+        G -->|"native"| AX["AX · Accessibility API"]
+        G -->|"browser"| CDP["CDP · Chrome DevTools"]
+        G -->|"coordinates"| VIS["Vision · Cursor + Click"]
+    end
+
+    subgraph ROW2["Verify & Result"]
+        direction LR
+        EXEC["Execute\nAction"] --> SS["Capture\nScreenshot"] --> ADK["ADK Vision\nAnalysis"]
+        ADK -->|"success"| OK["Next Step or Complete"]
+        ADK -->|"failed"| R{"Retries < 2?"}
+        R -->|"yes — retry"| EXEC
+        R -->|"no"| FAIL["Report to User"]
+    end
+
+    AX --> EXEC
+    CDP --> EXEC
+    VIS --> EXEC
+
+    style ROW1 fill:#0d1b2a,color:#e0e7ff,stroke:#4a9eff,stroke-width:2px
+    style ROW2 fill:#0d1b2a,color:#e0e7ff,stroke:#10b981,stroke-width:2px
+
+    style T1 fill:#4a9eff,color:#fff,stroke:none
+    style T2 fill:#1e293b,color:#e2e8f0,stroke:#4a9eff,stroke-width:1px
+    style G fill:#334155,color:#e2e8f0,stroke:#94a3b8
+    style AX fill:#3b82f6,color:#fff,stroke:none
+    style CDP fill:#f97316,color:#fff,stroke:none
+    style VIS fill:#a855f7,color:#fff,stroke:none
+    style EXEC fill:#1e293b,color:#e2e8f0,stroke:#a855f7,stroke-width:1px
+    style SS fill:#1e293b,color:#e2e8f0,stroke:#06b6d4,stroke-width:1px
+    style ADK fill:#06b6d4,color:#fff,stroke:none
+    style R fill:#f59e0b,color:#1a1a2e,stroke:none
+    style OK fill:#10b981,color:#fff,stroke:none
+    style FAIL fill:#ef4444,color:#fff,stroke:none

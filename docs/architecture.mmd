@@ -1,61 +1,110 @@
+%% ============================================================
+%% GRAPH 1 — Core Loop (What VibeCat Does)
+%% ============================================================
+
 flowchart LR
-    subgraph Client["macOS Client (Swift 6.2)"]
-        UI["Cat UI + Chat"]
-        CAP["ScreenCaptureService"]
-        AX["AccessibilityNavigator\n80+ key codes"]
-        WORKER["NavigatorActionWorker"]
-        OVR["NavigatorOverlayPanel"]
-        GWCLIENT["GatewayClient\n/ws/live"]
+    OBSERVE["👀 OBSERVE\nWatch screen via\nGemini Live Vision"]
+    SUGGEST["💬 SUGGEST\nSpeak up proactively\nbefore user asks"]
+    WAIT["⏳ WAIT\nUser confirms\nor declines"]
+    ACT["🖱️ ACT\nExecute desktop action\nAX · CDP · Vision"]
+    VERIFY["✅ VERIFY\nScreenshot analysis\nconfirms result"]
+
+    OBSERVE --> SUGGEST --> WAIT --> ACT --> VERIFY --> OBSERVE
+
+    style OBSERVE fill:#4a9eff,color:#fff,stroke:none
+    style SUGGEST fill:#a855f7,color:#fff,stroke:none
+    style WAIT fill:#f59e0b,color:#fff,stroke:none
+    style ACT fill:#10b981,color:#fff,stroke:none
+    style VERIFY fill:#06b6d4,color:#fff,stroke:none
+
+%% ============================================================
+%% GRAPH 2 — System Architecture (Where Things Run)
+%% ============================================================
+
+---
+
+flowchart TB
+    subgraph CLIENT["macOS Client · Swift 6.2"]
+        direction TB
+        UI["Cat UI + Voice Chat"]
+        SCREEN["Screen Capture"]
+        NAV["Accessibility Navigator\n80+ key codes"]
+        OVERLAY["Overlay Panel\naction · grounding · progress"]
     end
 
-    subgraph Gateway["Realtime Gateway (Go 1.26.1 · Cloud Run)"]
-        HTTP["/health /readyz /api/v1/auth/* /ws/live"]
-        LIVE["Gemini Live session manager"]
-        PROMPT["Proactive Companion prompt"]
-        FC["5 Function Calling tools"]
-        PFC["pendingFC queue\none-step-at-a-time"]
-        VERIFY["Vision verification"]
-        HEAL["Self-healing\nmax 2 retries"]
-        CDP["chromedp Chrome controller"]
-        STATE["ActionStateStore\nin-memory + Firestore"]
-        METRICS["OTEL + replay metrics"]
+    subgraph GATEWAY["Realtime Gateway · Go · Cloud Run"]
+        direction TB
+        WS["WebSocket /ws/live"]
+        LIVE["Gemini Live\nSession Manager"]
+        TOOLS["5 FC Tools\ntext · hotkey · focus\nopen_url · type_submit"]
+        PENDING["pendingFC Queue\nsequential execution"]
+        HEAL["Self-Healing\nmax 2 retries"]
+        CDP["Chrome DevTools\nchromedp"]
     end
 
-    subgraph ADK["ADK Orchestrator (Go 1.26.1 · Cloud Run)"]
-        ROUTER["/navigator/escalate\n/navigator/background\n/memory/* /search /tool /analyze"]
-        PROC["Navigator Processor"]
-        SEARCH["Search Agent"]
-        MEMORY["Memory Agent"]
-        REPLAY["Replay + Firestore store"]
-        GENAI["GenAI / ADK runtime"]
+    subgraph CLOUD["Google Cloud Platform"]
+        direction TB
+        GEMINI["Gemini Live API\nvoice + vision + FC"]
+        ADK["ADK Orchestrator\nscreenshot analysis\nconfidence escalation"]
+        FS["Firestore\nsession state"]
+        LOG["Cloud Logging\n+ Trace"]
     end
 
-    subgraph GCP["Google Cloud Platform"]
-        LIVEAPI["Gemini Live API"]
-        FIRE["Firestore"]
-        OTEL["Cloud Logging / Trace / Monitoring"]
-    end
+    UI -->|"voice + screenshots"| WS
+    WS -->|"streaming session"| LIVE
+    LIVE <-->|"real-time multimodal"| GEMINI
+    GEMINI -->|"function calls"| TOOLS
+    TOOLS --> PENDING
+    PENDING -->|"one step at a time"| NAV
+    PENDING -->|"browser actions"| CDP
+    HEAL -->|"retry with alt source"| PENDING
+    HEAL -->|"screenshot verify"| ADK
+    ADK --> HEAL
+    OVERLAY -->|"status updates"| UI
+    WS --> FS
+    WS --> LOG
 
-    UI --> GWCLIENT
-    CAP --> GWCLIENT
-    GWCLIENT --> HTTP
-    HTTP --> LIVE
-    LIVE --> PROMPT
-    LIVE --> LIVEAPI
-    LIVEAPI --> FC
-    FC --> PFC
-    PFC --> WORKER
-    WORKER --> AX
-    PFC --> CDP
-    HEAL --> PFC
-    VERIFY --> ROUTER
-    ROUTER --> PROC
-    PROC --> SEARCH
-    PROC --> MEMORY
-    PROC --> REPLAY
-    PROC --> GENAI
-    STATE --> FIRE
-    REPLAY --> FIRE
-    METRICS --> OTEL
-    GENAI --> OTEL
-    OVR --> UI
+    style CLIENT fill:#1e293b,color:#e2e8f0,stroke:#334155
+    style GATEWAY fill:#1e293b,color:#e2e8f0,stroke:#334155
+    style CLOUD fill:#1a2744,color:#e2e8f0,stroke:#334155
+
+%% ============================================================
+%% GRAPH 3 — Action Pipeline (How Actions Execute)
+%% ============================================================
+
+---
+
+flowchart TB
+    TRIGGER["Gemini issues\nFunction Call"] --> QUEUE["pendingFC Queue"]
+    QUEUE --> STEP["Execute Step"]
+
+    STEP --> AX_TRY{"AX Targeting"}
+    AX_TRY -->|"found"| EXEC_AX["Execute via\nAccessibility API"]
+    AX_TRY -->|"not found"| CDP_TRY{"CDP Targeting"}
+
+    CDP_TRY -->|"found"| EXEC_CDP["Execute via\nChrome DevTools"]
+    CDP_TRY -->|"not found"| VIS_TRY{"Vision Targeting"}
+
+    VIS_TRY -->|"coordinates"| EXEC_VIS["Move Cursor\n+ Click"]
+
+    EXEC_AX --> SCREENSHOT["Capture Screenshot"]
+    EXEC_CDP --> SCREENSHOT
+    EXEC_VIS --> SCREENSHOT
+
+    SCREENSHOT --> ADK_CHECK["ADK Analyzes\nScreenshot"]
+    ADK_CHECK -->|"✅ verified"| NEXT["Next Step\nor Complete"]
+    ADK_CHECK -->|"❌ failed"| RETRY{"Retries < 2?"}
+
+    RETRY -->|"yes"| STEP
+    RETRY -->|"no"| FAIL["Report Failure\nto User"]
+
+    NEXT -->|"more steps"| QUEUE
+    NEXT -->|"all done"| DONE["🐱 Task Complete\nOverlay shows result"]
+
+    style TRIGGER fill:#4a9eff,color:#fff,stroke:none
+    style DONE fill:#10b981,color:#fff,stroke:none
+    style FAIL fill:#ef4444,color:#fff,stroke:none
+    style AX_TRY fill:#334155,color:#e2e8f0,stroke:#475569
+    style CDP_TRY fill:#334155,color:#e2e8f0,stroke:#475569
+    style VIS_TRY fill:#334155,color:#e2e8f0,stroke:#475569
+    style RETRY fill:#f59e0b,color:#fff,stroke:none

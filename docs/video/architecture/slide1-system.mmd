@@ -1,0 +1,41 @@
+flowchart TB
+    subgraph CLIENT["macOS Client — Swift 6.2"]
+        direction LR
+        UI["Cat UI\n+ Voice Chat"] --> SC["Screen\nCapture"] --> AX["Accessibility\nNavigator"] --> OV["Navigator\nOverlay"]
+    end
+
+    subgraph GATEWAY["Realtime Gateway — Go · Cloud Run"]
+        direction LR
+        WS["WebSocket\n/ws/live"] --> LIVE["Gemini Live\nSession"] --> FC["5 FC Tools"] --> PFC["pendingFC\nQueue"] --> HEAL["Self-Healing\nmax 2 retries"] --> CDP["Chrome DevTools\nchromedp"]
+    end
+
+    subgraph CLOUD["Google Cloud Platform"]
+        direction LR
+        GEM["Gemini Live API\nVoice + Vision + FC"] --> ADK["ADK Orchestrator\nScreenshot Analysis"] --> FIRE["Firestore\n+ Logging"] --> LOG["Cloud Trace\n+ Monitoring"]
+    end
+
+    CLIENT -->|"voice + screenshots"| GATEWAY
+    GATEWAY <-->|"multimodal stream + function calls"| CLOUD
+    GATEWAY -->|"desktop + browser actions"| CLIENT
+    CLOUD -->|"verify + escalate"| GATEWAY
+
+    style CLIENT fill:#0d1b2a,color:#e0e7ff,stroke:#4a9eff,stroke-width:3px
+    style GATEWAY fill:#0d1b2a,color:#e0e7ff,stroke:#a855f7,stroke-width:3px
+    style CLOUD fill:#0d1b2a,color:#e0e7ff,stroke:#10b981,stroke-width:3px
+
+    style UI fill:#4a9eff,color:#fff,stroke:none
+    style SC fill:#1e293b,color:#e2e8f0,stroke:#4a9eff,stroke-width:1px
+    style AX fill:#3b82f6,color:#fff,stroke:none
+    style OV fill:#1e293b,color:#e2e8f0,stroke:#4a9eff,stroke-width:1px
+
+    style WS fill:#1e293b,color:#e2e8f0,stroke:#a855f7,stroke-width:1px
+    style LIVE fill:#a855f7,color:#fff,stroke:none
+    style FC fill:#1e293b,color:#e2e8f0,stroke:#a855f7,stroke-width:1px
+    style PFC fill:#a855f7,color:#fff,stroke:none
+    style HEAL fill:#f59e0b,color:#1a1a2e,stroke:none
+    style CDP fill:#f97316,color:#fff,stroke:none
+
+    style GEM fill:#4a9eff,color:#fff,stroke:none
+    style ADK fill:#a855f7,color:#fff,stroke:none
+    style FIRE fill:#1e293b,color:#e2e8f0,stroke:#10b981,stroke-width:1px
+    style LOG fill:#1e293b,color:#e2e8f0,stroke:#10b981,stroke-width:1px
