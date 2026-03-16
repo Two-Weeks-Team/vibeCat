@@ -1,6 +1,6 @@
 # VibeCat — Final Architecture
 
-**Last Reviewed:** 2026-03-12
+**Last Reviewed:** 2026-03-16
 **Submission Track:** UI Navigator
 **Core Identity:** Proactive Desktop Companion — OBSERVE → SUGGEST → WAIT → ACT → FEEDBACK
 
@@ -16,7 +16,7 @@ The runtime components:
 - one `Proactive Companion` system prompt driving OBSERVE → SUGGEST → WAIT → ACT → FEEDBACK
 - five `Function Calling tools` for precise desktop control: text_entry, hotkey, focus_app, open_url, type_and_submit
 - one `pendingFC mechanism` for sequential multi-step execution
-- one `self-healing engine` with max 2 retries per step using alternative grounding sources
+- one `self-healing engine` with configurable retries per step (default 1, vision steps 2) using alternative grounding sources
 - one `vision verifier` using ADK screenshot analysis for post-action confirmation
 - one `Chrome DevTools Protocol controller` (chromedp) for browser automation beyond AX tree
 - one local `AX-first executor` on macOS with 80+ keyCode mappings
@@ -85,7 +85,7 @@ Responsibilities:
 - guided-mode fallback when verification is unsafe
 - **navigator overlay panel** displaying:
   - current action with SF Symbol icon per action type
-  - grounding source badge (Accessibility / CDP / Vision / Keyboard)
+  - grounding source badge (AX / Vision / Hotkey / System)
   - step progress indicator (e.g. "Step 2 of 5")
   - result feedback (success / retry / failed)
 - iTerm2 surface profile detection alongside Apple Terminal
@@ -136,10 +136,12 @@ Responsibilities:
   - 8 fields + 4 methods managing FC step queue
   - one step sent at a time; next step only after client confirms previous
   - prevents race conditions in complex multi-step workflows
-- **self-healing navigation** with max 2 retries:
+- **self-healing navigation** with configurable retries per step:
+  - default `MaxLocalRetries: 1` for most steps, `MaxLocalRetries: 2` for vision-based steps
   - on step failure, attempts alternative grounding source
   - AX → CDP fallback for browser elements
   - coordinate-based targeting as last resort
+  - `stepRetryCount` tracks retries; `incrementStepRetry()` / `resetStepRetry()` manage state
 - **vision verification** via ADK screenshot analysis:
   - captures post-action screenshot
   - sends to ADK for visual confirmation of success
@@ -252,9 +254,9 @@ VibeCat uses triple-source grounding to prevent blind clicking:
 | Source | Badge | Technology | Use Case |
 |--------|-------|-----------|----------|
 | Accessibility | AX (blue) | macOS Accessibility API | Native UI element discovery and manipulation |
-| CDP | CDP (orange) | Chrome DevTools Protocol (chromedp) | Precise browser element interaction |
 | Vision | Vision (purple) | Gemini/ADK screenshot analysis | Visual verification and coordinate targeting |
-| Keyboard | ⌨ (green) | CGEvent key injection | App-specific hotkeys (YouTube, IDE shortcuts) |
+| Hotkey | Hotkey (gray) | CGEvent key injection (80+ codes) | App-specific shortcuts (YouTube, IDE, Terminal) |
+| System | System (teal) | Open URL, Focus App, chromedp CDP | Browser navigation, app switching, CDP actions |
 
 ## Safety
 

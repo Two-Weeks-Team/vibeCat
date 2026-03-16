@@ -1,7 +1,7 @@
-# VibeCat — 4-Minute Demo Video Script (v3 — Reality-Based)
+# VibeCat — 4-Minute Demo Video Script (v4 — With Intro)
 
 **Total Runtime:** 4:00
-**Format:** Screen recording + VibeCat voice + user voice
+**Format:** Screen recording + VibeCat voice + user voice + TTS narration
 **Language:** All English
 **Key Rule:** VibeCat ALWAYS speaks first. User only approves.
 
@@ -18,7 +18,44 @@ VibeCat observes screen → VibeCat suggests action → User: "Yeah" → VibeCat
 
 ---
 
-## ACT 1: GREETING + MUSIC (0:00–1:30) ⭐ First Impression
+## INTRO: THE PROBLEM → THE FLIP (0:00–0:10)
+
+Sets the stage — why VibeCat exists in one breath.
+
+### INTRO-01: The Problem (~5s)
+
+**Visual:** Dark background + `docs/Intro-01.jpg` (frustrated developer surrounded by browser tabs)
+**Text overlay (typography):**
+```
+Every AI tool waits for your command.
+But what if one didn't?
+```
+**Audio:** TTS narration (Kimsejun clone voice)
+
+### INTRO-02: The Flip (~5s)
+
+**Visual:** Transition to `docs/Intro-02.jpg` (VibeCat cat connecting code screens + music)
+**Text overlay (typography):**
+```
+Meet VibeCat — a desktop companion
+that suggests before you ask.
+```
+**Audio:** TTS narration (Kimsejun clone voice)
+
+→ **Cut to live desktop recording — ACT 1 starts immediately**
+
+### Why This Structure
+
+| Element | Effect |
+|---------|--------|
+| "Every AI tool waits" | Judges immediately relate — all AI tools are reactive, this is known |
+| "But what if one didn't?" | Curiosity hook — question form pulls attention forward |
+| "suggests before you ask" | VibeCat's core differentiator in one sentence |
+| 10 seconds total | 4-minute video cannot afford a long intro — get to the demo fast |
+
+---
+
+## ACT 1: GREETING + MUSIC (0:10–1:40) ⭐ First Impression
 
 ### Setup
 - Antigravity IDE open with `demo/UserService.swift`
@@ -48,7 +85,7 @@ VibeCat observes screen → VibeCat suggests action → User: "Yeah" → VibeCat
 
 ---
 
-## ACT 2: CODE FIX (1:30–2:45) ⭐ Technical Depth
+## ACT 2: CODE FIX (1:40–2:55) ⭐ Technical Depth
 
 ### Setup
 - Switch back to Antigravity (`Cmd+Tab`)
@@ -77,7 +114,7 @@ VibeCat observes screen → VibeCat suggests action → User: "Yeah" → VibeCat
 
 ---
 
-## ACT 3: TERMINAL COMMAND (2:45–3:30) ⭐ Self-Healing
+## ACT 3: TERMINAL COMMAND (2:55–3:35) ⭐ Self-Healing
 
 ### Setup
 - Open Terminal
@@ -106,7 +143,7 @@ VibeCat observes screen → VibeCat suggests action → User: "Yeah" → VibeCat
 
 ---
 
-## ACT 4: ARCHITECTURE + CLOSE (3:30–4:00)
+## ACT 4: ARCHITECTURE + CLOSE (3:35–4:00)
 
 ### What Happens
 1. Show `architecture.png` in Preview (already open)
@@ -166,5 +203,5 @@ Pattern: VibeCat always observes → describes what it sees → asks permission.
 
 ---
 
-*Script version: 3.0 — Reality-based, 2026-03-15*
+*Script version: 4.0 — With 10s intro, 2026-03-16*
 *Based on 5 observed proactive VibeCat utterances during live testing*

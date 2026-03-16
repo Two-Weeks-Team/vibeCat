@@ -5,9 +5,15 @@
 
 ## Inspiration
 
-Every developer knows the pain: you're deep in a flow state, and suddenly you need to look something up, fix a typo in a terminal command, or find that one Stack Overflow answer. The context switch costs you minutes of mental re-entry time. We kept asking ourselves — what if your desktop had a senior colleague sitting right next to you, watching your screen, and quietly saying *"hey, want me to handle that?"* before you even had to ask?
+> *"Every AI tool waits for your command. But what if one didn't?"*
 
-That question became VibeCat. Most AI tools are reactive — they wait for you to type a command. We wanted to flip that model entirely. A truly proactive companion doesn't wait; it observes, recognizes opportunity, and offers help. Gemini Live API's real-time multimodal capabilities made this vision technically achievable for the first time: an AI that can simultaneously see your screen, hear your voice, and speak back — all in real time.
+Every developer knows the pain: you're deep in a flow state, and suddenly you need to look something up, fix a typo in a terminal command, or find that one Stack Overflow answer. The context switch is the real cost — not the task itself, but the minutes of mental re-entry time you lose every time you break flow to talk to an AI.
+
+Most AI coding tools today are **reactive**. They sit quietly until you type a command, paste an error, or open a chat window. You break your flow to talk to the AI, and the AI breaks your flow to talk back.
+
+We kept asking ourselves — what if your desktop had a senior colleague sitting right next to you, watching your screen, and quietly saying *"hey, want me to handle that?"* before you even had to ask?
+
+That question became VibeCat. We wanted to **flip the reactive model entirely**. A truly proactive companion doesn't wait; it observes, recognizes opportunity, and offers help — then waits for your permission before touching anything. Gemini Live API's real-time multimodal capabilities made this vision technically achievable for the first time: an AI that can simultaneously see your screen, hear your voice, and speak back — all in real time.
 
 ---
 
@@ -21,11 +27,11 @@ Critically, VibeCat always waits for your confirmation before touching anything.
 
 ## How We Built It
 
-**macOS Client (Swift 6.2 + AppKit):** The native client handles screen capture, microphone input, voice playback, and local action execution. We mapped 80+ key codes in `AccessibilityNavigator.swift` for full keyboard control across apps. A floating `NavigatorOverlayPanel` HUD shows the current action, grounding source badge, and progress in real time — so users always know what VibeCat is doing and why.
+**macOS Client (Swift 6.2 + AppKit):** The native client handles screen capture, microphone input, voice playback, and local action execution — with 131 tests across 20 test files. We mapped 80+ key codes in `AccessibilityNavigator.swift` for full keyboard control across apps. A floating `NavigatorOverlayPanel` HUD shows the current action, grounding source badge (AX/Vision/Hotkey/System), and step progress in real time — so users always know what VibeCat is doing and why.
 
 **Realtime Gateway (Go 1.26.1, Cloud Run):** A WebSocket server bridges the Swift client to Gemini Live API. The gateway hosts all 5 FC tool handlers and the `pendingFC` sequential execution mechanism — ensuring multi-step actions never race. A `chromedp`-based Chrome controller handles browser automation via CDP for elements invisible to the Accessibility tree (like canvas-rendered YouTube controls).
 
-**Self-Healing + Vision Verification:** On failure, the gateway retries with an alternative grounding source (AX → CDP → vision coordinates). After each action, it calls the ADK Orchestrator to analyze a fresh screenshot and confirm success before proceeding. All model logic stays server-side; the client owns only UI, capture, transport, and local execution.
+**Self-Healing + Vision Verification:** On failure, the gateway retries with an alternative grounding source (AX → CDP → vision coordinates, up to 2 retries for vision steps). After each action, it requests a fresh screenshot from the client, sends it to the ADK Orchestrator for visual confirmation, and only advances to the next step on success. All model logic stays server-side; the client owns only UI, capture, transport, and local execution.
 
 **Cloud Infrastructure:** Cloud Run (asia-northeast3), Firestore for session state, Secret Manager for credentials, Cloud Logging and Trace for observability.
 

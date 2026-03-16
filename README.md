@@ -19,9 +19,27 @@
 
 ---
 
-## What Is VibeCat?
+## The Problem
 
-VibeCat is a **native macOS desktop companion** that watches your screen, understands your context, and **proactively suggests actions before you ask**. Unlike traditional automation tools that wait for commands, VibeCat observes your workflow and offers help — like a senior colleague sitting next to you.
+<p align="center">
+  <img src="docs/Intro-01.jpg" width="720" alt="The Problem — every AI tool waits for your command">
+</p>
+
+Every AI coding tool today is **reactive** — it sits quietly until you type a command, paste an error, or open a chat window. You break your flow to talk to the AI, and the AI breaks your flow to talk back.
+
+> *"Every AI tool waits for your command. But what if one didn't?"*
+
+The context switch is the real cost. You're deep in a flow state, and suddenly you need to look something up, fix a typo in a terminal command, or find that one Stack Overflow answer. Traditional AI assistants can't help until you stop what you're doing and ask — by which point you've already lost minutes of mental re-entry time.
+
+## The Flip
+
+<p align="center">
+  <img src="docs/Intro-02.jpg" width="720" alt="Meet VibeCat — a desktop companion that suggests before you ask">
+</p>
+
+> *"Meet VibeCat — a desktop companion that suggests before you ask."*
+
+VibeCat is a **native macOS desktop companion** that watches your screen, understands your context, and **proactively suggests actions before you ask**. Instead of waiting for commands, it watches your screen, recognizes opportunities, and speaks up first: *"I notice a null check missing — want me to add it?"* — then waits for your approval before touching anything. Like a senior colleague sitting next to you.
 
 ### Core Flow: OBSERVE → SUGGEST → WAIT → ACT → FEEDBACK
 
@@ -47,23 +65,23 @@ VibeCat is a **native macOS desktop companion** that watches your screen, unders
 
 VibeCat is optimized for three gold-tier surfaces:
 
-### 1. Music Suggestion (Chrome/YouTube)
-> *"You've been coding for a while — want me to put on some music?"*
-> → User: *"Sure!"*
-> → VibeCat opens YouTube, searches for focus music, starts playback
-> → *"There you go! Let me know if you want something different."*
+### Act 1. Proactive Music Suggestion (YouTube Music)
+> VibeCat greets you on session start: *"Hey! How about some relaxing background music while you work?"*
+> → User: *"Yes, play it."*
+> → VibeCat opens YouTube Music, searches for relaxing coding music, uses **vision-based mouse control** to find and click the play button
+> → *"Music is playing! Enjoy your coding session."*
 
-### 2. Code Fix Suggestion (Antigravity IDE)
-> *"I see a potential null check missing in that function — should I add it?"*
-> → User: *"Yeah, go ahead"*
-> → VibeCat triggers inline edit, inserts the fix
-> → *"Done! The null check is in place. Want me to run the tests?"*
+### Act 2. Proactive Code Enhancement (Antigravity IDE)
+> VibeCat reads your code and spots an opportunity: *"I can enhance the comments for this code — want me to?"*
+> → User: *"Sure, go ahead"*
+> → VibeCat clicks Gemini Chat in the IDE, types the enhancement request, and Gemini improves documentation
+> → *"Done! The comments are enhanced with detailed documentation."*
 
-### 3. Terminal Command Improvement (Terminal/iTerm2)
-> *"That ls could show more detail with -la — want me to rerun it?"*
+### Act 3. Terminal Automation (Terminal)
+> VibeCat switches to Terminal and suggests a lint check: *"Want me to run go vet to check for lint issues?"*
 > → User: *"Do it"*
-> → VibeCat types and executes the improved command
-> → *"Here's the detailed listing. Notice the hidden files now showing?"*
+> → VibeCat types `go vet ./...` and executes it
+> → *"Lint check passed! No issues found."*
 
 ## Architecture
 
@@ -337,11 +355,11 @@ This prevents race conditions in multi-step workflows and enables per-step retry
 
 ### Self-Healing Navigation
 
-When an action fails, VibeCat retries with alternative grounding strategies (max 2 retries per step via `stepRetryCount`):
+When an action fails, VibeCat retries with alternative grounding strategies (`MaxLocalRetries: 1` default, `2` for vision steps):
 
 1. **First attempt** — Execute via primary method (AX tree or hotkey)
-2. **Retry 1** — Try alternative grounding source (CDP for browser elements, different AX path)
-3. **Retry 2** — Fall back to vision-based coordinate targeting via ADK screenshot analysis
+2. **Retry** — Try alternative grounding source (CDP for browser elements, different AX path, or vision-based coordinate targeting)
+3. **Vision steps** — Get an extra retry (up to 2) for coordinate-based targeting via ADK screenshot analysis
 4. **Each retry** — `incrementStepRetry()` tracks count; vision verification confirms success before proceeding
 5. **Exhausted** — Graceful fallback to guided mode or human explanation
 
@@ -361,9 +379,9 @@ VibeCat uses **triple-source grounding** to prevent blind clicking:
 | Source | Badge | Technology | Use Case |
 |--------|-------|-----------|----------|
 | **Accessibility** | AX (blue) | macOS Accessibility API | Native UI element discovery and manipulation |
-| **CDP** | CDP (orange) | Chrome DevTools Protocol (chromedp) | Precise browser element interaction |
 | **Vision** | Vision (purple) | Gemini/ADK screenshot analysis | Visual verification and coordinate targeting |
-| **Keyboard** | ⌨ (green) | CGEvent key injection (80+ codes) | App-specific hotkeys (YouTube, IDE, Terminal) |
+| **Hotkey** | Hotkey (gray) | CGEvent key injection (80+ codes) | App-specific shortcuts (YouTube, IDE, Terminal) |
+| **System** | System (teal) | Open URL, Focus App, chromedp CDP | Browser navigation, app switching, CDP actions |
 
 ### Transparent Feedback Pipeline
 
@@ -417,7 +435,7 @@ The full execution pipeline:
 # Swift client
 cd VibeCat
 swift build
-swift test          # 91 tests
+swift test          # 131 tests
 
 # Go gateway
 cd backend/realtime-gateway
@@ -455,7 +473,7 @@ vibeCat/
 ├── VibeCat/                          # Swift package: Core + macOS app + tests
 │   ├── Sources/Core/                 # UI-free models, localization, parsers
 │   ├── Sources/VibeCat/              # AppKit app, AX navigator, overlay UI
-│   └── Tests/VibeCatTests/           # 91 package tests
+│   └── Tests/VibeCatTests/           # 131 tests (20 test files)
 ├── backend/realtime-gateway/         # Go: WebSocket gateway, FC tools, self-healing
 │   └── internal/
 │       ├── ws/                       # Handler, navigator, metrics
@@ -505,13 +523,13 @@ VibeCat uses **safe-immediate execution** with mandatory confirmation for proact
 
 | Technology | Version | Role |
 |-----------|---------|------|
-| **Gemini Live API** | via GenAI SDK v1.48 | Real-time multimodal conversation (voice + vision + FC) |
+| **Gemini Live API** | via GenAI SDK v1.49.0 | Real-time multimodal conversation (voice + vision + FC) |
 | **Gemini Function Calling** | 5 tools registered | Structured tool invocation for desktop actions |
 | **ADK (Agent Development Kit)** | Go / Cloud Run | Confidence escalation, vision verification, memory/replay |
 | **Google Cloud Run** | asia-northeast3 | Serverless backend hosting (gateway + orchestrator) |
 | **chromedp** | v0.14.2 | Go-native Chrome DevTools Protocol client |
 | **macOS Accessibility API** | AppKit / AX | Native UI element discovery and action execution |
-| **Swift** | 6.2.4 verified (`swift-tools-version: 6.2`) | macOS client with 91 package tests |
+| **Swift** | 6.2.4 verified (`swift-tools-version: 6.2`) | macOS client with 131 tests (20 test files) |
 | **Go** | 1.26.1 | Backend services with full test/vet coverage |
 | **Firestore** | Native mode | Action state persistence, session memory, replay fixtures |
 | **Cloud Logging / Trace** | GCP | Navigator telemetry, self-healing metrics, processingState transitions |
@@ -535,7 +553,7 @@ These feed Cloud Logging, Cloud Trace, and Cloud Monitoring. Completed task repl
 | Asset | Location |
 |-------|----------|
 | Architecture diagram | This README (Mermaid) + `docs/FINAL_ARCHITECTURE.md` |
-| Demo video script | `docs/DEMO_VIDEO_SCRIPT.md` |
+| Demo video script | `docs/challenge/video-1-demo/SCRIPT.md` |
 | Devpost submission text | `docs/DEVPOST_SUBMISSION.md` |
 | Current status | `docs/CURRENT_STATUS_20260312.md` |
 | Deployment evidence | `docs/evidence/DEPLOYMENT_EVIDENCE.md` |

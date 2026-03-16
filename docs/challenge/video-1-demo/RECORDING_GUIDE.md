@@ -82,7 +82,7 @@ open /Users/kimsejun/GitHub/vibeCat/docs/architecture.png
    - 저장 위치: 바탕화면
 4. **"기록"** 클릭
 
-### 녹화 중 시나리오 (docs/DEMO_VIDEO_SCRIPT.md 참조)
+### 녹화 중 시나리오 (docs/challenge/video-1-demo/SCRIPT.md 참조)
 
 #### ACT 1: 훅 (0:00~0:25)
 - 빠르게 앱 전환하며 컨텍스트 스위칭 보여주기
