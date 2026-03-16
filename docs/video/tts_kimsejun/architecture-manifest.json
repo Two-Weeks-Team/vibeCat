@@ -1,0 +1,62 @@
+[
+  {
+    "id": "arch1-01-intro",
+    "file": "arch1-01-intro.wav",
+    "duration_ms": 7883,
+    "text": "VibeCat's architecture has three layers: the macOS client, a cloud gateway, and Google Cloud Platform."
+  },
+  {
+    "id": "arch1-02-client",
+    "file": "arch1-02-client.wav",
+    "duration_ms": 7639,
+    "text": "The Swift client handles the cat UI, screen capture, accessibility navigation, and overlay feedback."
+  },
+  {
+    "id": "arch1-03-gateway",
+    "file": "arch1-03-gateway.wav",
+    "duration_ms": 9520,
+    "text": "The Go gateway on Cloud Run manages Gemini Live sessions, five function calling tools, a step queue, and self-healing retries with Chrome DevTools."
+  },
+  {
+    "id": "arch1-04-cloud",
+    "file": "arch1-04-cloud.wav",
+    "duration_ms": 9415,
+    "text": "Google Cloud provides the Gemini Live API for reasoning, ADK Orchestrator for vision verification, Firestore, and Cloud Trace."
+  },
+  {
+    "id": "arch1-05-flow",
+    "file": "arch1-05-flow.wav",
+    "duration_ms": 9914,
+    "text": "Voice and screenshots flow up from the client. Desktop actions and function calls flow back down. Verification loops between cloud and gateway."
+  },
+  {
+    "id": "arch2-01-intro",
+    "file": "arch2-01-intro.wav",
+    "duration_ms": 6571,
+    "text": "The action execution pipeline has four phases: receive, target, verify, and result."
+  },
+  {
+    "id": "arch2-02-receive",
+    "file": "arch2-02-receive.wav",
+    "duration_ms": 6327,
+    "text": "Gemini issues a function call, and the pending FC queue plans and sequences each step."
+  },
+  {
+    "id": "arch2-03-target",
+    "file": "arch2-03-target.wav",
+    "duration_ms": 8951,
+    "text": "Three grounding sources target the element: Accessibility API for native apps, Chrome DevTools for browsers, and Vision for coordinates."
+  },
+  {
+    "id": "arch2-04-verify",
+    "file": "arch2-04-verify.wav",
+    "duration_ms": 6211,
+    "text": "After each action, a screenshot is captured and analyzed by ADK Vision to confirm success."
+  },
+  {
+    "id": "arch2-05-result",
+    "file": "arch2-05-result.wav",
+    "duration_ms": 9740,
+    "text": "On success, proceed to the next step. On failure, retry with an alternative source up to twice, then report to the user."
+  }
+]

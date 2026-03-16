@@ -1,0 +1,59 @@
+{
+  "voice_id": "vibelingo_cmlv2e47n004b0glnf1u3oq5v_1771607035",
+  "model": "speech-2.8-hd",
+  "speed": 1.2,
+  "diagrams": [
+    {
+      "title": "System Architecture",
+      "image": "docs/video/architecture/slide1-system.png",
+      "lines": [
+        {
+          "id": "arch1-01-intro",
+          "text": "VibeCat's architecture has three layers: the macOS client, a cloud gateway, and Google Cloud Platform."
+        },
+        {
+          "id": "arch1-02-client",
+          "text": "The Swift client handles the cat UI, screen capture, accessibility navigation, and overlay feedback."
+        },
+        {
+          "id": "arch1-03-gateway",
+          "text": "The Go gateway on Cloud Run manages Gemini Live sessions, five function calling tools, a step queue, and self-healing retries with Chrome DevTools."
+        },
+        {
+          "id": "arch1-04-cloud",
+          "text": "Google Cloud provides the Gemini Live API for reasoning, ADK Orchestrator for vision verification, Firestore, and Cloud Trace."
+        },
+        {
+          "id": "arch1-05-flow",
+          "text": "Voice and screenshots flow up from the client. Desktop actions and function calls flow back down. Verification loops between cloud and gateway."
+        }
+      ]
+    },
+    {
+      "title": "Action Execution Pipeline",
+      "image": "docs/video/architecture/slide2-pipeline.png",
+      "lines": [
+        {
+          "id": "arch2-01-intro",
+          "text": "The action execution pipeline has four phases: receive, target, verify, and result."
+        },
+        {
+          "id": "arch2-02-receive",
+          "text": "Gemini issues a function call, and the pending FC queue plans and sequences each step."
+        },
+        {
+          "id": "arch2-03-target",
+          "text": "Three grounding sources target the element: Accessibility API for native apps, Chrome DevTools for browsers, and Vision for coordinates."
+        },
+        {
+          "id": "arch2-04-verify",
+          "text": "After each action, a screenshot is captured and analyzed by ADK Vision to confirm success."
+        },
+        {
+          "id": "arch2-05-result",
+          "text": "On success, proceed to the next step. On failure, retry with an alternative source up to twice, then report to the user."
+        }
+      ]
+    }
+  ]
+}
