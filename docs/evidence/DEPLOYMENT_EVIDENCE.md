@@ -39,14 +39,6 @@
 | [`backend/realtime-gateway/main.go`](../../backend/realtime-gateway/main.go) | Cloud Logging, Cloud Trace (OTEL) | Observability |
 | [`infra/setup.sh`](../../infra/setup.sh) | APIs, Artifact Registry, Firestore, Secret Manager, IAM | One-time GCP project bootstrap |
 
-### Option 2: Screen Recording of GCP Console
-
-See `docs/GCP_PROOF_GUIDE.md` for recording instructions showing:
-- Cloud Run services list (green status)
-- Cloud Logging traces
-- Firestore collections
-- Secret Manager entries
-
 ### Google Cloud Services Used
 
 | Service | Purpose | Evidence |
