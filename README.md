@@ -17,6 +17,10 @@
   <img src="https://img.shields.io/badge/GCP-Cloud_Run-4285F4?style=flat-square&logo=googlecloud&logoColor=white" alt="GCP">
 </p>
 
+<p align="center">
+  <a href="https://youtu.be/csR-gjEoWp8">▶ Watch the 4-minute demo video</a>
+</p>
+
 ---
 
 ## The Problem
@@ -562,10 +566,11 @@ These feed Cloud Logging, Cloud Trace, and Cloud Monitoring. Completed task repl
 
 ### Dev.to Blog Posts
 
-15 published articles documenting the development journey:
+18 published articles documenting the development journey:
 
-- [the moment vibecat stopped waiting and started suggesting](https://dev.to/combba/the-moment-vibecat-stopped-waiting-and-started-suggesting-4ek) — Proactive Companion pivot
-- [six characters, one soul](https://dev.to/combba/six-characters-one-soul-5008) — Character system architecture
+- [submitting vibecat: what 3 weeks of building a desktop AI actually taught me](https://dev.to/combba/submitting-vibecat-what-3-weeks-of-building-a-desktop-ai-actually-taught-me-1409) — Submission day retrospective (series finale)
+- [when your agent fails, does it just... stop?](https://dev.to/combba/when-your-agent-fails-does-it-just-stop-5c77) — Self-healing deep dive
+- [the moment vibecat stopped waiting and started suggesting](https://dev.to/combba/the-moment-vibecat-stopped-waiting-and-started-suggesting-5ba9) — Proactive Companion pivot
 - Full series: [dev.to/combba](https://dev.to/combba)
 
 ## License

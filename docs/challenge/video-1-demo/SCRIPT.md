@@ -197,7 +197,7 @@ Pattern: VibeCat always observes → describes what it sees → asks permission.
 | **Innovation & Multimodal UX (40%)** | Voice-first, proactive AI that speaks before asked. Triple-source grounding (AX+CDP+Vision). No text boxes. |
 | **Technical Implementation (30%)** | GenAI SDK + ADK on Cloud Run. 5 FC tools. Self-healing with vision verification. |
 | **Demo & Presentation (30%)** | Real working software. Architecture diagram. GCP Console proof. Clear problem→solution narrative. |
-| **Blog Bonus (+0.6)** | 15 posts on dev.to/combba |
+| **Blog Bonus (+0.6)** | 18 posts on dev.to/combba |
 | **Auto Deploy (+0.2)** | infra/deploy.sh |
 | **GDG (+0.2)** | gdg.community.dev/u/m5n58q/ |
 
