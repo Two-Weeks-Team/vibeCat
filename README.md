@@ -433,6 +433,18 @@ The full execution pipeline:
   - Firestore database
   - Secret Manager configured
 
+### Environment Setup
+
+```bash
+# Gateway
+cp backend/realtime-gateway/.env.example backend/realtime-gateway/.env
+# Edit .env → set GEMINI_API_KEY, GCP_PROJECT_ID, GATEWAY_AUTH_SECRET
+
+# Orchestrator
+cp backend/adk-orchestrator/.env.example backend/adk-orchestrator/.env
+# Edit .env → set GEMINI_API_KEY, GCP_PROJECT_ID
+```
+
 ### Build & Test
 
 ```bash
