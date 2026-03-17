@@ -1,97 +1,85 @@
 # P0-6: Heartbeat Pattern
 
-**SDK Verification**: No SDK support needed. Client-side implementation using existing `Session.SendAudio()`.
+## Status
 
-**Live API compatible**: YES (this IS a Live API feature)
+Implement as a refactor and tuning pass over the existing keepalive behavior.
 
-**Current Code** (session.go):
-- `SendAudio(pcmData []byte)` at line 89-98 — sends PCM audio to Gemini
-- Audio format: `audio/pcm;rate=16000` (16kHz, 16-bit PCM)
+## Current Repo State
 
-**Current Code** (handler.go):
-- Keepalive goroutine at lines 2062-2080 — EXISTS but does WebSocket ping, NOT Gemini audio keepalive
-- Reconnection logic at lines 2001-2058 — handles goaway with 3 retry attempts
+The gateway already sends silent PCM periodically.
 
-**Current Problem**: 
-- Gemini Live API disconnects after 2-3 minutes of silence
-- Current mitigation: session resumption on disconnect
-- Better approach: prevent disconnect with heartbeat
+- `backend/realtime-gateway/internal/ws/handler.go`
+  - starts a keepalive goroutine
+  - currently sends `320` bytes of silence every `15s`
 
-**Implementation**:
-1. Add heartbeat goroutine that sends silent PCM every 5 seconds
-2. Start when session connects, stop on close
-3. Silent PCM = 320 bytes of zeros (16-bit samples at 16kHz = 10ms of silence)
-4. Only send when no user audio has been sent recently (avoid unnecessary traffic)
+This means the feature is not new. The work is to make it correct, observable, and session-owned.
 
-**Go Code**:
-```go
-// In session.go, add heartbeat method:
+## Target Behavior
 
-const (
-    heartbeatInterval = 5 * time.Second
-    silentPCMSize     = 320 // 10ms of 16kHz 16-bit PCM silence
-)
+1. The heartbeat belongs to the `live.Session` lifecycle, not the outer handler loop.
+2. Silent audio is sent only when the session has been idle long enough.
+3. Heartbeat stops automatically when the session closes or reconnects.
+4. Reconnection logic remains the fallback when heartbeat is insufficient.
 
-func (s *Session) StartHeartbeat(ctx context.Context) {
-    silence := make([]byte, silentPCMSize)
-    ticker := time.NewTicker(heartbeatInterval)
-    go func() {
-        defer ticker.Stop()
-        for {
-            select {
-            case <-ctx.Done():
-                return
-            case <-ticker.C:
-                if s.shouldSendHeartbeat() {
-                    if err := s.SendAudio(silence); err != nil {
-                        slog.Warn("heartbeat send failed", "err", err)
-                        return
-                    }
-                }
-            }
-        }
-    }()
-}
+## Implementation Decision
 
-// In Connect(), after session creation (line 85):
-sess := &Session{
-    gemini: geminiSession,
-    cancel: cancel,
-    Cfg:    cfg,
-}
-sess.StartHeartbeat(ctx)
-return sess, nil
-```
+### Move ownership to `live.Session`
 
-**Optimization** — skip heartbeat when user is actively sending:
-```go
-type Session struct {
-    // ... existing fields ...
-    lastAudioSent time.Time
-    heartbeatMu   sync.Mutex
-}
+Refactor:
 
-func (s *Session) SendAudio(pcmData []byte) error {
-    s.heartbeatMu.Lock()
-    s.lastAudioSent = time.Now()
-    s.heartbeatMu.Unlock()
-    // ... existing send logic
-}
+- start heartbeat from `Manager.Connect()`
+- store `lastAudioSentAt` on the session
+- update that timestamp in `SendAudio()`
 
-func (s *Session) shouldSendHeartbeat() bool {
-    s.heartbeatMu.Lock()
-    defer s.heartbeatMu.Unlock()
-    return time.Since(s.lastAudioSent) > heartbeatInterval
-}
-```
+### Add idle suppression
 
-**Verification**:
-- Start session, stay silent for 5+ minutes
-- Verify session stays connected (no goaway/reconnection)
-- Check Gemini metrics for heartbeat traffic volume
-- Compare reconnection frequency before/after
+Only send silence when:
 
-**Risks**:
-- Minimal bandwidth overhead (320 bytes every 5s = 64 bytes/s)
-- Silent audio might trigger VAD if not configured correctly
-- May conflict with proactive audio mode
+- no user audio has been sent recently
+- model is not actively streaming a turn that would make the heartbeat redundant
+
+### Keep cadence configurable
+
+Use env/config instead of hardcoding.
+
+Recommended starting values:
+
+- interval: `10s` or `15s`
+- silent chunk: `320` bytes
+
+## Concrete File Changes
+
+### `backend/realtime-gateway/internal/live/session.go`
+
+- add heartbeat state to `Session`
+- start heartbeat after successful Live connect
+- update `lastAudioSentAt` inside `SendAudio()`
+
+### `backend/realtime-gateway/internal/ws/handler.go`
+
+- remove duplicated handler-owned keepalive loop after session refactor
+- keep reconnect loop unchanged
+
+## Observability
+
+Add counters/logs for:
+
+- heartbeat sent
+- heartbeat skipped because active audio exists
+- heartbeat send failure
+- reconnects after idle periods
+
+## Acceptance Criteria
+
+1. Idle sessions remain connected for at least 10 minutes in staging.
+2. Heartbeat stops after session close.
+3. Reconnect count does not increase after refactor.
+
+## Risks
+
+- Sending silence too often adds noise and waste
+- Sending silence too rarely may still allow idle disconnects
+
+## Sources
+
+- [Gemini Live API guide](https://ai.google.dev/gemini-api/docs/live-guide)

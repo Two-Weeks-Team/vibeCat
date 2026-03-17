@@ -1,453 +1,150 @@
 # VibeCat Enhancement Research — 2026-03-17
 
-> Post-submission (v0.1.0) research for future development.
-> Source: GoogleCloudPlatform/generative-ai repo + Gemini Live Agent Challenge resources + competition analysis.
-
-## Current State (v0.1.0)
-
-| Component | Details |
-|-----------|---------|
-| **Category** | UI Navigator |
-| **Client** | Swift 6.2, macOS 15+, ScreenCaptureKit, Accessibility API |
-| **Backend** | Go 1.26.1, GenAI SDK v1.49.0, ADK v0.6.0 |
-| **Cloud** | Cloud Run (asia-northeast3), Firestore, Secret Manager, Cloud Logging/Trace/Monitoring |
-| **Models** | gemini-2.5-flash-native-audio-preview, gemini-2.5-flash-preview-tts, gemini-3.1-flash-lite-preview, gemini-2.5-flash |
-| **Features** | Proactive Companion, 5 FC tools, Triple-source grounding (AX/CDP/Vision), Self-healing, 9-agent ADK graph |
-| **Tests** | 131 tests (Swift 20 files + Go 29 files), all passing |
-
----
-
-## Judging Criteria
-
-| Criteria | Weight | Current Score | Gap |
-|----------|:------:|:------------:|-----|
-| Innovation & Multimodal UX | 40% | ★★★★☆ | Affective Dialog expansion, Thinking transparency |
-| Technical Implementation | 30% | ★★★★★ | Model upgrade (3.1), Context Caching, Structured Output |
-| Demo & Presentation | 30% | ★★★★☆ | Submitted (frozen) |
-
----
-
-## Enhancement Roadmap (Priority Order)
-
-### P0 — Direct UI Navigator Impact
-
-#### 1. ThinkingConfig + Thought Signatures
-
-**Source**: `gemini/thinking/intro_thought_signatures.ipynb`
-
-**Current**: Model reasoning is opaque. Multi-step navigation relies on implicit context.
-
-**Enhancement**: Enable thinking mode for transparent chain-of-thought reasoning.
-
-```go
-config := &genai.GenerateContentConfig{
-    ThinkingConfig: &genai.ThinkingConfig{
-        IncludeThoughts: true,
-    },
-}
-```
-
-**Thought Signatures** are critical for multi-step FC workflows:
-- Model returns `thought_signature` (encrypted reasoning state) with each FC
-- Must be preserved in conversation history for reasoning continuity
-- **Rules**: Never merge signed Parts with unsigned Parts; never merge two signed Parts
-
-**Impact**:
-- Multi-step navigation accuracy improvement
-- UI transparency ("thinking..." display)
-- Debugging visibility for development
-
-**Complexity**: Medium | **Files to modify**: `internal/live/session.go`, `internal/ws/handler.go`
-
----
-
-#### 2. Context Caching
-
-**Source**: `gemini/context-caching/intro_context_caching.ipynb`
-
-**Current**: System prompt + persona context sent with every request.
-
-**Enhancement**: Cache static context for ~75% input token cost reduction.
-
-```go
-cache, _ := client.Caches.Create(ctx, model, &genai.CreateCachedContentConfig{
-    Contents:          systemPromptContents,
-    SystemInstruction: vibeCatPersona,
-    TTL:               time.Hour,
-})
-
-// Use in requests
-resp, _ := client.Models.GenerateContent(ctx, model, userContents, &genai.GenerateContentConfig{
-    CachedContent: cache.Name,
-})
-```
-
-**Requirements**:
-- Minimum 2,048 tokens (VibeCat system prompt exceeds this)
-- Cache is model-specific
-- Default TTL: 60 minutes (configurable)
-- Usage metadata: `response.UsageMetadata.CachedContentTokenCount`
-
-**Impact**: Cost reduction + faster TTFT (time to first token)
-
-**Complexity**: Low | **Files to modify**: `internal/live/session.go`, `main.go` (cache lifecycle)
-
----
-
-#### 3. Forced Function Calling (ANY Mode)
-
-**Source**: `gemini/function-calling/forced_function_calling.ipynb`
-
-**Current**: AUTO mode only — model decides whether to call a tool or respond with text.
-
-**Enhancement**: Use `ANY` mode when user intent clearly requires tool execution.
-
-```go
-// When user says "VS Code 열어줘" — force tool execution
-config.ToolConfig = &genai.ToolConfig{
-    FunctionCallingConfig: &genai.FunctionCallingConfig{
-        Mode: genai.FunctionCallingConfigModeAny,
-        AllowedFunctionNames: []string{"navigate_focus_app"},
-    },
-}
-
-// For casual chat — disable tools
-config.ToolConfig = &genai.ToolConfig{
-    FunctionCallingConfig: &genai.FunctionCallingConfig{
-        Mode: genai.FunctionCallingConfigModeNone,
-    },
-}
-```
-
-**Three modes**:
-| Mode | When to Use |
-|------|------------|
-| `AUTO` | Default — model decides |
-| `ANY` | Clear user intent for action (force FC) |
-| `NONE` | Casual conversation (disable FC) |
-
-**Impact**: Deterministic routing → fewer "I'll help you with that" responses when action is needed
-
-**Complexity**: Low | **Files to modify**: `internal/live/session.go`, `internal/ws/handler.go` (intent classifier)
-
----
-
-#### 4. Parallel Function Calling
-
-**Source**: `gemini/function-calling/parallel_function_calling.ipynb`
-
-**Current**: Sequential FC execution (`pendingFC sequential execution`).
-
-**Enhancement**: Gemini can return multiple FCs in a single response → execute in parallel.
-
-```go
-calls := extractFunctionCalls(response) // Multiple FCs from single response
-
-var wg sync.WaitGroup
-results := make([]*genai.FunctionResponse, len(calls))
-for i, call := range calls {
-    wg.Add(1)
-    go func(idx int, c *genai.FunctionCall) {
-        defer wg.Done()
-        results[idx] = execute(ctx, c)
-    }(i, call)
-}
-wg.Wait()
-
-session.SendToolResponse(results)
-```
-
-**Use case**: "터미널 열고 VS Code도 열어줘" → `navigate_focus_app("Terminal")` + `navigate_focus_app("Visual Studio Code")` simultaneously.
-
-**Impact**: Multi-task scenarios ~2x faster
-
-**Complexity**: Medium | **Files to modify**: `internal/ws/handler.go` (pendingFC logic)
-
----
-
-#### 5. Safety Decision Handling
-
-**Source**: `gemini/computer-use/web-agent/web_agent.py`
-
-**Current**: No explicit safety confirmation for risky actions.
-
-**Enhancement**: Model returns `safety_decision: "require_confirmation"` for risky operations → prompt user before execution.
-
-```go
-type SafetyDecision struct {
-    Decision    string `json:"decision"`     // "require_confirmation" | "proceed"
-    Explanation string `json:"explanation"`
-}
-
-func (h *Handler) handleFunctionCall(call FunctionCall) {
-    if call.SafetyDecision != nil && call.SafetyDecision.Decision == "require_confirmation" {
-        // Send to Swift UI for user approval
-        approved := h.requestUserApproval(call.SafetyDecision.Explanation)
-        if !approved {
-            h.sendToolResponse(call.Name, map[string]any{"result": "user_denied"})
-            return
-        }
-        // Include safety_acknowledgement: true in response
-    }
-    h.executeTool(call)
-}
-```
-
-**Impact**: Production-level safety for file deletion, password entry, system commands
-
-**Complexity**: Medium | **Files to modify**: `internal/ws/handler.go`, Swift UI (confirmation dialog)
-
----
-
-#### 6. Heartbeat Pattern
-
-**Source**: `gemini/sample-apps/gemini-live-telephony-app/utils/live_api.py`
-
-**Current**: Session resumption on disconnect. No active keep-alive.
-
-**Enhancement**: Send 320 bytes of silent PCM every 5 seconds to prevent timeout during idle periods.
-
-```go
-func (s *Session) startHeartbeat(ctx context.Context) {
-    silence := make([]byte, 320) // 16-bit PCM silence
-    ticker := time.NewTicker(5 * time.Second)
-    go func() {
-        defer ticker.Stop()
-        for {
-            select {
-            case <-ctx.Done():
-                return
-            case <-ticker.C:
-                _ = s.SendAudio(silence)
-            }
-        }
-    }()
-}
-```
-
-**Impact**: Prevents connection drops during Proactive Companion idle observation periods.
-
-**Complexity**: Low | **Files to modify**: `internal/live/session.go`
-
----
-
-### P1 — Quality & Reliability
-
-#### 7. Controlled Generation (JSON Schema)
-
-**Source**: `gemini/controlled-generation/intro_controlled_generation.ipynb`
-
-**Current**: Partially structured output in ADK tool classification.
-
-**Enhancement**: Full JSON Schema constraints with enum support.
-
-```go
-// For ADK orchestrator — structured action decisions
-config := &genai.GenerateContentConfig{
-    ResponseMIMEType: "application/json",
-    ResponseSchema: &genai.Schema{
-        Type: genai.TypeObject,
-        Properties: map[string]*genai.Schema{
-            "action":     {Type: genai.TypeString, Enum: []string{"observe", "suggest", "act", "feedback"}},
-            "confidence": {Type: genai.TypeNumber},
-            "target":     {Type: genai.TypeString},
-            "reasoning":  {Type: genai.TypeString},
-        },
-        Required: []string{"action", "confidence"},
-    },
-}
-
-// Enum mode for classification
-config := &genai.GenerateContentConfig{
-    ResponseMIMEType: "text/x.enum",
-    ResponseSchema: &genai.Schema{
-        Type: genai.TypeString,
-        Enum: []string{"OBSERVE", "SUGGEST", "ACT", "FEEDBACK", "IDLE"},
-    },
-}
-```
-
-**Impact**: Eliminates JSON parse errors in agent communication
-
-**Complexity**: Low | **Files to modify**: ADK agent configs
-
----
-
-#### 8. Gemini Native `computer_use` Tool
-
-**Source**: `gemini/computer-use/intro_computer_use.ipynb`, `web-agent/`
-
-**Current**: 5 custom FC tools with absolute coordinates.
-
-**Enhancement**: Gemini's built-in `computer_use` tool with normalized coordinates (0-1000).
-
-```go
-tools := []*genai.Tool{{
-    ComputerUse: &genai.ComputerUse{
-        Environment: genai.EnvironmentOS,
-        ExcludedPredefinedFunctions: []string{"drag_and_drop"},
-    },
-}}
-```
-
-**Key differences from current approach**:
-- **Normalized coordinates (0-1000)** — resolution-independent
-- **FunctionResponse includes screenshot blob** — model verifies action results inline
-- **Environment switching** — `ENVIRONMENT_BROWSER` vs `ENVIRONMENT_OS`
-
-**⚠️ This is an architectural shift** — replaces the 5-tool approach with a unified tool.
-Recommend: Experiment on a separate feature branch first.
-
-**Impact**: Potentially better visual precision (key judging criterion)
-
-**Complexity**: High | **Files to modify**: Major refactor of `internal/live/session.go`, `internal/ws/handler.go`, all navigator logic
-
----
-
-### P2 — Agent Architecture
-
-#### 9. Always-On Memory Agent (Sleep/Consolidation)
-
-**Source**: `gemini/agents/always-on-memory-agent/`
-
-**Current**: Firestore session memory (passive storage).
-
-**Enhancement**: Human-like memory with active consolidation.
-
-```
-IngestAgent (multimodal) → SQLite → [30min timer] → ConsolidateAgent → QueryAgent
-```
-
-**Key features**:
-- **Active consolidation**: Idle timer triggers cross-memory pattern discovery
-- **Entity/Topic extraction**: Structured memory fields (not just raw text)
-- **Importance scoring**: Priority-based memory retrieval
-- **Connection tracking**: `from_id ↔ to_id` relationships between memories
-
-**Use case**: VibeCat learns "user always opens Spotify after lunch" → proactive suggestion timing improves.
-
-**Impact**: Better Proactive Companion suggestions over time
-
-**Complexity**: High | **Files to modify**: New `internal/memory/` package in ADK orchestrator
-
----
-
-#### 10. MCP (Model Context Protocol) Integration
-
-**Source**: `gemini/mcp/adk_mcp_app/`, `adk_multiagent_mcp_app/`
-
-**Current**: 5 internal FC tools, no external tool ecosystem.
-
-**Enhancement**: Connect external services as MCP servers.
-
-```go
-// ADK + MCP toolset integration
-rootAgent := adk.NewLLMAgent(adk.LLMAgentConfig{
-    Tools: []adk.Tool{
-        adk.NewMCPToolset(adk.StdioServerParams{
-            Command: "npx", Args: []string{"@anthropic/filesystem-mcp"},
-        }),
-    },
-})
-```
-
-**Potential MCP servers**:
-- File System MCP → project file search/management
-- GitHub MCP → issue/PR management
-- Spotify MCP → music control
-- Calendar MCP → schedule queries
-
-**Impact**: Extensible capability without code changes
-
-**Complexity**: Medium | **Files to modify**: ADK orchestrator agent graph
-
----
-
-#### 11. Real-time RAG
-
-**Source**: `gemini/multimodal-live-api/real_time_rag_bank_loans_gemini_2_0.ipynb`
-
-**Current**: Google Search grounding only (no custom document search).
-
-**Enhancement**: Embed user's project docs → vector similarity search during live conversation.
-
-```
-User voice → intent extraction → text-embedding-005 → cosine similarity → top-K chunks → context injection
-```
-
-**Use case**: User asks about project API → VibeCat searches project README/docs instead of web.
-
-**Impact**: Project-specific knowledge grounding
-
-**Complexity**: High | **New services**: Embedding pipeline, vector store (or Firestore with embedding field)
-
----
-
-## Competition Insights
-
-### What Judges Value Most
-
-| Judge (Organization) | Key Insight |
-|---|---|
-| Richard Moot (Square) | "Projects that consider ALL judging criteria stand out" |
-| Warren Marusiak (Atlassian) | "Would I actually use this? Something unique that differentiates" |
-| Kelvin Boateng (Google) | "Visual appeal first, then functionality. Depart from templates" |
-
-### Winning Patterns (from past Google-sponsored competitions)
-
-| Winner | Differentiator | VibeCat Parallel |
-|--------|---------------|-----------------|
-| Jayu (2024 Best Overall) | Screen-aware personal assistant | VibeCat's proactive approach is more advanced |
-| Prospera (Most Useful) | Real-time sales coaching during live conversations | Similar real-time feedback loop |
-| NurAI (2026 submission) | Seamless see-hear-speak loop with interruptible conversations | VibeCat has this |
-
-### VibeCat's Unique Advantage
-
-Most submissions are **reactive** chatbots. VibeCat's **proactive companion model** (OBSERVE → SUGGEST → WAIT → ACT → FEEDBACK) is a genuine paradigm shift that few competitors match.
-
----
-
-## Technical Reference
-
-### Models Available (March 2026)
-
-| Model | Purpose | Status |
-|-------|---------|--------|
-| `gemini-2.5-flash-native-audio-preview-12-2025` | Live API (native audio) | ✅ Using |
-| `gemini-2.5-flash-preview-tts` | Text-to-speech | ✅ Using |
-| `gemini-3.1-flash-lite-preview` | Vision (cost-effective) | ✅ Using |
-| `gemini-2.5-flash` | Search + tool use | ✅ Using |
-| `gemini-3.1-pro-preview` | Premium reasoning | ❌ Not using |
-| `gemini-2.5-flash-tts` | Expressive TTS | ❌ Not using |
-| `gemini-embedding-2-preview` | Multimodal embeddings | ❌ Not using |
-
-**⚠️ Deprecation**: `gemini-2.5-flash` and `gemini-2.5-pro` deprecated June 17, 2026.
-
-### GCP Services Currently Used (7)
-
-Cloud Run, Firestore, Secret Manager, Cloud Logging, Cloud Trace, Cloud Monitoring, Artifact Registry
-
-### GCP Services Available to Add
-
-| Service | Use Case | Priority |
-|---------|----------|:--------:|
-| Cloud Storage | Generated artifact storage | Low |
-| Cloud Tasks | Background job scheduling | Medium |
-| Cloud Pub/Sub | Service-to-service async messaging | Medium |
-| Error Reporting | Centralized error tracking | Low |
-
----
-
-## Research Sources
-
-| Source | What Was Analyzed |
-|--------|------------------|
-| [GoogleCloudPlatform/generative-ai](https://github.com/GoogleCloudPlatform/generative-ai) | Cloned and analyzed: computer-use, Live API, context-caching, thinking, controlled-generation, MCP, function-calling, agents, url-context, grounding |
-| [Gemini Live Agent Challenge Resources](https://geminiliveagentchallenge.devpost.com/resources) | ADK bidi-streaming, GenMedia, multimodality agents |
-| [Challenge Rules](https://geminiliveagentchallenge.devpost.com/rules) | Post-submission development policy |
-| Competition Analysis | Past Devpost winners, judge interview insights, submission patterns |
-| Gemini API Docs | Latest capabilities, model changelog, deprecation notices |
-
----
-
-*Document generated: 2026-03-17 | For VibeCat v0.2.0+ development planning*
+> Source-verified implementation brief for post-submission development.
+> Scope: `docs/ideas/enhancements/01-14`.
+> Verified against current repo code, `google.golang.org/genai v1.49.0`, `google.golang.org/adk v0.6.0`, and current official Gemini / Google Cloud docs.
+
+## Executive Summary
+
+The original research set identified the right capability buckets, but several documents mixed together:
+
+- Gemini Live features vs batch `GenerateContent` features
+- SDK-supported fields vs notebook-only examples
+- cloud-safe production patterns vs local-only experiments
+- new work vs functionality that VibeCat already implements
+
+This revision turns the set into an implementation brief the development team can actually execute.
+
+Implementation ticket breakdown lives in `docs/ideas/IMPLEMENTATION_BACKLOG_20260317.md`.
+
+## Source-Verified Corrections
+
+1. The current Live model `gemini-2.5-flash-native-audio-preview-12-2025` does support thinking. The official Live guide explicitly says the latest native audio model supports thinking and enables dynamic thinking by default.
+2. Context caching is still batch-only for VibeCat. `LiveConnectConfig` has no cached-content field. In Go SDK v1.49.0 the request field is `GenerateContentConfig.CachedContent`, not `CachedContentName`.
+3. The explicit caching minimum for the models VibeCat uses is not 2,048 tokens across the board. Current docs show `Gemini 2.5 Flash` and `Gemini 3 Flash Preview` with a 1,024-token minimum.
+4. `ToolConfig` exists on `GenerateContentConfig` only. Forced function-calling modes do not apply to `LiveConnectConfig`.
+5. Parallel/multi-tool use exists in Live API, but VibeCat must not execute desktop UI actions in parallel yet. The current gateway stores only one pending FC at a time; multiple function calls in one response currently create a state overwrite risk.
+6. Safety handling is not greenfield work. VibeCat already has navigator risk confirmation flow in the backend and client; the enhancement is to centralize and harden it.
+7. Heartbeat is not greenfield work either. The gateway already sends silent PCM every 15 seconds. The enhancement is to refactor and tune it, not invent it.
+8. Browser `computer_use` is still browser-only. It does not replace macOS-wide navigation.
+9. Timer-based memory consolidation is not valid on Cloud Run because instances scale to zero. Use Cloud Scheduler + Cloud Tasks + HTTP job entrypoint.
+10. Filesystem MCP and local-project RAG both have the same hard boundary: Cloud Run cannot read a user's Mac filesystem. Any design that assumes server-side `WalkDir("/Users/...")` for arbitrary local workspaces is invalid.
+
+## Decision Matrix
+
+| ID | Topic | Decision | Release Target | Why |
+|---|---|---|---|---|
+| 01 | ThinkingConfig + Thought Signatures | Implement in Live with budget + metrics; gate UI thought text behind feature flag | v0.2 | Supported on current Live model; useful for reasoning and observability |
+| 02 | Context Caching | Implement for batch-only calls after token-count precheck | v0.3 | Real savings possible, but only on prompts that meet minimum token threshold |
+| 03 | Forced Function Calling | Implement on direct batch `GenerateContent` routes only | v0.3 | Useful for deterministic tool routing; unavailable in Live config |
+| 04 | Parallel Function Calling | Do not parallelize desktop navigator actions; first fix multi-call overwrite by serializing | v0.2 | Correctness and safety matter more than theoretical speedup |
+| 05 | Safety Decision Handling | Implement as hardening of existing risk flow | v0.2 | Already partially present; needs central classifier and richer UX |
+| 06 | Heartbeat Pattern | Implement as refactor/tuning of existing keepalive | v0.2 | Already partially present; should be session-owned and idle-aware |
+| 07 | Controlled Generation | Implement with `application/json` + `responseJsonSchema` on direct calls | v0.2 | Immediate reliability gain; reduces parsing failure |
+| 08 | Native `computer_use` | Defer | Deferred | Browser-only; does not solve VibeCat's desktop scope |
+| 09 | Always-On Memory | Design now, implement after scheduler/task plumbing | Deferred | Cloud Run lifecycle and Firestore size constraints require real infra work |
+| 10 | MCP Integration | Local-dev first, production only with remote/bundled transport | v0.3+ | Useful, but filesystem-on-cloud assumptions must be removed |
+| 11 | Real-time RAG | Implement server-owned/uploaded docs first; local workspace sync later | v0.3 | Valuable, but needs ingestion architecture that matches desktop/cloud split |
+| 12 | Expand Navigator Tools | Implement click first, then scroll/system/copy; fix parser gaps | v0.2 / v0.3 | Existing Swift runtime already supports much of this |
+| 13 | Progress Communication | Implement protocol/UI refinements after 01, 05, 12 | v0.2 | Current UX is strong; remaining work is mostly protocol completeness |
+| 14 | Errata | Keep as validation ledger only | Current | Corrections are now merged into all docs |
+
+## Cross-Cutting Rules
+
+### 1. Separate Live and Batch Concerns
+
+- `backend/realtime-gateway` is a Live API system. Only use features supported by `LiveConnectConfig`.
+- `backend/adk-orchestrator` is a batch `GenerateContent` system. Use caching, tool configs, response schemas, embeddings, and MCP here.
+- Do not copy examples between the two layers without checking actual SDK types first.
+
+### 2. Respect Desktop/Cloud Boundaries
+
+- Client-only: screen capture, AX inspection, keyboard/mouse control, local app focus, local workspace access.
+- Server-only: Live session brokerage, batch model calls, search, memory persistence, vector search, remote integrations.
+- Anything that needs the user's local files or local GUI must either run on the client or be explicitly uploaded/synced to the backend.
+
+### 3. Safety Overrides Speed
+
+- Never execute two desktop UI actions concurrently unless they are proven independent and the runtime has per-surface locking.
+- Any action that can submit, delete, publish, deploy, overwrite, or reveal secrets must pass the shared risk classifier.
+- Function-calling improvements are valid only if they preserve VibeCat's confirm-before-acting product behavior.
+
+### 4. Ship Behind Flags
+
+Add feature flags for every new capability:
+
+- `ENABLE_LIVE_THINKING`
+- `ENABLE_LIVE_THOUGHT_STREAM_UI`
+- `ENABLE_BATCH_CONTEXT_CACHE`
+- `ENABLE_FORCED_TOOL_ROUTING`
+- `ENABLE_NAVIGATOR_FC_QUEUE`
+- `ENABLE_NAVIGATOR_CLICK_TOOL`
+- `ENABLE_NAVIGATOR_SCROLL_TOOL`
+- `ENABLE_STRUCTURED_AGENT_OUTPUT`
+- `ENABLE_RAG`
+- `ENABLE_MCP`
+
+### 5. Add Observability with Every Feature
+
+Every enhancement must emit structured logs and metrics:
+
+- feature enabled/disabled
+- success/failure count
+- latency impact
+- token usage impact
+- cache hit ratio where relevant
+- user confirmation required / approved / denied where relevant
+
+## Release Plan
+
+### v0.2.0
+
+- 01 ThinkingConfig Live enablement
+- 04 Live multi-call serialization fix
+- 05 Safety hardening
+- 06 Heartbeat refactor
+- 07 Structured outputs on direct batch calls
+- 12 `navigate_click` and parser fixes
+- 13 progress protocol additions needed by 01/05/12
+
+### v0.3.0
+
+- 02 Context caching
+- 03 Forced FC on batch routes
+- 12 `navigate_scroll`, `navigate_system`, `navigate_copy_selection`
+- 10 MCP local-dev path and production design
+- 11 RAG for uploaded/server-owned docs
+
+### Deferred
+
+- 08 browser `computer_use`
+- 09 always-on memory consolidation
+- 11 arbitrary local-workspace RAG without explicit sync/upload path
+- true parallel desktop FC execution
+
+## Required Test Gate
+
+No enhancement is complete without:
+
+1. Unit tests for new request/response helpers and classifiers
+2. Integration tests for tool routing or queue behavior
+3. Replay or fixture coverage for navigator changes
+4. Manual acceptance run on macOS client for UI-affecting features
+5. Log/metric verification in Cloud Run for backend features
+
+## Primary Sources
+
+- [Gemini Live API guide](https://ai.google.dev/gemini-api/docs/live-guide)
+- [Gemini thinking guide](https://ai.google.dev/gemini-api/docs/thinking)
+- [Gemini function calling guide](https://ai.google.dev/gemini-api/docs/function-calling)
+- [Gemini caching guide](https://ai.google.dev/gemini-api/docs/caching)
+- [Gemini structured output guide](https://ai.google.dev/gemini-api/docs/structured-output)
+- [Gemini embeddings guide](https://ai.google.dev/gemini-api/docs/embeddings)
+- [Gemini computer use guide](https://ai.google.dev/gemini-api/docs/computer-use)
+- [Gemini models](https://ai.google.dev/gemini-api/docs/models)
+- [Gemini deprecations](https://ai.google.dev/gemini-api/docs/deprecations)
+- [Firestore vector search](https://cloud.google.com/firestore/native/docs/vector-search)
+
+## Working Rule For The Team
+
+If a feature description in an individual enhancement document conflicts with this file, follow this file and then update the feature document before implementation begins.

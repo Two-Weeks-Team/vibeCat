@@ -1,112 +1,98 @@
-# P2-10: MCP (Model Context Protocol) Integration
+# P2-10: MCP Integration
 
-## SDK Verification (CONFIRMED)
-- ADK v0.6.0 `google.golang.org/adk/tool/mcptoolset` — EXISTS
-- `mcptoolset.New(Config) (tool.Toolset, error)` — EXISTS
-- `Config{Client, Transport, ToolFilter, RequireConfirmation}` — EXISTS
-- Agent types for multi-agent MCP: llmagent, parallelagent — ALL EXISTS
-- Live API compatible: N/A (ADK orchestrator feature)
+## Status
 
-## Current Code (adk-orchestrator)
-- `internal/agents/graph/graph.go:49-216` — agent graph with 9 agents
-- `internal/agents/tooluse/tooluse.go:64-81` — Tool Agent struct
-- `internal/models/models.go:59-68` — ToolKind enum (search, maps, url_context, code_execution, file_search)
-- `main.go:284-289` — agent graph build
-- `main.go:292-310` — ADK runner initialization
+Phase 1 for local development, later production rollout with remote or bundled transports only.
 
-## Implementation
-1. Create MCP server wrappers for external services
-2. Register MCP toolsets in the ADK agent graph
-3. Add new tool kinds for MCP-backed tools
-4. Route queries to appropriate MCP-equipped agents
+## Source-Verified Facts
 
-## Phase 1 — File System MCP (most relevant for desktop companion)
-```go
-// internal/agents/tooluse/mcp.go
-package tooluse
+- ADK v0.6.0 provides `google.golang.org/adk/tool/mcptoolset`.
+- `mcptoolset.Config` includes:
+  - `Transport mcp.Transport`
+  - `RequireConfirmation bool`
+  - `RequireConfirmationProvider`
+- Cloud Run does not give us a free local Node/npm runtime for `npx`-based MCP servers.
 
-import (
-    "google.golang.org/adk/tool/mcptoolset"
-    "google.golang.org/adk/tool"
-)
+## Critical Architecture Boundary
 
-func NewFileSystemMCPToolset() (tool.Toolset, error) {
-    return mcptoolset.New(mcptoolset.Config{
-        Transport: mcptoolset.StdioTransport{
-            Command: "npx",
-            Args:    []string{"-y", "@modelcontextprotocol/server-filesystem", "/Users"},
-        },
-        RequireConfirmation: true, // Safety: confirm before file operations
-    })
-}
-```
+Filesystem MCP on Cloud Run cannot access a user's Mac filesystem.
 
-## Phase 2 — GitHub MCP
-```go
-func NewGitHubMCPToolset() (tool.Toolset, error) {
-    return mcptoolset.New(mcptoolset.Config{
-        Transport: mcptoolset.StdioTransport{
-            Command: "npx",
-            Args:    []string{"-y", "@modelcontextprotocol/server-github"},
-            Env:     []string{"GITHUB_PERSONAL_ACCESS_TOKEN=" + os.Getenv("GITHUB_TOKEN")},
-        },
-    })
-}
-```
+Therefore:
 
-## Integration in agent graph
-```go
-// In graph.go, add MCP-equipped agents:
-func buildGraph(genaiClient *genai.Client) (*graph.Graph, error) {
-    // ... existing agents ...
+- local filesystem MCP is valid for local development only
+- production cloud MCP must target cloud-accessible systems
+- user-local file access must remain client-side or use an explicit upload/sync path
 
-    // New: File system agent with MCP
-    fsMCPToolset, err := tooluse.NewFileSystemMCPToolset()
-    if err != nil {
-        return nil, fmt.Errorf("filesystem MCP: %w", err)
-    }
+## Recommended Rollout
 
-    fileAgent, err := llmagent.New(llmagent.Config{
-        Name:        "file_agent",
-        Description: "Manages project files: search, read, create, modify",
-        Model:       geminiconfig.ToolModel,
-        Toolsets:    []tool.Toolset{fsMCPToolset},
-        Instruction: "You help users manage their project files...",
-    })
-    if err != nil {
-        return nil, err
-    }
+### Phase 1: local dev only
 
-    // Add to Wave 3 or create new Wave 4
-    // ... graph composition ...
-}
-```
+Use stdio MCP transport for:
 
-## New ToolKind routing
-```go
-// In models.go:
-const (
-    // ... existing kinds ...
-    ToolKindFileSystem = "filesystem"
-    ToolKindGitHub     = "github"
-)
+- local filesystem experiments
+- local GitHub workflows
+- tool UX validation
 
-// In tooluse.go detectFastPath():
-var fileSystemKeywords = []string{
-    "file", "directory", "folder", "create file", "read file",
-    "find file", "project structure", "list files",
-    "파일", "디렉토리", "폴더", "파일 찾기", "파일 읽기",
-}
-```
+### Phase 2: production
 
-## Verification
-- Ask "Show me the project structure"
-- Verify file_agent is routed via MCP toolset
-- Verify RequireConfirmation prompts user before writes
-- Check MCP server process starts and stops correctly
+Use one of:
+
+- dedicated remote MCP service over HTTP
+- bundled binary in the container image
+
+Prefer cloud-safe MCP targets first:
+
+- GitHub
+- issue tracker
+- remote knowledge sources
+
+Do not start with local filesystem MCP as a production requirement.
+
+## Concrete File Changes
+
+### New package
+
+- `backend/adk-orchestrator/internal/mcp/`
+  - transport factory
+  - env-driven config
+  - health / lifecycle wrapper
+
+### Graph integration
+
+- `backend/adk-orchestrator/internal/agents/graph/graph.go`
+  - register MCP-backed agents only behind feature flags
+
+## Environment Modes
+
+### Local
+
+- stdio transport
+- `RequireConfirmation = true` for write-capable tools
+
+### Production
+
+- remote HTTP transport or bundled binary
+- connection health checks
+- startup failure should disable MCP features cleanly, not crash the service
+
+## Suggested First MCP Targets
+
+1. GitHub MCP
+2. remote docs/search MCP
+3. client-side or uploaded-file workflows only after explicit design
+
+## Acceptance Criteria
+
+1. MCP failures degrade gracefully.
+2. Production deployment does not depend on `npx`.
+3. All write-capable MCP tools require confirmation.
 
 ## Risks
-- MCP server as child process — need lifecycle management (start/stop/restart)
-- npx cold start adds latency (~2-5s first call)
-- File system access needs security sandboxing
-- Memory overhead per MCP server process
+
+- cold start / child-process overhead
+- transport instability
+- security boundaries if tool permissions are too broad
+
+## Sources
+
+- [ADK MCP docs](https://google.github.io/adk-docs/tools/mcp-tools/)

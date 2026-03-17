@@ -1,112 +1,133 @@
 # P0-5: Safety Decision Handling
 
-**SDK Verification**: No built-in safety_decision field in Go SDK. This is a custom implementation pattern from Google's computer-use web-agent example. VibeCat implements it as application-level logic.
+## Status
 
-**Live API compatible**: YES (custom logic, no SDK dependency)
+Implement as hardening of the existing navigator safety system.
 
-**Current Code** (handler.go):
-- `handleLiveToolCall()` at line 3645-3664 — dispatches tool calls WITHOUT safety checks
-- `handleNavigateTextEntryToolCall()` at line 3666-3738 — directly executes text entry
-- No confirmation dialog before risky actions
+## Current Repo State
 
-**Current Code** (session.go):
-- System prompt at line 282-286 mentions safety: "Always wait for user confirmation before risky actions (git push, delete, submit)"
-- But this is prompt-based only — no enforcement in code
+This feature already exists in partial form.
 
-**Implementation**:
-1. Define risky action patterns (file delete, git push, system commands, password fields)
-2. Add safety classification before executing each tool call
-3. Send confirmation request to Swift client via WebSocket
-4. Wait for user response before proceeding
-5. Include safety_acknowledgement in tool response
+### Backend
 
-**Go Code**:
-```go
-// internal/safety/classifier.go
-package safety
+- `backend/realtime-gateway/internal/ws/navigator.go`
+  - `planRiskReason(...)`
+  - `stepsRequireRiskConfirmation(...)`
+  - `buildRiskQuestion(...)`
+- `backend/realtime-gateway/internal/ws/handler.go`
+  - sends `navigator.riskyActionBlocked`
+  - already supports clarification / confirmation message flow
 
-import (
-    "fmt"
-    "strings"
-)
+### Client
 
-type RiskLevel string
-const (
-    RiskLow    RiskLevel = "low"
-    RiskMedium RiskLevel = "medium"
-    RiskHigh   RiskLevel = "high"
-)
+- `VibeCat/Sources/Core/AudioMessageParser.swift`
+  - parses `navigatorRiskyActionBlocked`
+- `VibeCat/Sources/VibeCat/GatewayClient.swift`
+  - sends navigator risk confirmation response
+- `VibeCat/Sources/VibeCat/AppDelegate.swift`
+  - shows current status/chat reaction for risky actions
 
-type Assessment struct {
-    Level       RiskLevel
-    Reason      string
-    RequiresAck bool
-}
+## Problem To Solve
 
-var highRiskPatterns = []string{
-    "rm -rf", "git push", "git reset", "sudo", "delete",
-    "DROP TABLE", "FORMAT", "password", "credentials",
-}
+The current logic is split across planner heuristics and UI messaging. It needs:
 
-func Classify(toolName string, args map[string]any) Assessment {
-    text, _ := args["text"].(string)
-    for _, pattern := range highRiskPatterns {
-        if strings.Contains(strings.ToLower(text), strings.ToLower(pattern)) {
-            return Assessment{
-                Level:       RiskHigh,
-                Reason:      fmt.Sprintf("Contains risky pattern: %s", pattern),
-                RequiresAck: true,
-            }
-        }
-    }
-    // navigate_open_url with non-https
-    if toolName == "navigate_open_url" {
-        url, _ := args["url"].(string)
-        if !strings.HasPrefix(url, "https://") {
-            return Assessment{Level: RiskMedium, Reason: "Non-HTTPS URL", RequiresAck: true}
-        }
-    }
-    return Assessment{Level: RiskLow, RequiresAck: false}
-}
-```
+- one shared classifier
+- richer risk categories
+- consistent handling for Live FC paths and navigator planner paths
+- better confirmation UX
 
-Handler integration:
-```go
-// In handleLiveToolCall(), before execution:
-assessment := safety.Classify(fc.Name, fc.Args)
-if assessment.RequiresAck {
-    // Send confirmation request to Swift client
-    sendJSON(conn, map[string]any{
-        "type":   "safety_confirmation",
-        "tool":   fc.Name,
-        "reason": assessment.Reason,
-        "taskId": taskID,
-    })
-    // Wait for user response (with 30s timeout)
-    select {
-    case approved := <-state.safetyResponseChan:
-        if !approved {
-            return &genai.FunctionResponse{
-                Name:     fc.Name,
-                Response: map[string]any{"result": "user_denied", "reason": "User declined risky action"},
-            }
-        }
-    case <-time.After(30 * time.Second):
-        return &genai.FunctionResponse{
-            Name:     fc.Name,
-            Response: map[string]any{"result": "timeout", "reason": "Safety confirmation timed out"},
-        }
-    }
-}
-```
+## Implementation Decision
 
-**Verification**:
-- Send "Run rm -rf /tmp/test" command
-- Verify confirmation dialog appears in Swift UI
-- Verify denial produces "user_denied" tool response
-- Verify timeout produces "timeout" tool response
+### 1. Introduce a shared safety package
 
-**Risks**:
-- Blocking execution while waiting for user confirmation
-- Need timeout to prevent deadlocks
-- False positives may annoy users (too many confirmations)
+Add `backend/realtime-gateway/internal/safety/classifier.go` with:
+
+- `RiskLevel`: `low`, `medium`, `high`
+- `Assessment`
+  - level
+  - reason
+  - requires confirmation
+  - user-facing question
+  - machine-readable category
+
+### 2. Run the classifier in two places
+
+- navigator plan building
+- direct Live function-call handlers
+
+This prevents drift between:
+
+- planned navigator steps
+- model-issued FC tools
+
+### 3. Expand patterns beyond raw text match
+
+Include:
+
+- destructive shell patterns
+- secret/token/password handling
+- submit/send/publish/deploy verbs
+- non-HTTPS or suspicious URLs
+- system-level changes
+- multi-step actions where the last step commits or submits
+
+### 4. Standardize tool responses
+
+When blocked:
+
+- `status=blocked`
+- `reason=<classifier reason>`
+- `risk_level=<level>`
+
+When denied:
+
+- `status=user_denied`
+
+When timeout:
+
+- `status=confirmation_timeout`
+
+## Concrete File Changes
+
+### Backend
+
+- `backend/realtime-gateway/internal/safety/classifier.go`
+- `backend/realtime-gateway/internal/ws/navigator.go`
+  - replace ad hoc keyword logic with shared classifier
+- `backend/realtime-gateway/internal/ws/handler.go`
+  - run shared classifier before executing risky FC handlers
+
+### Client
+
+- `VibeCat/Sources/VibeCat/AppDelegate.swift`
+  - show richer approval UI
+- `VibeCat/Sources/VibeCat/CompanionChatPanel.swift`
+  - add explicit allow / block buttons
+
+## UX Requirement
+
+The confirmation prompt must show:
+
+- what action will run
+- which app or target it affects
+- why it is considered risky
+- clear approve / deny actions
+
+Do not hide this inside a generic speech bubble only.
+
+## Acceptance Criteria
+
+1. Risk classification is shared between planner and FC runtime.
+2. Risk confirmation UI shows explicit approve / deny choices.
+3. Denied and timed-out actions return deterministic tool responses.
+4. Existing safe flows remain zero-confirmation.
+
+## Risks
+
+- Over-classification can annoy users
+- Under-classification weakens product trust
+- Confirmation deadlocks if timeout handling is missing
+
+## Sources
+
+- [Gemini computer use guide](https://ai.google.dev/gemini-api/docs/computer-use)

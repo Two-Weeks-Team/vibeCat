@@ -1,193 +1,119 @@
 # P2-11: Real-time RAG
 
-## SDK Verification
-- Gemini embedding model: `text-embedding-005` or `gemini-embedding-2-preview` — available via GenAI SDK
-- `client.Models.EmbedContent()` — EXISTS in Go SDK
-- No built-in vector store in Go SDK — custom implementation required
-- Live API compatible: Partially (embedding is batch-only, but context injection works with Live)
+## Status
 
-## Current Code (adk-orchestrator)
-- `internal/agents/tooluse/tooluse.go` — has `ToolKindSearch` for Google Search grounding
-- Google Search already provides web-grounded answers
-- No custom document embedding or vector search
+Implement in two scopes:
 
-## Concept
-Embed user's project documents (README, docs, code comments) into vectors. During live conversation, match user queries against embedded docs and inject relevant chunks as context.
+- Scope A: server-owned or uploaded docs
+- Scope B: local workspace docs only after adding an explicit client upload/sync path
 
-## Implementation
-1. Create embedding pipeline for project documents
-2. Store embeddings in Firestore (vector field) or in-memory
-3. On user query, compute query embedding and find similar chunks
-4. Inject top-K chunks into ADK orchestrator context before processing
+## Source-Verified Facts
 
-## Go Code
-```go
-// internal/rag/embedder.go
-package rag
+- Go SDK v1.49.0 supports `Models.EmbedContent(...)`.
+- `EmbedContentConfig` supports `TaskType` and `OutputDimensionality`.
+- Embeddings docs recommend `RETRIEVAL_DOCUMENT` for documents and `RETRIEVAL_QUERY` for queries.
+- Firestore now supports vector storage and KNN search (`FindNearest` in Go samples/docs).
 
-import (
-    "context"
-    "google.golang.org/genai"
-)
+## Critical Architecture Boundary
 
-const embeddingModel = "text-embedding-005"
+The backend cannot directly scan arbitrary local project files on the user's Mac.
 
-type Chunk struct {
-    ID        string
-    Text      string
-    Source    string    // file path or URL
-    Embedding []float32
-}
+So this original pattern is invalid for production:
 
-type Store struct {
-    chunks []Chunk
-}
+- cloud service receives a local path
+- cloud service runs `WalkDir()` on that local path
 
-func NewStore() *Store {
-    return &Store{}
-}
+That only works for files already present on the server.
 
-func (s *Store) Embed(ctx context.Context, client *genai.Client, text, source string) error {
-    // Split text into chunks (~500 tokens each)
-    chunks := splitIntoChunks(text, 500)
-    
-    for _, chunk := range chunks {
-        resp, err := client.Models.EmbedContent(ctx, embeddingModel, 
-            &genai.EmbedContentConfig{
-                Contents: []*genai.Content{{Parts: []*genai.Part{{Text: chunk}}}},
-            },
-        )
-        if err != nil {
-            return err
-        }
-        
-        s.chunks = append(s.chunks, Chunk{
-            ID:        generateID(),
-            Text:      chunk,
-            Source:    source,
-            Embedding: resp.Embeddings[0].Values,
-        })
-    }
-    return nil
-}
+## Implementation Decision
 
-func (s *Store) Search(ctx context.Context, client *genai.Client, query string, topK int) ([]Chunk, error) {
-    // Embed query
-    resp, err := client.Models.EmbedContent(ctx, embeddingModel,
-        &genai.EmbedContentConfig{
-            Contents: []*genai.Content{{Parts: []*genai.Part{{Text: query}}}},
-        },
-    )
-    if err != nil {
-        return nil, err
-    }
-    queryEmb := resp.Embeddings[0].Values
+### Phase 1: server-owned / uploaded docs
 
-    // Cosine similarity search
-    type scored struct {
-        chunk Chunk
-        score float64
-    }
-    var results []scored
-    for _, c := range s.chunks {
-        score := cosineSimilarity(queryEmb, c.Embedding)
-        results = append(results, scored{c, score})
-    }
-    
-    // Sort by score descending
-    sort.Slice(results, func(i, j int) bool {
-        return results[i].score > results[j].score
-    })
-    
-    // Return top K
-    var topResults []Chunk
-    for i := 0; i < topK && i < len(results); i++ {
-        topResults = append(topResults, results[i].chunk)
-    }
-    return topResults, nil
-}
+Support:
 
-func cosineSimilarity(a, b []float32) float64 {
-    var dot, normA, normB float64
-    for i := range a {
-        dot += float64(a[i]) * float64(b[i])
-        normA += float64(a[i]) * float64(a[i])
-        normB += float64(b[i]) * float64(b[i])
-    }
-    if normA == 0 || normB == 0 {
-        return 0
-    }
-    return dot / (math.Sqrt(normA) * math.Sqrt(normB))
-}
+- repo docs already present in the deployed service image
+- docs explicitly uploaded or synced by the client
 
-func splitIntoChunks(text string, maxTokens int) []string {
-    // Simple sentence-boundary chunking
-    // Each chunk ~maxTokens tokens (approx 4 chars per token)
-    maxChars := maxTokens * 4
-    var chunks []string
-    for len(text) > 0 {
-        end := maxChars
-        if end > len(text) {
-            end = len(text)
-        }
-        // Find sentence boundary
-        if end < len(text) {
-            for i := end; i > end/2; i-- {
-                if text[i] == '.' || text[i] == '\n' {
-                    end = i + 1
-                    break
-                }
-            }
-        }
-        chunks = append(chunks, strings.TrimSpace(text[:end]))
-        text = text[end:]
-    }
-    return chunks
-}
+Use:
+
+- stable embedding model: `gemini-embedding-001`
+- task types:
+  - `RETRIEVAL_DOCUMENT` for chunks
+  - `RETRIEVAL_QUERY` for queries
+
+### Phase 2: local workspace sync
+
+Add a client-originated ingestion path:
+
+- client extracts allowed files
+- client chunks and uploads, or uploads raw docs for server-side chunking
+- backend embeds and stores under:
+  - `user_id`
+  - `workspace_id`
+  - `source_path`
+
+## Recommended Storage
+
+Use Firestore vector fields instead of an in-memory store for production.
+
+Suggested collection:
+
+- `rag_chunks/{chunkId}`
+
+Fields:
+
+- `userId`
+- `workspaceId`
+- `sourcePath`
+- `chunkText`
+- `embedding`
+- `updatedAt`
+- `visibility`
+
+## Concrete File Changes
+
+- `backend/adk-orchestrator/internal/rag/`
+  - chunker
+  - embedder
+  - Firestore repository
+  - retriever
+- `backend/adk-orchestrator/main.go`
+  - upload/index endpoints
+  - retrieval hook for analysis requests
+- client upload/sync path later in:
+  - `VibeCat`
+  - or a separate helper/CLI if preferred
+
+## Retrieval Flow
+
+```text
+User query
+  -> query embedding (RETRIEVAL_QUERY)
+  -> Firestore FindNearest on scoped workspace/user chunks
+  -> top-K chunks
+  -> inject compact context into orchestrator request
 ```
 
-## Integration with ADK orchestrator
-```go
-// In main.go or orchestrator initialization:
-ragStore := rag.NewStore()
+## Scoping Rules
 
-// Index project docs at startup (or on-demand)
-func (o *orchestrator) indexProjectDocs(ctx context.Context, projectPath string) error {
-    files, _ := filepath.Glob(filepath.Join(projectPath, "**/*.md"))
-    for _, f := range files {
-        content, _ := os.ReadFile(f)
-        if err := o.ragStore.Embed(ctx, o.genaiClient, string(content), f); err != nil {
-            slog.Warn("failed to embed", "file", f, "err", err)
-        }
-    }
-    return nil
-}
+- never mix one user's chunks with another user's results
+- separate workspaces
+- cap injected context size
+- log which chunks were used
 
-// In analyzeHandler, before running agent graph:
-func (o *orchestrator) analyzeHandler(w http.ResponseWriter, r *http.Request) {
-    // ... parse request ...
-    
-    // RAG: search for relevant context
-    chunks, _ := o.ragStore.Search(ctx, o.genaiClient, userQuery, 3)
-    ragContext := formatChunksAsContext(chunks)
-    
-    // Inject into session state
-    session.State().Set("rag_context", ragContext)
-    
-    // Run agent graph (memory agent can read rag_context from state)
-    // ...
-}
-```
+## Acceptance Criteria
 
-## Verification
-- Index a project README
-- Ask a question about the project
-- Verify RAG returns relevant chunks (check cosine similarity scores)
-- Compare answer quality with vs without RAG context
+1. Scope A works without assuming local filesystem access on Cloud Run.
+2. Firestore vector search returns relevant top-K chunks.
+3. Injected context stays bounded and traceable.
 
 ## Risks
-- Embedding API cost (per-token pricing)
-- In-memory vector store doesn't scale (use Firestore vector field for production)
-- Cold start: embedding takes time for large projects
-- Chunk quality depends on splitting strategy
-- May conflict with Google Search grounding (duplicate information sources)
+
+- ingestion complexity for local workspaces
+- stale chunks without update/delete strategy
+- noisy retrieval if chunking is poor
+
+## Sources
+
+- [Gemini embeddings guide](https://ai.google.dev/gemini-api/docs/embeddings)
+- [Firestore vector search](https://cloud.google.com/firestore/native/docs/vector-search)

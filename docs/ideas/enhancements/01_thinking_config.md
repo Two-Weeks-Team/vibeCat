@@ -1,57 +1,90 @@
 # P0-1: ThinkingConfig + Thought Signatures
 
-## Title
-P0-1: ThinkingConfig + Thought Signatures
+## Status
 
-## SDK Verification (CONFIRMED via go doc v1.49.0)
-- `genai.ThinkingConfig{IncludeThoughts bool, ThinkingBudget *int32, ThinkingLevel ThinkingLevel}` — EXISTS
-- `LiveConnectConfig.ThinkingConfig *ThinkingConfig` — EXISTS (field confirmed in LiveConnectConfig)
-- `Part.Thought bool` — EXISTS
-- `Part.ThoughtSignature []byte` — EXISTS
-- Live API compatible: YES
+Implement now in the Live gateway, but split it into two stages:
 
-## Current Code (session.go)
-- `buildLiveConfig()` at line 465-533 — LiveConnectConfig construction, currently NO ThinkingConfig set
-- `Session.Receive()` at line 126-128 — receives LiveServerMessage
-- Tool declarations at lines 367-462
+- Stage 1: enable/tune thinking on the Live session and measure it
+- Stage 2: optionally surface thought summaries in the client UI behind a debug or feature flag
 
-## Current Code (handler.go)
-- `receiveFromGemini()` at line 3338-3613 — processes response parts
-- `handleLiveToolCall()` at line 3645-3664 — dispatches FC
+## Source-Verified Facts
 
-## Implementation
-1. Add `ThinkingConfig` to `buildLiveConfig()` in session.go after line 506 (after RealtimeInputConfig)
-2. Handle `Part.Thought` and `Part.ThoughtSignature` in `receiveFromGemini()` in handler.go
-3. Forward thought text to Swift client as a new message type `thinking`
-4. Preserve ThoughtSignature in conversation history for multi-step FC workflows
+- `genai.LiveConnectConfig` in `google.golang.org/genai v1.49.0` has `ThinkingConfig *ThinkingConfig`.
+- The current Live model `gemini-2.5-flash-native-audio-preview-12-2025` officially supports thinking, with dynamic thinking enabled by default.
+- `genai.Part` includes `Thought bool` and `ThoughtSignature []byte`.
+- Official thinking docs say the Google GenAI SDK automatically handles thought-signature return unless you manually modify conversation history.
 
-## Go Code
-```go
-// In buildLiveConfig(), after line 506:
-lc.ThinkingConfig = &genai.ThinkingConfig{
-    IncludeThoughts: true,
-}
+## Current Repo State
 
-// In receiveFromGemini(), handling response parts:
-for _, part := range msg.ServerContent.ModelTurn.Parts {
-    if part.Thought {
-        // Forward thinking text to client for UI display
-        sendJSON(conn, map[string]any{
-            "type": "thinking",
-            "text": part.Text,
-        })
-    }
-    if len(part.ThoughtSignature) > 0 {
-        // Store signature for conversation history preservation
-        state.setLastThoughtSignature(part.ThoughtSignature)
-    }
-}
-```
+- `backend/realtime-gateway/internal/live/session.go`
+  - `buildLiveConfig()` does not set `ThinkingConfig`
+- `backend/realtime-gateway/internal/ws/handler.go`
+  - `receiveFromGemini()` does not inspect `Part.Thought` or thought-signature fields
+- The Swift client already has a generic visual thinking state through sprite/status UI
+- There is no verified end-user thought-summary protocol yet
 
-## Verification
-After implementation, check Gemini logs for `thinking_config` in request. Verify `Part.Thought=true` parts appear in responses.
+## Implementation Decision
+
+### Stage 1: ship
+
+1. Add a Live thinking feature flag.
+2. Set `ThinkingConfig` in `buildLiveConfig()` when enabled.
+3. Start with an explicit `ThinkingBudget` value and log token usage.
+4. Record `UsageMetadata.ThoughtsTokenCount` in gateway logs/metrics.
+5. Do not change user-facing UI copy until actual thought parts are observed in production or staging logs.
+
+### Stage 2: optional
+
+1. If the current Live session returns `Part.Thought` text reliably, forward it as a new debug-oriented message type.
+2. Keep this off by default in production.
+3. Never expose raw thought text as required UX for task completion.
+
+## Concrete File Changes
+
+### `backend/realtime-gateway/internal/live/session.go`
+
+- Extend `live.Config` with a thinking control:
+  - `EnableThinking bool`
+  - `ThinkingBudget int32`
+- In `buildLiveConfig()`:
+  - set `ThinkingConfig` only when `EnableThinking` is true
+  - start with `ThinkingBudget = 1024`
+- Keep the default disabled behind a feature flag until staging verification passes
+
+### `backend/realtime-gateway/internal/ws/handler.go`
+
+- In `receiveFromGemini()`:
+  - inspect `sc.ModelTurn.Parts`
+  - when `part.Thought == true`, log it at debug level
+  - when `len(part.ThoughtSignature) > 0`, log presence/count only
+- In `UsageMetadata` logging:
+  - include `ThoughtsTokenCount`
+
+### Optional client changes
+
+- Add `thinking(text)` only if Stage 2 is enabled
+- Render in existing status bubble style, not as a blocking modal
+
+## Non-Goals
+
+- Manual thought-signature persistence for the Live session
+- Reconstructing or storing internal reasoning across sessions
+- Shipping raw chain-of-thought as a primary UI feature
+
+## Acceptance Criteria
+
+1. Live session connects successfully with thinking enabled on the current model.
+2. Gateway logs show `thoughts_token_count` for turns where thinking is used.
+3. No regressions in audio streaming, tool calling, or reconnect flow.
+4. If Stage 2 is enabled, `Part.Thought` messages are actually observed before UI is exposed broadly.
 
 ## Risks
-- ThinkingConfig increases token usage (thinking budget)
-- Only works with thinking-capable models (not gemini-2.5-flash-native-audio-preview)
-- May need model upgrade to Gemini 3.x for full thinking support
+
+- Increased token cost and latency
+- Thought summaries may not appear in every turn even when thinking is enabled
+- End-user thought UI can create noisy UX if shown indiscriminately
+
+## Sources
+
+- [Gemini Live API guide](https://ai.google.dev/gemini-api/docs/live-guide)
+- [Gemini thinking guide](https://ai.google.dev/gemini-api/docs/thinking)

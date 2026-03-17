@@ -1,94 +1,117 @@
 # P0-2: Context Caching
 
-## Title
-P0-2: Context Caching
+## Status
 
-## SDK Verification (CONFIRMED via go doc v1.49.0)
-- `genai.Client.Caches` service — EXISTS with Create, Get, Update, Delete, List, All
-- `genai.CreateCachedContentConfig{TTL, Contents, SystemInstruction, Tools, ToolConfig}` — EXISTS
-- `genai.CachedContent{Name, DisplayName, Model, CreateTime, UpdateTime, ExpireTime}` — EXISTS
-- `GenerateContentConfig.CachedContentName string` — EXISTS (field name is `CachedContentName` in Go, JSON tag `cachedContent`)
-- Live API compatible: NO (batch-only)
+Implement in the ADK orchestrator only, after token-count precheck. Do not attempt this in the Live gateway.
 
-## Applicability
-ADK Orchestrator only (not gateway). The orchestrator uses batch `GenerateContent` calls for vision analysis, mood detection, tool classification, etc.
+## Source-Verified Facts
 
-## Current Code (adk-orchestrator)
-- `internal/geminiconfig/models.go` lines 3-16 — model constants
-- `internal/agents/tooluse/tooluse.go` — uses batch GenerateContent for tool classification
-- `internal/agents/memory/memory.go:216` — uses LiteTextModel for memory summarization
-- System prompts are rebuilt per-request across all 9 agents
+- `LiveConnectConfig` has no cached-content field.
+- In Go SDK v1.49.0 the batch request field is `GenerateContentConfig.CachedContent`.
+- `CreateCachedContentConfig` supports `SystemInstruction`, `Contents`, `Tools`, and `ToolConfig`.
+- Current explicit-caching docs show a 1,024-token minimum for `Gemini 2.5 Flash` and `Gemini 3 Flash Preview`.
+- `Models.CountTokens()` exists and should be used instead of assuming the prompt is large enough.
 
-## Implementation
-1. Create a cache manager in `internal/cache/manager.go`
-2. Cache common system instructions + tool declarations for each model
-3. Set TTL to 1 hour, auto-refresh before expiry
-4. Use `CachedContentName` in `GenerateContentConfig` for batch requests
+## Current Repo State
 
-## Go Code
-```go
-// internal/cache/manager.go
-package cache
+- All candidate uses are in `backend/adk-orchestrator`
+- Repeated system prompts exist in:
+  - `internal/agents/vision/vision.go`
+  - `internal/agents/tooluse/tooluse.go`
+  - `internal/agents/memory/memory.go`
+  - other direct `GenerateContent` call sites
+- No cache manager exists
 
-import (
-    "context"
-    "sync"
-    "time"
-    "google.golang.org/genai"
-)
+## Critical Corrections
 
-type Manager struct {
-    client     *genai.Client
-    mu         sync.RWMutex
-    caches     map[string]*genai.CachedContent // model -> cache
-    refreshTTL time.Duration
-}
+- Use `CachedContent`, not `CachedContentName`
+- Do not assume current prompts exceed the caching threshold
+- Do not cache user-specific or rapidly changing prompt fragments unless they are actually reused
 
-func New(client *genai.Client) *Manager {
-    return &Manager{
-        client:     client,
-        caches:     make(map[string]*genai.CachedContent),
-        refreshTTL: 50 * time.Minute, // Refresh before 1h TTL expires
-    }
-}
+## Implementation Plan
 
-func (m *Manager) GetOrCreate(ctx context.Context, model string, systemInstruction string, tools []*genai.Tool) (string, error) {
-    m.mu.RLock()
-    if cached, ok := m.caches[model]; ok {
-        if time.Until(cached.ExpireTime) > 5*time.Minute {
-            m.mu.RUnlock()
-            return cached.Name, nil
-        }
-    }
-    m.mu.RUnlock()
+### 1. Add a cache manager
 
-    m.mu.Lock()
-    defer m.mu.Unlock()
+Create `backend/adk-orchestrator/internal/cache/manager.go`:
 
-    cached, err := m.client.Caches.Create(ctx, model, &genai.CreateCachedContentConfig{
-        TTL:               time.Hour,
-        DisplayName:       "vibecat-" + model,
-        SystemInstruction: &genai.Content{Parts: []*genai.Part{{Text: systemInstruction}}},
-        Tools:             tools,
-    })
-    if err != nil {
-        return "", err
-    }
-    m.caches[model] = cached
-    return cached.Name, nil
-}
-```
+- key by:
+  - model
+  - prompt version
+  - normalized language
+  - character/persona hash if applicable
+  - tool declaration hash
+- store:
+  - cached content resource name
+  - expire time
+  - token count
 
-## Minimum token requirement
-2,048 tokens. VibeCat's system prompts exceed this.
+### 2. Preflight with token counting
 
-## Cost
-~75% reduction on cached input tokens.
+Before cache creation:
 
-## Verification
-Check `response.UsageMetadata.CachedContentTokenCount > 0` in responses.
+- call `Models.CountTokens()` with:
+  - the exact `SystemInstruction`
+  - any static `Contents`
+  - tool declarations if they will be cached
+- create a cache only if the result meets the model minimum
+
+### 3. Pilot the feature on stable high-reuse prompts
+
+Start with:
+
+- `tooluse.classify()`
+- `vision.analyze()` only if the system prompt alone meets threshold
+- `memory.generateSummary()` only if token count and reuse justify it
+
+Do not start with highly dynamic prompts that vary per request.
+
+### 4. Inject cache references
+
+For direct `GenerateContent` calls:
+
+- set `GenerateContentConfig.CachedContent = cacheName`
+
+For ADK `llmagent` use:
+
+- pass a prepared `GenerateContentConfig` via `llmagent.Config.GenerateContentConfig`
+
+## Concrete File Changes
+
+- `backend/adk-orchestrator/main.go`
+  - initialize shared cache manager when feature flag is on
+- `backend/adk-orchestrator/internal/cache/manager.go`
+  - create / refresh / invalidate caches
+- `backend/adk-orchestrator/internal/agents/tooluse/tooluse.go`
+  - use cache for classification prompt if threshold is met
+- `backend/adk-orchestrator/internal/agents/vision/vision.go`
+  - use cache only after count-tokens verification
+- `backend/adk-orchestrator/internal/agents/memory/memory.go`
+  - same rule
+
+## Observability
+
+Emit:
+
+- cache created
+- cache refreshed
+- cache hit
+- cache miss
+- `CachedContentTokenCount`
+- token-count precheck result
+
+## Acceptance Criteria
+
+1. Only batch orchestrator requests use caching.
+2. Cache creation happens only for prompts that meet the token minimum.
+3. Responses show non-zero `CachedContentTokenCount` on hits.
+4. No correctness regressions when cache expires or is disabled.
 
 ## Risks
-- Cache is model-specific — separate cache per model variant
-- Not applicable to Live API sessions (gateway)
-- Adds complexity to startup (cache warm-up)
+
+- Token minimum may exclude some prompts entirely
+- Over-caching dynamic prompts can reduce correctness
+- Cache-key mistakes can cross-contaminate languages/personas/toolsets
+
+## Sources
+
+- [Gemini caching guide](https://ai.google.dev/gemini-api/docs/caching)

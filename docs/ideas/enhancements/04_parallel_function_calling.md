@@ -1,73 +1,101 @@
-# P0-4: Parallel Function Calling
+# P0-4: Multi-Call Function Handling
 
-## Title
-P0-4: Parallel Function Calling
+## Status
 
-## SDK Verification
-- Gemini can return multiple `Part.FunctionCall` entries in a single response — confirmed in SDK
-- `LiveToolResponseInput.FunctionResponses []*FunctionResponse` — already accepts multiple responses
-- Live API compatible: YES (model returns multiple FCs, handler must process all)
+Do not implement parallel desktop UI execution. First fix the current multi-call overwrite bug by serializing multiple function calls returned in one Live response.
 
-## Current Code (handler.go)
-- `pendingFC` fields at lines 175-184 — tracks ONE pending FC at a time
-- `setPendingFC()` at line 462 — sets single pending FC
-- `hasPendingFCForTask()` at line 475 — checks for single FC
-- `advancePendingFCStep()` at line 481 — advances single FC step
-- `handleLiveToolCall()` at line 3645 — handles one tool call at a time
-- `receiveFromGemini()` at line 3338 — extracts tool calls from response
+## Why This Document Changed
 
-## Current Pattern
-Sequential FC execution — one FC at a time, wait for result, then next.
+The original draft treated this as a speed optimization. In the current repo it is first a correctness problem.
 
-## Implementation
-1. In `receiveFromGemini()`, collect ALL FunctionCall parts from a single response
-2. Execute independent FCs in parallel using goroutines
-3. Collect all results and send back via `SendToolResponse()` (which already accepts slice)
-4. Keep sequential mode for dependent FCs (when one FC's output feeds another)
+## Source-Verified Facts
 
-## Go Code
-```go
-// In receiveFromGemini(), when multiple FCs detected:
-func (h *Handler) handleParallelToolCalls(calls []*genai.FunctionCall) []*genai.FunctionResponse {
-    results := make([]*genai.FunctionResponse, len(calls))
-    var wg sync.WaitGroup
+- Live API supports multi-tool use.
+- A Live response can contain multiple function calls.
+- VibeCat's current Live navigator state stores only one pending function call sequence at a time.
 
-    for i, call := range calls {
-        wg.Add(1)
-        go func(idx int, fc *genai.FunctionCall) {
-            defer wg.Done()
-            result, err := h.executeSingleToolCall(fc)
-            if err != nil {
-                results[idx] = &genai.FunctionResponse{
-                    Name:     fc.Name,
-                    Response: map[string]any{"error": err.Error()},
-                }
-                return
-            }
-            results[idx] = result
-        }(i, call)
-    }
-    wg.Wait()
-    return results
-}
+## Current Repo Risk
 
-// Send all results at once:
-if err := session.SendToolResponse(results); err != nil {
-    slog.Error("failed to send parallel tool responses", "err", err)
-}
-```
+`backend/realtime-gateway/internal/ws/handler.go`
 
-## When to use parallel vs sequential
-- Parallel: Independent tools (e.g., focus_app + open_url for different apps)
-- Sequential: Dependent tools (e.g., focus_app then text_entry in same app)
-- Detection: If tool calls target different apps/contexts, they are independent
+- `handleLiveToolCall()` loops over every returned function call
+- each handler can call `ls.setPendingFC(...)`
+- `liveSessionState` stores only one pending FC:
+  - `pendingFCID`
+  - `pendingFCName`
+  - `pendingFCTaskID`
+  - `pendingFCSteps`
 
-## Verification
-- Send a prompt like "Open Terminal and Chrome at the same time"
-- Verify both navigate_focus_app calls execute concurrently
-- Measure latency reduction vs sequential execution
+Result:
+
+- if Gemini returns multiple navigator function calls in one response, the later call can overwrite the earlier one before it completes
+
+## Implementation Decision
+
+### Phase 1: serialize
+
+Implement a queue of pending Live function calls and process them in order.
+
+Rules:
+
+- only one desktop navigator action chain runs at a time
+- preserve response order from Gemini
+- do not start call N+1 until call N is fully resolved or explicitly skipped
+
+### Phase 2: optional future parallelism
+
+Only consider parallel execution when all of the following are true:
+
+- action types are read-only or non-UI
+- targets are independent
+- per-surface locking exists
+- replay tests prove no race conditions
+
+This does not apply to current desktop navigation actions.
+
+## Concrete File Changes
+
+### `backend/realtime-gateway/internal/ws/handler.go`
+
+- replace single pending FC fields with:
+  - active FC
+  - queued FC list
+- on Live tool call with `len(functionCalls) > 1`:
+  - enqueue all
+  - dispatch first only
+- when one FC completes:
+  - pop next queued FC
+  - dispatch it
+
+### `liveSessionState`
+
+Add a queue type, for example:
+
+- function call metadata
+- prebuilt navigator steps
+- original call ID and name
+
+## Explicit Non-Goal
+
+Do not launch multiple UI actions concurrently on macOS in v0.2.
+
+Examples that must remain serialized:
+
+- focus app -> type text
+- open URL -> verify page -> click
+- focus terminal -> paste command -> submit
+
+## Acceptance Criteria
+
+1. A single Live response containing multiple function calls no longer loses earlier calls.
+2. Desktop actions still run one chain at a time.
+3. Replay tests cover a two-call and three-call response.
 
 ## Risks
-- Race conditions if parallel FCs target the same app/resource
-- Need conflict detection: if two FCs target same app, execute sequentially
-- Error in one FC should not block others
+
+- Queue bugs can strand a call in pending state
+- Cancellation behavior must clear both active and queued entries
+
+## Sources
+
+- [Gemini function calling guide](https://ai.google.dev/gemini-api/docs/function-calling)

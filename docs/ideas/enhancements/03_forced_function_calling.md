@@ -1,68 +1,78 @@
-# P0-3: Forced Function Calling (ANY/NONE Modes)
+# P0-3: Forced Function Calling
 
-## Title
-P0-3: Forced Function Calling (ANY/NONE Modes)
+## Status
 
-## SDK Verification (CONFIRMED via go doc v1.49.0)
-- `genai.ToolConfig{FunctionCallingConfig *FunctionCallingConfig}` — EXISTS
-- `genai.FunctionCallingConfig{Mode FunctionCallingConfigMode, AllowedFunctionNames []string}` — EXISTS
-- `FunctionCallingConfigModeAuto` = "AUTO" — EXISTS
-- `FunctionCallingConfigModeAny` = "ANY" — EXISTS
-- `FunctionCallingConfigModeNone` = "NONE" — EXISTS
-- `FunctionCallingConfigModeValidated` = "VALIDATED" — EXISTS
-- Live API compatible: NO — LiveConnectConfig does NOT have ToolConfig field
+Implement for direct batch `GenerateContent` routes only. Do not plan this for the Live gateway.
 
-## Applicability
-ADK Orchestrator only (batch calls). The gateway's Live API does not support ToolConfig.
+## Source-Verified Facts
 
-## Current Code (adk-orchestrator)
-- `internal/agents/tooluse/tooluse.go:46-62` — classifyPrompt for tool selection
-- `internal/agents/tooluse/tooluse.go:163-179` — detectFastPath for keyword routing
-- `internal/agents/tooluse/tooluse.go:181-268` — execute() for tool invocation
+- `GenerateContentConfig.ToolConfig` exists.
+- `FunctionCallingConfig` supports `AUTO`, `ANY`, `NONE`, and preview `VALIDATED`.
+- `LiveConnectConfig` does not have `ToolConfig`, so this does not apply to Live API configuration.
 
-## Implementation
-1. Add ToolConfig to tool classification requests with `ModeAny` when fast-path detected
-2. Add ToolConfig with `ModeNone` for casual conversation in mediator agent
-3. Use `AllowedFunctionNames` to constrain which tools are available per context
+## Current Repo State
 
-## Go Code
-```go
-// In tooluse.go execute(), when fast-path detected:
-func (a *Agent) execute(ctx context.Context, kind string, query string) (*Result, error) {
-    config := &genai.GenerateContentConfig{
-        Tools: a.toolsForKind(kind),
-    }
+- `backend/adk-orchestrator/internal/agents/tooluse/tooluse.go`
+  - uses direct `Models.GenerateContent()`
+  - already has a fast-path classifier before model routing
+- `backend/adk-orchestrator/internal/agents/search/llmsearch.go`
+  - uses ADK `llmagent` with tools
+  - should not be the first target for forced FC work
 
-    // If tool kind is known from fast-path detection, force FC
-    if kind != models.ToolKindNone {
-        config.ToolConfig = &genai.ToolConfig{
-            FunctionCallingConfig: &genai.FunctionCallingConfig{
-                Mode: genai.FunctionCallingConfigModeAny,
-            },
-        }
-    }
-    // ...
-}
+## Implementation Decision
 
-// In mediator agent, for casual conversation detection:
-func (a *MediatorAgent) shouldSkipTools(ctx context.Context, input string) bool {
-    config := &genai.GenerateContentConfig{
-        ToolConfig: &genai.ToolConfig{
-            FunctionCallingConfig: &genai.FunctionCallingConfig{
-                Mode: genai.FunctionCallingConfigModeNone,
-            },
-        },
-    }
-    // Model will only produce text, never function calls
-}
-```
+### Use cases that should use forced FC
 
-## Verification
-- With ANY mode: verify model ALWAYS returns FunctionCall, never plain text
-- With NONE mode: verify model NEVER returns FunctionCall
-- Check tool_config appears in API request logs
+- The router already knows the exact tool family to call
+- The request must return a tool invocation rather than free-form text
+- Examples:
+  - URL present and `url_context` is already selected
+  - explicit calculation request and `code_execution` is already selected
+  - explicit maps/place request and `maps` is already selected
+
+### Use cases that should not
+
+- Live gateway tool routing
+- ADK `llmagent` tool-use paths in v0.2
+- cases where natural-language fallback is desirable
+
+## Recommended Mode Usage
+
+- `ANY`
+  - direct routed tool invocation where a tool call is required
+- `NONE`
+  - classification or text-only paths where tools must not fire
+- `VALIDATED`
+  - experiment later if we want tool-or-text with schema adherence
+
+## Concrete File Changes
+
+### `backend/adk-orchestrator/internal/agents/tooluse/tooluse.go`
+
+- Add helper:
+  - `toolConfigForPlan(plan toolPlan) *genai.ToolConfig`
+- When fast-path or LLM classifier already selected one tool kind:
+  - restrict tools to that kind
+  - set `Mode: ANY`
+- When running text-only classifier passes:
+  - set `Mode: NONE`
+
+### Do not change
+
+- `backend/realtime-gateway/internal/live/session.go`
+- Live tool declarations
+
+## Acceptance Criteria
+
+1. Direct batch routes with known tool kind always produce function calls.
+2. Text-only classifier paths never emit function calls.
+3. No change in Live API behavior.
 
 ## Risks
-- ANY mode forces FC even when model has no good answer — may cause hallucinated tool calls
-- NONE mode completely disables tools — must be certain conversation is casual
-- NOT available in Live API — gateway sessions are unaffected
+
+- `ANY` can force low-quality tool calls if routing confidence is weak
+- Tool constraints must stay aligned with the actual tool list
+
+## Sources
+
+- [Gemini function calling guide](https://ai.google.dev/gemini-api/docs/function-calling)

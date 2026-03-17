@@ -1,159 +1,105 @@
-# P2-9: Always-On Memory Agent (Sleep/Consolidation Pattern)
+# P2-9: Always-On Memory Agent
 
-## SDK Verification
-- ADK v0.6.0 `memory.Service` interface — EXISTS (InMemoryService)
-- ADK v0.6.0 `session.Service` with state prefixes `app:`, `user:`, `temp:` — EXISTS
-- No built-in Firestore memory service — custom implementation required
-- Live API compatible: N/A (ADK orchestrator feature)
+## Status
 
-## Current Code (adk-orchestrator)
-- `internal/agents/memory/memory.go:28-40` — Memory Agent struct
-- `internal/agents/memory/memory.go:99-114` — `retrieveMemory()` calls `store.GetMemory()`
-- `internal/agents/memory/memory.go:118-152` — `SaveSessionSummary()` 
-- `internal/agents/memory/memory.go:156-194` — `SaveTaskSummary()`
-- `internal/store/firestore.go:84-100` — `GetMemory()` from `users/{userId}/memory/data`
-- `internal/store/firestore.go:103-115` — `UpdateMemory()`
-- `internal/store/models.go:54-59` — `MemoryEntry{UserID, RecentSummaries, KnownTopics, UpdatedAt}`
-- `internal/store/models.go:62-66` — `SessionSummary{Date, Summary, UnresolvedIssues}`
+Design now. Defer implementation until scheduler/task infrastructure is in place.
 
-## Current Limitations
-- Passive storage only — memory is written at session end, read at session start
-- No cross-memory pattern discovery
-- No importance scoring
-- Limited to 10 summaries and 20 topics (hard-coded limits)
-- No entity extraction or relationship tracking
+## Source-Verified Facts
 
-## Enhancement — Sleep/Consolidation Pattern
-Inspired by `gemini/agents/always-on-memory-agent/`: human-like memory with active consolidation during idle periods.
+- Current repo memory is passive summary storage in Firestore.
+- Cloud Run instances are ephemeral and scale to zero.
+- A timer-running consolidator inside the service is not a reliable production design.
 
-## Implementation
-1. Extend MemoryEntry with entity extraction, importance scores, and connections
-2. Add consolidation agent that runs on a timer (every 30 min)
-3. Consolidation discovers cross-memory patterns and generates insights
-4. Add semantic search for memory retrieval (not just last-N)
+## Current Repo State
 
-## Go Code
-```go
-// internal/store/models.go — Extended memory model:
-type MemoryEntry struct {
-    UserID          string           `firestore:"userId"`
-    RecentSummaries []SessionSummary `firestore:"recentSummaries"`
-    KnownTopics     []Topic          `firestore:"knownTopics"`
-    Entities        []Entity         `firestore:"entities"`
-    Connections     []Connection     `firestore:"connections"`
-    Insights        []Insight        `firestore:"insights"`
-    UpdatedAt       time.Time        `firestore:"updatedAt"`
-}
+- `backend/adk-orchestrator/internal/agents/memory/memory.go`
+  - retrieves memory at session start
+  - writes summaries at session end / task end
+- `backend/adk-orchestrator/internal/store/models.go`
+  - `MemoryEntry` only stores:
+    - recent summaries
+    - known topics
+- `backend/adk-orchestrator/internal/store/firestore.go`
+  - stores everything in `users/{userId}/memory/data`
 
-type Entity struct {
-    Name       string    `firestore:"name"`
-    Type       string    `firestore:"type"` // "project", "tool", "person", "concept"
-    Mentions   int       `firestore:"mentions"`
-    LastSeen   time.Time `firestore:"lastSeen"`
-    Importance float64   `firestore:"importance"` // 0.0-1.0
-}
+## Required Architecture Change
 
-type Connection struct {
-    FromEntity string  `firestore:"from"`
-    ToEntity   string  `firestore:"to"`
-    Relation   string  `firestore:"relation"` // "uses", "part_of", "related_to"
-    Strength   float64 `firestore:"strength"`
-}
+### Replace in-process timers with scheduled jobs
 
-type Insight struct {
-    Text      string    `firestore:"text"`
-    Source    []string  `firestore:"source"` // summary IDs that led to this insight
-    CreatedAt time.Time `firestore:"createdAt"`
-}
+Use:
+
+- Cloud Scheduler
+- Cloud Tasks
+- HTTP consolidation endpoint in `adk-orchestrator`
+
+Flow:
+
+```text
+Cloud Scheduler
+  -> Cloud Tasks
+  -> POST /memory/consolidate
+  -> orchestrator consolidates one batch of users
 ```
 
-```go
-// internal/agents/memory/consolidator.go
-package memory
+### Break memory into multiple documents
 
-type Consolidator struct {
-    client      *genai.Client
-    store       *store.Client
-    interval    time.Duration
-}
+Do not keep the full memory graph inside one Firestore document forever.
 
-func NewConsolidator(client *genai.Client, store *store.Client) *Consolidator {
-    return &Consolidator{
-        client:   client,
-        store:    store,
-        interval: 30 * time.Minute,
-    }
-}
+Use:
 
-func (c *Consolidator) Start(ctx context.Context, userID string) {
-    ticker := time.NewTicker(c.interval)
-    go func() {
-        defer ticker.Stop()
-        for {
-            select {
-            case <-ctx.Done():
-                return
-            case <-ticker.C:
-                if err := c.consolidate(ctx, userID); err != nil {
-                    slog.Error("memory consolidation failed", "err", err, "user", userID)
-                }
-            }
-        }
-    }()
-}
+- `users/{userId}/memory/data`
+- `users/{userId}/memory/entities/{entityId}`
+- `users/{userId}/memory/connections/{connectionId}`
+- `users/{userId}/memory/insights/{insightId}`
 
-func (c *Consolidator) consolidate(ctx context.Context, userID string) error {
-    memory, err := c.store.GetMemory(ctx, userID)
-    if err != nil {
-        return err
-    }
+## Implementation Scope
 
-    // Generate consolidation prompt with all recent summaries
-    prompt := buildConsolidationPrompt(memory)
-    
-    resp, err := c.client.Models.GenerateContent(ctx, geminiconfig.LiteTextModel, 
-        []*genai.Content{{Role: "user", Parts: []*genai.Part{{Text: prompt}}}},
-        &genai.GenerateContentConfig{
-            ResponseMIMEType: "application/json",
-            ResponseSchema: consolidationSchema(),
-        },
-    )
-    if err != nil {
-        return err
-    }
-    
-    // Parse and merge new entities, connections, insights
-    updates := parseConsolidationResult(resp)
-    return c.store.UpdateMemory(ctx, userID, updates)
-}
+### Phase 1
 
-func buildConsolidationPrompt(memory *store.MemoryEntry) string {
-    return fmt.Sprintf(`Analyze these session summaries and extract:
-1. New entities (projects, tools, concepts the user works with)
-2. Connections between entities
-3. Cross-session insights (patterns, preferences, recurring issues)
+- extend memory schema with entities and insights
+- add consolidation endpoint
+- batch over users with recent activity only
+- use structured JSON output for extraction
 
-Recent sessions:
-%s
+### Phase 2
 
-Known entities:
-%s
+- relation graph
+- importance scoring
+- retrieval ranking by task type and recency
 
-Return JSON with: new_entities, new_connections, insights`,
-        formatSummaries(memory.RecentSummaries),
-        formatEntities(memory.Entities))
-}
-```
+## Concrete File Changes
 
-## Verification
-- Run 3+ sessions with consistent topics
-- Trigger consolidation manually
-- Verify entities are extracted correctly
-- Verify insights reference source summaries
-- Check memory retrieval returns relevant context
+- `backend/adk-orchestrator/internal/store/models.go`
+  - add entity / insight records
+- `backend/adk-orchestrator/internal/store/firestore.go`
+  - add CRUD helpers for subcollections
+- `backend/adk-orchestrator/internal/agents/memory/`
+  - add consolidator service or package
+- `backend/adk-orchestrator/main.go`
+  - add `/memory/consolidate` handler
+
+## Retrieval Rule
+
+Do not inject all memory into every request.
+
+Retrieve only:
+
+- top recent summaries
+- top relevant entities
+- unresolved issues with high relevance
+
+## Acceptance Criteria
+
+1. Consolidation runs from Scheduler/Tasks, not in-process timers.
+2. Firestore document size remains bounded.
+3. Retrieval payload is compact and relevant.
 
 ## Risks
-- Consolidation adds API cost (LLM calls during idle)
-- Entity extraction quality depends on LLM accuracy
-- Firestore write size limits may constrain large memory stores
-- Need to handle race conditions between session writes and consolidation
+
+- Background cost growth
+- bad entity extraction can pollute memory
+- stale insights if consolidation runs without good activity filtering
+
+## Sources
+
+- [Gemini thinking guide](https://ai.google.dev/gemini-api/docs/thinking)
