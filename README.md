@@ -9,6 +9,7 @@
 </p>
 
 <p align="center">
+  <a href="https://cloud.google.com/blog/topics/developers-practitioners/winners-and-highlights-of-the-gemini-live-agent-challenge"><img src="https://img.shields.io/badge/Gemini_Live_Agent_Challenge_2026-Honorable_Mention-FFD700?style=flat-square&logo=google&logoColor=white" alt="Gemini Live Agent Challenge 2026 — Honorable Mention"></a>
   <a href="https://geminiliveagentchallenge.devpost.com/"><img src="https://img.shields.io/badge/Gemini_Live_Agent_Challenge-2026-4285F4?style=flat-square&logo=google&logoColor=white" alt="Challenge"></a>
   <img src="https://img.shields.io/badge/category-UI_Navigator-0F9D58?style=flat-square&logo=googlechrome&logoColor=white" alt="Category">
   <img src="https://img.shields.io/badge/platform-macOS_15%2B-000000?style=flat-square&logo=apple&logoColor=white" alt="Platform">
@@ -25,6 +26,15 @@
 </p>
 
 ---
+
+## Awards
+
+**Honorable Mention — Gemini Live Agent Challenge 2026**
+
+VibeCat received an Honorable Mention at the Gemini Live Agent Challenge 2026. Google Cloud's official winners announcement credits **Sejun Kim and Michael Chang**.
+
+- [Official Google Cloud announcement](https://cloud.google.com/blog/topics/developers-practitioners/winners-and-highlights-of-the-gemini-live-agent-challenge)
+- [Devpost project and award](https://devpost.com/software/vibecat)
 
 ## The Problem
 
